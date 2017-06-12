@@ -31,6 +31,8 @@ typedef struct _MY_THREAD_LOCK{
 
 typedef struct _MY_PARSER_DATA{
 	char url[120];
+	int header_complete;
+	int message_complete;
 } MY_PARSER_DATA;
 
 typedef struct _MY_DATA{
@@ -215,11 +217,35 @@ static int on_info(http_parser* p) {
   return 0;
 }
 
+static int on_headers_complete(http_parser* p) {
+  MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
+  my_data->header_complete = 1;
+  return 0;
+}
+
+static int on_message_complete(http_parser* p) {
+  MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
+  my_data->message_complete = 1;
+  return 0;
+}
+
 static int on_url(http_parser* p, const char *at, size_t length) {
 	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
 	strncpy(my_data->url, at, length);
 	my_data->url[length] = '\0';
 	return 0;
+}
+
+static int on_value(http_parser* p, const char *at, size_t length) {
+  return 0;
+}
+
+static int on_field(http_parser* p, const char *at, size_t length) {
+  return 0;
+}
+
+static int on_body(http_parser* p, const char *at, size_t length) {
+  return 0;
 }
 
 static int on_data(http_parser* p, const char *at, size_t length) {
@@ -228,13 +254,13 @@ static int on_data(http_parser* p, const char *at, size_t length) {
 
 static http_parser_settings settings = {
   .on_message_begin = on_info,
-  .on_headers_complete = on_info,
-  .on_message_complete = on_info,
-  .on_header_field = on_data,
-  .on_header_value = on_data,
+  .on_headers_complete = on_headers_complete,
+  .on_message_complete = on_message_complete,
+  .on_header_field = on_field,
+  .on_header_value = on_value,
   .on_url = on_url,
   .on_status = on_data,
-  .on_body = on_data
+  .on_body = on_body
 };
 
 void * routine(void *arg)
@@ -260,23 +286,92 @@ void * routine(void *arg)
 		#endif
 		printf("Connection accepted, accept pid: %d tid: %d \n", getpid(), tid);
 
-		int recv_fd = open("recv.txt", O_WRONLY | O_CREAT, 0644);
-		int data_length;
-		char buffer[1024];
-		data_length = recv(client_socket_fd, buffer, sizeof(buffer), 0);
-		write(recv_fd, buffer, data_length);
-		close(recv_fd);
+		struct timeval tv;
+		tv.tv_sec = 0;  /* Secs Timeout */
+		tv.tv_usec = 700000;  // Not init'ing this can cause strange errors
+		setsockopt(client_socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv,sizeof(struct timeval));
 
+		int recv_fd = open("recv.log", O_APPEND | O_WRONLY | O_CREAT, 0644);
 		struct http_parser parser;
 		MY_PARSER_DATA parser_data;
+		int data_length;
+		int total_length = 0;
+		size_t parsed;
+		char buffer[51];
+		parser_data.header_complete = 0;
+		parser_data.message_complete = 0;
 		parser.data = (void *)&parser_data;
 		http_parser_init(&parser, HTTP_REQUEST);
-		size_t parsed = http_parser_execute(&parser, &settings, buffer, data_length);
+
+		time_t rawtime;
+		struct tm * timeinfo;
+		time ( &rawtime );
+		timeinfo = localtime ( &rawtime );
+		char * current_time = asctime (timeinfo);
+		printf("-----------------------------------\n%srecv [client_socket_fd:%d]:", current_time, client_socket_fd);
+		fflush(stdout);
+		write(recv_fd, "\n", 1);
+		write(recv_fd, current_time, strlen(current_time));
+		write(recv_fd, "\n", 1);
+
+		int retry_timeout = 0;
+		do {
+			data_length = recv(client_socket_fd, buffer, (sizeof(buffer) - 1), 0);
+			total_length += data_length;
+			if(data_length == -1) {
+				if(errno == EAGAIN) { // time out
+					if(total_length <= 0 || retry_timeout >= 3) {
+						printf(" timeout...\n");
+						close(recv_fd);
+						goto end;
+					}
+					else {
+						retry_timeout++;
+					}
+				}
+				else {
+					printf(" **** error:[%d] %s\n", errno, strerror(errno));
+					close(recv_fd);
+					goto end;
+				}
+			}
+			else if(data_length == 0) {
+				printf(" **** warning: 0 data length occured");
+				printf(" %d[%d]", data_length, total_length);
+				if(total_length > 0) {
+					break;
+				}
+				else {
+					close(recv_fd);
+					goto end;
+				}
+			}
+			printf(" %d[%d]", data_length, total_length);
+			fflush(stdout);
+			write(recv_fd, buffer, data_length);
+			parsed = http_parser_execute(&parser, &settings, buffer, data_length);
+			if(parsed != data_length) {
+				printf(" **** parser error: parsed[%d] != data_length[%d]", (int)parsed, data_length);
+				close(recv_fd);
+				goto end;
+			}
+			if(parser_data.header_complete) {
+				if(parser.flags & (F_CHUNKED | F_CONTENTLENGTH)) {
+					if(parser_data.message_complete)
+						break;
+				}
+				else
+					break;
+			}
+		} while(1);
+		close(recv_fd);
+		printf("\n\n");
 
 		printf("url: %s\n", parser_data.url);
 		int doc_fd;
 		char full_path[200];
 		int tmp_len;
+		int status_code = 200;
 		if(strlen(parser_data.url) == 1 && parser_data.url[0] == '/') {
 			tmp_len = strlen("/index.html");
 			strncpy(full_path, webroot, strlen(webroot));
@@ -316,19 +411,40 @@ void * routine(void *arg)
 					full_length = strlen(webroot) + tmp_len;
 					full_path[full_length] = '\0';
 					doc_fd = open(full_path, O_RDONLY);
+					status_code = 404;
 				}
 			}
 		}
 
 		if(doc_fd > 0) {
-			send(client_socket_fd, "HTTP/1.1 200 OK\n\n", 17, 0);
+			send(client_socket_fd, "HTTP/1.1 ", 9, 0);
+			switch(status_code){
+			case 404:
+				send(client_socket_fd, "404 Not Found\r\n", 15, 0);
+				break;
+			case 200:
+				send(client_socket_fd, "200 OK\r\n", 8, 0);
+				break;
+			}
+			char doc_fd_content_length[20];
+			sprintf(doc_fd_content_length, "%d", (int)lseek(doc_fd, 0, SEEK_END));
+			lseek(doc_fd, 0, SEEK_SET);
+			send(client_socket_fd, "Content-Length: ", 16, 0);
+			send(client_socket_fd, doc_fd_content_length, strlen(doc_fd_content_length), 0);
+			send(client_socket_fd, "\r\nConnection: Closed\r\nServer: zenglServer\r\n\r\n", 45, 0);
 			while((data_length = read(doc_fd, buffer, sizeof(buffer))) > 0){
-				write(client_socket_fd, buffer, data_length);
+				send(client_socket_fd, buffer, data_length, 0);
 			}
 			close(doc_fd);
 		}
+		else if(status_code == 404) {
+			send(client_socket_fd, "HTTP/1.1 404 Not Found\r\n", 9, 0);
+			send(client_socket_fd, "Connection: Closed\r\nServer: zenglServer\r\n\r\n", 43, 0);
+		}
 
-		printf("close client_socket_fd: %d\n", client_socket_fd);
+end:
+		printf("close client_socket_fd: %d\n===============================\n", client_socket_fd);
+		shutdown(client_socket_fd, SHUT_RDWR);
 		close(client_socket_fd);
 	}
 	while(1);

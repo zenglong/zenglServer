@@ -327,6 +327,7 @@ void * routine(void *arg)
 					}
 					else {
 						retry_timeout++;
+						continue;
 					}
 				}
 				else {

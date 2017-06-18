@@ -1,2 +1,17 @@
+use request;
+
 a = 5 + 15;
-print 'a is ' + a + " end";
+print '<!Doctype html>';
+print '<html><body>';
+print 'a is ' + a + " end<br/>";
+
+headers = rqtGetHeaders();
+print 'user agent: ' + headers['User-Agent'] + '<br/>';
+
+other_headers = rqtGetHeaders();
+print 'other_headers, user agent: ' + other_headers['User-Agent'] + '<br/>';
+body = rqtGetBody();
+if(body)
+	print 'request body: ' + body;
+endif
+print '</body></html>';

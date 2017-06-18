@@ -2,8 +2,10 @@
 	#define _GNU_SOURCE
 #endif
 
+#include "main.h"
+#include "dynamic_string.h"
 #include "http_parser.h"
-#include "zengl/linux/zengl_exportfuns.h"
+#include "module_request.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,16 +30,6 @@ typedef struct _MY_THREAD_LOCK{
 	sem_t * accept_sem;
 	pthread_mutex_t lock;
 } MY_THREAD_LOCK;
-
-typedef struct _MY_PARSER_DATA{
-	char url[120];
-	int header_complete;
-	int message_complete;
-} MY_PARSER_DATA;
-
-typedef struct _MY_DATA{
-	int client_socket_fd;
-} MY_DATA;
 
 #define PROCESS_NUM 3
 #define THREAD_NUM_PER_PROCESS 3
@@ -207,10 +199,15 @@ ZL_EXP_INT main_config_run_print(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCou
 
 ZL_EXP_INT main_userdef_run_print(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCount,ZL_EXP_VOID * VM_ARG)
 {
-	MY_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	write(my_data->client_socket_fd, infoStrPtr, infoStrCount);
 	write(my_data->client_socket_fd, "\n", 1);
 	return 0;
+}
+
+ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
+{
+	zenglApi_SetModInitHandle(VM_ARG,"request", module_request_init);
 }
 
 static int on_info(http_parser* p) {
@@ -218,15 +215,21 @@ static int on_info(http_parser* p) {
 }
 
 static int on_headers_complete(http_parser* p) {
-  MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
-  my_data->header_complete = 1;
+	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
+	my_data->header_complete = 1;
+	char str_null[1];
+	str_null[0] = STR_NULL;
+	dynamic_string_append(&my_data->request_header, str_null, 1, REQUEST_HEADER_STR_SIZE);
   return 0;
 }
 
 static int on_message_complete(http_parser* p) {
-  MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
-  my_data->message_complete = 1;
-  return 0;
+	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
+	my_data->message_complete = 1;
+	char str_null[1];
+	str_null[0] = STR_NULL;
+	dynamic_string_append(&my_data->request_body, str_null, 1, REQUEST_BODY_STR_SIZE);
+	return 0;
 }
 
 static int on_url(http_parser* p, const char *at, size_t length) {
@@ -236,16 +239,46 @@ static int on_url(http_parser* p, const char *at, size_t length) {
 	return 0;
 }
 
-static int on_value(http_parser* p, const char *at, size_t length) {
-  return 0;
+static int on_header_value(http_parser* p, const char *at, size_t length) {
+	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
+	if((my_data->request_header.count + (int)length) >= REQUEST_HEADER_STR_MAX_SIZE) {
+		return 0;
+	}
+	if(my_data->header_status == ON_HEADER_STATUS_ENUM_FIELD) {
+		char str_null[1];
+		str_null[0] = STR_NULL;
+		dynamic_string_append(&my_data->request_header, str_null, 1, REQUEST_HEADER_STR_SIZE);
+		my_data->header_status = ON_HEADER_STATUS_ENUM_VALUE;
+	}
+	dynamic_string_append(&my_data->request_header, (char *)at, (int)length, REQUEST_HEADER_STR_SIZE);
+	return 0;
 }
 
-static int on_field(http_parser* p, const char *at, size_t length) {
-  return 0;
+static int on_header_field(http_parser* p, const char *at, size_t length) {
+	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
+	if((my_data->request_header.count + (int)length) >= REQUEST_HEADER_STR_MAX_SIZE){
+		return 0;
+	}
+	if(my_data->header_status == ON_HEADER_STATUS_ENUM_VALUE) {
+		char str_null[1];
+		str_null[0] = STR_NULL;
+		dynamic_string_append(&my_data->request_header, str_null, 1, REQUEST_HEADER_STR_SIZE);
+		my_data->header_status = ON_HEADER_STATUS_ENUM_FIELD;
+	}
+	else if(my_data->header_status == ON_HEADER_STATUS_ENUM_NONE) {
+		my_data->header_status = ON_HEADER_STATUS_ENUM_FIELD;
+	}
+	dynamic_string_append(&my_data->request_header, (char *)at, (int)length, REQUEST_HEADER_STR_SIZE);
+	return 0;
 }
 
 static int on_body(http_parser* p, const char *at, size_t length) {
-  return 0;
+	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
+	if((my_data->request_body.count + (int)length) >= REQUEST_BODY_STR_MAX_SIZE) {
+		return 0;
+	}
+	dynamic_string_append(&my_data->request_body, (char *)at, (int)length, REQUEST_BODY_STR_SIZE);
+	return 0;
 }
 
 static int on_data(http_parser* p, const char *at, size_t length) {
@@ -256,8 +289,8 @@ static http_parser_settings settings = {
   .on_message_begin = on_info,
   .on_headers_complete = on_headers_complete,
   .on_message_complete = on_message_complete,
-  .on_header_field = on_field,
-  .on_header_value = on_value,
+  .on_header_field = on_header_field,
+  .on_header_value = on_header_value,
   .on_url = on_url,
   .on_status = on_data,
   .on_body = on_body
@@ -300,6 +333,11 @@ void * routine(void *arg)
 		char buffer[51];
 		parser_data.header_complete = 0;
 		parser_data.message_complete = 0;
+		parser_data.request_header.str = PTR_NULL;
+		parser_data.request_header.count = parser_data.request_header.size = 0;
+		parser_data.request_body.str = PTR_NULL;
+		parser_data.request_body.count = parser_data.request_body.size = 0;
+		parser_data.header_status = ON_HEADER_STATUS_ENUM_NONE;
 		parser.data = (void *)&parser_data;
 		http_parser_init(&parser, HTTP_REQUEST);
 
@@ -388,12 +426,16 @@ void * routine(void *arg)
 			full_path[full_length] = '\0';
 
 			if(full_length > 3 && strncmp(full_path + (full_length - 3), ".zl", 3) == 0) {
-				MY_DATA my_data;
+				MAIN_DATA my_data;
 				my_data.client_socket_fd = client_socket_fd;
+				my_data.headers_memblock.ptr = ZL_EXP_NULL;
+				my_data.headers_memblock.index = 0;
+				my_data.my_parser_data = &parser_data;
 				ZL_EXP_VOID * VM;
 				VM = zenglApi_Open();
 				zenglApi_SetFlags(VM,(ZENGL_EXPORT_VM_MAIN_ARG_FLAGS)(ZL_EXP_CP_AF_IN_DEBUG_MODE | ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO));
 				zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_userdef_run_print);
+				zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_MODULE_INIT,main_userdef_module_init);
 				zenglApi_SetExtraData(VM, "my_data", &my_data);
 				send(client_socket_fd, "HTTP/1.1 200 OK\n\n", 17, 0);
 				if(zenglApi_Run(VM, full_path) == -1) //编译执行zengl脚本
@@ -425,6 +467,7 @@ void * routine(void *arg)
 				break;
 			case 200:
 				send(client_socket_fd, "200 OK\r\n", 8, 0);
+				send(client_socket_fd, "Cache-Control: max-age=120\r\n", 28, 0);
 				break;
 			}
 			char doc_fd_content_length[20];
@@ -444,6 +487,8 @@ void * routine(void *arg)
 		}
 
 end:
+		dynamic_string_free(&parser_data.request_header);
+		dynamic_string_free(&parser_data.request_body);
 		printf("close client_socket_fd: %d\n===============================\n", client_socket_fd);
 		shutdown(client_socket_fd, SHUT_RDWR);
 		close(client_socket_fd);

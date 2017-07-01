@@ -10,8 +10,23 @@ print 'user agent: ' + headers['User-Agent'] + '<br/>';
 
 other_headers = rqtGetHeaders();
 print 'other_headers, user agent: ' + other_headers['User-Agent'] + '<br/>';
+
+query_string = rqtGetQueryAsString();
+if(query_string)
+	print 'query string: ' + query_string + '<br/>';
+	querys = rqtGetQuery();
+	if(querys['name'])
+		print 'querys[\'name\']: ' + querys['name'] + '<br/>';
+	endif
+	if(querys['job'])
+		print 'querys[\'job\']: ' + querys['job'] + '<br/>';
+	endif
+endif
+
 body = rqtGetBody();
 if(body)
 	print 'request body: ' + body;
 endif
+
 print '</body></html>';
+

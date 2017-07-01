@@ -1,4 +1,5 @@
 debug_mode = 1;
+// zl_debug_log = "zl_debug.log"; // zengl脚本的调试日志，可以输出相关的虚拟汇编指令
 
 port = 8083; // 绑定的端口
 
@@ -6,7 +7,7 @@ if(!debug_mode)
 	process_num = 3; // 进程数
 	thread_num_per_process = 3; // 线程数
 else
-	print 'config is in debug mode...';
+	print '*** config is in debug mode ***';
 	process_num = 1; // 进程数
 	thread_num_per_process = 1; // 线程数
 endif

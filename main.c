@@ -35,14 +35,44 @@ typedef struct _MY_THREAD_LOCK{
 #define THREAD_NUM_PER_PROCESS 3
 #define THREAD_NUM_MAX 3
 #define WEB_ROOT_DEFAULT "webroot"
+#define DEFAULT_CONFIG_FILE "config.zl"
 
 MY_THREAD_LOCK my_thread_lock = {0};
 int server_socket_fd;
+long config_debug_mode = 0;
 char config_web_root[150];
+char config_zl_debug_log[120];
 char * webroot;
+char * zl_debug_log;
 
 int main(int argc, char * argv[])
 {
+	int o;
+	char * config_file = NULL;
+	while (-1 != (o = getopt(argc, argv, "vhc:"))) {
+		switch(o){
+		case 'v':
+			printf("version: v%d.%d.%d\n", ZLSERVER_MAJOR_VERSION,
+					ZLSERVER_MINOR_VERSION,
+					ZLSERVER_REVISION);
+			return 0;
+		case 'c':
+			printf("use config: %s\n", optarg);
+			config_file = optarg;
+			break;
+		case 'h':
+			printf("usage: ./zenglServer [options]\n" \
+					"-v                  show version\n" \
+					"-c <config file>    set config file\n" \
+					"-h                  show this help\n");
+			return 0;
+		}
+	}
+	if(config_file == NULL) {
+		printf("use default config: " DEFAULT_CONFIG_FILE "\n");
+		config_file = DEFAULT_CONFIG_FILE;
+	}
+
 	long port;
 	long process_num;
 	long thread_num_per_process;
@@ -50,12 +80,14 @@ int main(int argc, char * argv[])
 	VM = zenglApi_Open();
 	zenglApi_SetFlags(VM,(ZENGL_EXPORT_VM_MAIN_ARG_FLAGS)(ZL_EXP_CP_AF_IN_DEBUG_MODE | ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO));
 	zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_config_run_print);
-	if(zenglApi_Run(VM, "config.zl") == -1) //编译执行zengl脚本
+	if(zenglApi_Run(VM, config_file) == -1) //编译执行zengl脚本
 	{
-		printf("错误：编译执行<%s>失败：%s\n", "config.zl", zenglApi_GetErrorString(VM));
+		printf("错误：编译执行<%s>失败：%s\n", config_file, zenglApi_GetErrorString(VM));
 		zenglApi_Close(VM);
 		exit(-1);
 	}
+	if(zenglApi_GetValueAsInt(VM, "debug_mode", &config_debug_mode) < 0)
+		config_debug_mode = 0;
 	if(zenglApi_GetValueAsInt(VM,"port", &port) < 0)
 		port = 8888;
 	if(zenglApi_GetValueAsInt(VM,"process_num", &process_num) < 0)
@@ -63,7 +95,7 @@ int main(int argc, char * argv[])
 	if(zenglApi_GetValueAsInt(VM,"thread_num_per_process", &thread_num_per_process) < 0)
 		thread_num_per_process = THREAD_NUM_PER_PROCESS;
 	else if(thread_num_per_process > THREAD_NUM_MAX) {
-		printf("warning: thread_num_per_process in config.zl too big, use default thread_num_per_process\n");
+		printf("warning: thread_num_per_process in %s too big, use default thread_num_per_process\n", config_file);
 		thread_num_per_process = THREAD_NUM_PER_PROCESS;
 	}
 	if((webroot = zenglApi_GetValueAsString(VM,"webroot")) == NULL) {
@@ -75,12 +107,23 @@ int main(int argc, char * argv[])
 		webroot = config_web_root;
 	}
 	else {
-		printf("warning: webroot in config.zl too long, use default webroot\n");
+		printf("warning: webroot in %s too long, use default webroot\n", config_file);
 		webroot = WEB_ROOT_DEFAULT;
 	}
-	printf("run config.zl complete, config: \n");
+	zl_debug_log = NULL;
+	if((zl_debug_log = zenglApi_GetValueAsString(VM,"zl_debug_log")) != NULL) {
+		int zl_debug_log_len = strlen(zl_debug_log);
+		if(zl_debug_log_len >= sizeof(config_zl_debug_log))
+			zl_debug_log_len = sizeof(config_zl_debug_log) - 1;
+		strncpy(config_zl_debug_log, zl_debug_log, zl_debug_log_len);
+		config_zl_debug_log[zl_debug_log_len] = '\0';
+		zl_debug_log = config_zl_debug_log;
+	}
+	printf("run %s complete, config: \n", config_file);
 	printf("port: %ld process_num: %ld thread_num_per_process: %ld\n", port, process_num, thread_num_per_process);
 	printf("webroot: %s\n", webroot);
+	if(zl_debug_log != NULL)
+		printf("zl_debug_log: %s\n", zl_debug_log);
 	zenglApi_Close(VM);
 
 	int client_socket_fd;
@@ -200,8 +243,17 @@ ZL_EXP_INT main_config_run_print(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCou
 ZL_EXP_INT main_userdef_run_print(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCount,ZL_EXP_VOID * VM_ARG)
 {
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
-	write(my_data->client_socket_fd, infoStrPtr, infoStrCount);
-	write(my_data->client_socket_fd, "\n", 1);
+	// write(my_data->client_socket_fd, infoStrPtr, infoStrCount);
+	// write(my_data->client_socket_fd, "\n", 1);
+	dynamic_string_append(&my_data->response_body, infoStrPtr, infoStrCount, RESPONSE_BODY_STR_SIZE);
+	dynamic_string_append(&my_data->response_body, "\n", 1, RESPONSE_BODY_STR_SIZE);
+	return 0;
+}
+
+ZL_EXP_INT main_userdef_run_info(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCount,ZL_EXP_VOID * VM_ARG)
+{
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	fprintf(my_data->zl_debug_log,"%s",infoStrPtr);
 	return 0;
 }
 
@@ -220,6 +272,7 @@ static int on_headers_complete(http_parser* p) {
 	char str_null[1];
 	str_null[0] = STR_NULL;
 	dynamic_string_append(&my_data->request_header, str_null, 1, REQUEST_HEADER_STR_SIZE);
+	dynamic_string_append(&my_data->request_url, str_null, 1, REQUEST_URL_STR_SIZE);
   return 0;
 }
 
@@ -234,8 +287,12 @@ static int on_message_complete(http_parser* p) {
 
 static int on_url(http_parser* p, const char *at, size_t length) {
 	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
-	strncpy(my_data->url, at, length);
-	my_data->url[length] = '\0';
+	if((my_data->request_url.count + (int)length) > REQUEST_URL_STR_MAX_SIZE) {
+		length = REQUEST_URL_STR_MAX_SIZE - my_data->request_url.count;
+		if(length <= 0)
+			return 0;
+	}
+	dynamic_string_append(&my_data->request_url, (char *)at, (int)length, REQUEST_URL_STR_SIZE);
 	return 0;
 }
 
@@ -333,6 +390,8 @@ void * routine(void *arg)
 		char buffer[51];
 		parser_data.header_complete = 0;
 		parser_data.message_complete = 0;
+		parser_data.request_url.str = PTR_NULL;
+		parser_data.request_url.count = parser_data.request_url.size = 0;
 		parser_data.request_header.str = PTR_NULL;
 		parser_data.request_header.count = parser_data.request_header.size = 0;
 		parser_data.request_body.str = PTR_NULL;
@@ -406,12 +465,31 @@ void * routine(void *arg)
 		close(recv_fd);
 		printf("\n\n");
 
-		printf("url: %s\n", parser_data.url);
-		int doc_fd;
-		char full_path[200];
+		printf("url: %s\n", parser_data.request_url.str);
+		if(http_parser_parse_url(parser_data.request_url.str, strlen(parser_data.request_url.str), 0, &parser_data.url_parser)) {
+			printf("**** failed to parse URL %s ****\n", parser_data.request_url.str);
+			goto end;
+		}
+		char url_path[URL_PATH_SIZE];
 		int tmp_len;
+		if((parser_data.url_parser.field_set & (1 << UF_PATH)) && (parser_data.url_parser.field_data[UF_PATH].len > 0)) {
+			if(parser_data.url_parser.field_data[UF_PATH].len >= URL_PATH_SIZE)
+				tmp_len = URL_PATH_SIZE - 1;
+			else
+				tmp_len = parser_data.url_parser.field_data[UF_PATH].len;
+			strncpy(url_path, parser_data.request_url.str + parser_data.url_parser.field_data[UF_PATH].off, tmp_len);
+			url_path[tmp_len] = STR_NULL;
+		}
+		else {
+			url_path[0] = '/';
+			url_path[1] = STR_NULL;
+		}
+		printf("url_path: %s\n", url_path);
+
+		int doc_fd;
+		char full_path[FULL_PATH_SIZE];
 		int status_code = 200;
-		if(strlen(parser_data.url) == 1 && parser_data.url[0] == '/') {
+		if(strlen(url_path) == 1 && url_path[0] == '/') {
 			tmp_len = strlen("/index.html");
 			strncpy(full_path, webroot, strlen(webroot));
 			strncpy(full_path + strlen(webroot), "/index.html", tmp_len);
@@ -420,29 +498,61 @@ void * routine(void *arg)
 			doc_fd = open(full_path, O_RDONLY);
 		}
 		else {
-			strncpy(full_path, webroot, strlen(webroot));
-			strncpy(full_path + strlen(webroot), parser_data.url, strlen(parser_data.url));
-			int full_length = strlen(webroot) + strlen(parser_data.url);
+			int webroot_length = strlen(webroot);
+			if(webroot_length >= FULL_PATH_SIZE)
+				webroot_length = FULL_PATH_SIZE - 1;
+			if(webroot_length > 0)
+				strncpy(full_path, webroot, webroot_length);
+			int url_path_length = strlen(url_path);
+			if(url_path_length >= (FULL_PATH_SIZE - webroot_length))
+				url_path_length = FULL_PATH_SIZE - webroot_length - 1;
+			if(url_path_length > 0)
+				strncpy(full_path + webroot_length, url_path, url_path_length);
+			int full_length = webroot_length + url_path_length;
 			full_path[full_length] = '\0';
 
 			if(full_length > 3 && strncmp(full_path + (full_length - 3), ".zl", 3) == 0) {
 				MAIN_DATA my_data;
 				my_data.client_socket_fd = client_socket_fd;
+				my_data.zl_debug_log = NULL;
 				my_data.headers_memblock.ptr = ZL_EXP_NULL;
 				my_data.headers_memblock.index = 0;
+				my_data.query_memblock.ptr = ZL_EXP_NULL;
+				my_data.query_memblock.index = 0;
 				my_data.my_parser_data = &parser_data;
+				my_data.response_body.str = PTR_NULL;
+				my_data.response_body.count = my_data.response_body.size = 0;
 				ZL_EXP_VOID * VM;
 				VM = zenglApi_Open();
 				zenglApi_SetFlags(VM,(ZENGL_EXPORT_VM_MAIN_ARG_FLAGS)(ZL_EXP_CP_AF_IN_DEBUG_MODE | ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO));
+				if(config_debug_mode && (zl_debug_log != NULL)) {
+					my_data.zl_debug_log = fopen(zl_debug_log,"w+");
+					if(my_data.zl_debug_log != NULL)
+						zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_INFO,main_userdef_run_info);
+				}
 				zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_userdef_run_print);
 				zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_MODULE_INIT,main_userdef_module_init);
 				zenglApi_SetExtraData(VM, "my_data", &my_data);
-				send(client_socket_fd, "HTTP/1.1 200 OK\n\n", 17, 0);
 				if(zenglApi_Run(VM, full_path) == -1) //编译执行zengl脚本
 				{
 					printf("错误：编译执行<%s>失败：%s\n",full_path, zenglApi_GetErrorString(VM));
+					send(client_socket_fd, "HTTP/1.1 500 Internal Server Error\r\n", 36, 0);
+					dynamic_string_append(&my_data.response_body, "500 Internal Server Error", 25, 200);
+				}
+				else {
+					send(client_socket_fd, "HTTP/1.1 200 OK\r\n", 17, 0);
 				}
 				zenglApi_Close(VM);
+				if(my_data.zl_debug_log != NULL) {
+					fclose(my_data.zl_debug_log);
+				}
+				char response_content_length[20];
+				sprintf(response_content_length, "%d", my_data.response_body.count);
+				send(client_socket_fd, "Content-Length: ", 16, 0);
+				send(client_socket_fd, response_content_length, strlen(response_content_length), 0);
+				send(client_socket_fd, "\r\nConnection: Closed\r\nServer: zenglServer\r\n\r\n", 45, 0);
+				send(client_socket_fd, my_data.response_body.str, my_data.response_body.count, 0);
+				dynamic_string_free(&my_data.response_body);
 				doc_fd = -1;
 			}
 			else {
@@ -487,6 +597,7 @@ void * routine(void *arg)
 		}
 
 end:
+		dynamic_string_free(&parser_data.request_url);
 		dynamic_string_free(&parser_data.request_header);
 		dynamic_string_free(&parser_data.request_body);
 		printf("close client_socket_fd: %d\n===============================\n", client_socket_fd);

@@ -9,6 +9,9 @@
 #include <string.h>
 #include <stdlib.h>
 
+/**
+ * 动态字符串的初始化函数，此为static静态函数，由下面的dynamic_string_append函数在动态字符串初始化状态时调用
+ */
 static int dynamic_string_init(DYNAMIC_STRING * dyn_str, int init_size)
 {
 	if(dyn_str->str != PTR_NULL){
@@ -23,6 +26,10 @@ static int dynamic_string_init(DYNAMIC_STRING * dyn_str, int init_size)
 	return 0;
 }
 
+/**
+ * 向动态字符串dyn_str中追加append_str字符串，append_str_length表示需要追加的字符串的有效长度，
+ * extend_size参数表示动态字符串初始化及动态扩容的大小
+ */
 int dynamic_string_append(DYNAMIC_STRING * dyn_str, char * append_str, int append_str_length, int extend_size)
 {
 	if(append_str_length <= 0)
@@ -48,6 +55,9 @@ int dynamic_string_append(DYNAMIC_STRING * dyn_str, char * append_str, int appen
 	return 0;
 }
 
+/**
+ * 释放动态字符串
+ */
 void dynamic_string_free(DYNAMIC_STRING * dyn_str)
 {
 	if(dyn_str->str == PTR_NULL) {

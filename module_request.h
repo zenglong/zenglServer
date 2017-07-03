@@ -10,8 +10,7 @@
 
 #include "zengl/linux/zengl_exportfuns.h"
 
-ZL_EXP_VOID module_request_GetHeaders(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount);
-
+// request模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
 ZL_EXP_VOID module_request_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID);
 
 #endif /* MODULE_REQUEST_H_ */

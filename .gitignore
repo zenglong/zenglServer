@@ -1,6 +1,5 @@
 .project
 .cproject
-zengl/
 zenglServer
 recv.txt
 recv.log

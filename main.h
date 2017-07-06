@@ -8,6 +8,10 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
+#ifndef ZL_EXP_OS_IN_LINUX
+	#define ZL_EXP_OS_IN_LINUX
+#endif
+
 #include "zengl/linux/zengl_exportfuns.h"
 #include "dynamic_string.h"
 #include "http_parser.h"

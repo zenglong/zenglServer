@@ -12,6 +12,7 @@ zengl/linux/libzengl.a:
 clean:
 	rm -fv zenglServer
 	rm -fv *.o
+	rm -fv zengl/linux/*.o
 	rm -fv zengl/linux/libzengl.a
 
 all: zenglServer

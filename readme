@@ -1,0 +1,110 @@
+zenglServer是一个http server，它除了用于响应静态文件外，最主要的目的在于接受外部http请求，并执行zengl动态脚本，并将脚本执行的结果反馈给浏览器之类的客户端。目前只是实验项目，仅供学习研究为目的。
+
+zenglServer只能在linux系统中进行编译和测试。要编译的话，直接在根目录中输入make命令即可：
+
+zengl@zengl-ubuntu:~/zenglServer$ make
+cd zengl/linux && make libzengl.a
+make[1]: Entering directory '/home/zengl/zenglServer/zengl/linux'
+gcc -D ZL_LANG_EN_WITH_CH -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c zengl_main.c zengl_parser.c zengl_symbol.c zengl_locals.c zengl_assemble.c zengl_ld.c zenglrun_main.c zenglrun_func.c zenglrun_hash_array.c zenglApi.c zenglApi_BltModFuns.c zenglDebug.c
+ar rc libzengl.a zengl_main.o zengl_parser.o zengl_symbol.o zengl_locals.o zengl_assemble.o zengl_ld.o zenglrun_main.o zenglrun_func.o zenglrun_hash_array.o zenglApi.o zenglApi_BltModFuns.o zenglDebug.o
+make[1]: Leaving directory '/home/zengl/zenglServer/zengl/linux'
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c dynamic_string.c main.h http_parser.h module_request.h dynamic_string.h zengl/linux/zengl_exportfuns.h -o zenglServer zengl/linux/libzengl.a -lpthread
+zengl@zengl-ubuntu:~/zenglServer$ 
+
+第一次编译时，它会先进入zengl/linux目录，编译生成libzengl.a的静态库文件，该静态库主要用于执行zengl脚本。
+
+如果要删除编译生成的文件的话，直接输入make clean即可。
+
+在根目录中，有一个config.zl的默认配置文件(使用zengl脚本语法编写)，该配置文件里定义了zenglServer需要绑定的端口号，需要启动的进程数，线程数等。
+
+在编译成功后，直接运行生成好的zenglServer可执行文件即可：
+
+zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer 
+use default config: config.zl
+*** config is in debug mode ***
+run config.zl complete, config: 
+port: 8083 process_num: 1 thread_num_per_process: 1
+webroot: my_webroot
+bind done
+accept sem initialized.
+
+默认绑定的端口号为：8083，打开你的浏览器，输入 http://<your ip address>:8083，<your ip address>表示zenglServer所在的linux系统的ip地址，假设为：192.168.1.104，那么输入 http://192.168.1.104:8083，应该可以看到Hello World!静态页面，同时终端里面会有如下输出：
+
+Connection accepted, accept pid: 5131 tid: 5132 
+-----------------------------------
+Thu Jul  6 16:54:25 2017
+recv [client_socket_fd:5]: 50[50] 50[100] 50[150] 50[200] 50[250] 50[300] 43[343]
+
+url: /
+url_path: /
+close client_socket_fd: 5
+===============================
+
+可以看到请求的url资源路径，处理该请求的pid(进程ID)和tid(线程ID)
+
+在浏览器中输入测试用的表单地址：http://192.168.1.104:8083/form.html，在表单中随便填些东西，点击Submit提交按钮，交由test.zl测试脚本去处理，处理后会返回类似如下的测试结果：
+
+a is 20 end
+user agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
+other_headers, user agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
+request body: title=hello&description=world&content=zengl+program&sb=Submit 
+
+test.zl测试脚本中，获取了当前浏览器的UA信息，以及请求的body(主体数据)。
+
+还可以直接在浏览器地址中输入test.zl并附加一些查询字符串，脚本会将查询字符串自动解析为哈希数组：
+在浏览器中输入：http://192.168.1.104:8083/test.zl?name=zengl&job=programmer
+反馈结果如下：
+
+a is 20 end
+user agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
+other_headers, user agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
+query string: name=zengl&job=programmer
+querys['name']: zengl
+querys['job']: programmer
+
+
+每个请求的HTTP头信息都会写入到recv.log的日志文件中，打开日志文件，应该可以看到类似如下的信息：
+
+Thu Jul  6 17:02:20 2017
+
+GET /test.zl?name=zengl&job=programmer HTTP/1.1
+Host: 192.168.1.104:8083
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3
+Accept-Encoding: gzip, deflate
+Connection: keep-alive
+Upgrade-Insecure-Requests: 1
+Cache-Control: max-age=0
+
+
+要退出zenglServer，直接在终端按Ctrl+C即可。
+
+zenglServer有几个可选的命令行参数，可以使用-h查看帮助信息：
+
+zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -h
+usage: ./zenglServer [options]
+-v                  show version
+-c <config file>    set config file
+-h                  show this help
+zengl@zengl-ubuntu:~/zenglServer$ 
+
+通过-v可以查看zenglServer的版本号以及所使用的zengl脚本语言的版本号，-c可以指定需要加载的配置文件(配置文件必须使用zengl脚本语法编写)：
+
+zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
+zenglServer version: v0.1.0
+zengl language version: v1.7.1
+zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
+use config: config.zl
+*** config is in debug mode ***
+run config.zl complete, config: 
+port: 8083 process_num: 1 thread_num_per_process: 1
+webroot: my_webroot
+bind done
+accept sem initialized.
+
+
+zenglServer是在Ubuntu 16.04 LTS x86-64系统中进行的开发测试(GCC版本号为：5.4.0)，并且在CentOS 7 x86-64 (gcc: 4.8.5)中进行了简单的测试。
+
+zenglServer的C源代码中，加入了必要的注释信息，读者可以通过阅读源码的相关注释来理解代码。
+

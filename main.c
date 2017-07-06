@@ -61,11 +61,12 @@ int main(int argc, char * argv[])
 	// 通过getopt的C库函数来获取用户在命令行中输入的参数，并根据这些参数去执行不同的操作
 	while (-1 != (o = getopt(argc, argv, "vhc:"))) {
 		switch(o){
-		// 当使用-v参数时，会将zenglServer的版本号信息显示出来，然后直接返回以退出程序，版本号中会显示主版本号，子版本号和修正版本号
+		// 当使用-v参数时，会将zenglServer的版本号信息和所使用的zengl脚本语言的版本号信息给显示出来，然后直接返回以退出程序，版本号中会显示主版本号，子版本号和修正版本号
 		case 'v':
-			printf("version: v%d.%d.%d\n", ZLSERVER_MAJOR_VERSION,
+			printf("zenglServer version: v%d.%d.%d\nzengl language version: v%d.%d.%d\n", ZLSERVER_MAJOR_VERSION,
 					ZLSERVER_MINOR_VERSION,
-					ZLSERVER_REVISION);
+					ZLSERVER_REVISION,
+					ZL_EXP_MAJOR_VERSION, ZL_EXP_MINOR_VERSION, ZL_EXP_REVISION);
 			return 0;
 		// 当使用-c参数时，会使用-c后面的配置文件名来作为启动时需要加载的配置文件
 		case 'c':

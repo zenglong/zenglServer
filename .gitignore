@@ -4,3 +4,6 @@ zenglServer
 recv.txt
 recv.log
 test.txt
+*.a
+*.o
+*.log

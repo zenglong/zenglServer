@@ -28,7 +28,7 @@ webroot: my_webroot
 bind done
 accept sem initialized.
 
-默认绑定的端口号为：8083，打开你的浏览器，输入 http://<your ip address>:8083，<your ip address>表示zenglServer所在的linux系统的ip地址，假设为：192.168.1.104，那么输入 http://192.168.1.104:8083，应该可以看到Hello World!静态页面，同时终端里面会有如下输出：
+默认绑定的端口号为：8083，打开你的浏览器，输入 http://<your ip address>:8083，<your ip address>表示zenglServer所在的linux系统的ip地址，假设为：192.168.1.104，那么输入 http://192.168.1.104:8083 应该可以看到Hello World!静态页面，同时终端里面会有如下输出：
 
 Connection accepted, accept pid: 5131 tid: 5132 
 -----------------------------------
@@ -42,7 +42,7 @@ close client_socket_fd: 5
 
 可以看到请求的url资源路径，处理该请求的pid(进程ID)和tid(线程ID)
 
-在浏览器中输入测试用的表单地址：http://192.168.1.104:8083/form.html，在表单中随便填些东西，点击Submit提交按钮，交由test.zl测试脚本去处理，处理后会返回类似如下的测试结果：
+在浏览器中输入测试用的表单地址：http://192.168.1.104:8083/form.html 在表单中随便填些东西，点击Submit提交按钮，交由test.zl测试脚本去处理，处理后会返回类似如下的测试结果：
 
 a is 20 end
 user agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0

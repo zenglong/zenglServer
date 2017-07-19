@@ -8,6 +8,43 @@
 #include "main.h"
 #include "module_request.h"
 #include <string.h>
+#include <ctype.h>
+#include <stdlib.h>
+
+/**
+ * 对str字符串参数进行url解码，
+ * 例如：%E7%A8%8B%E5%BA%8F%E5%91%98 解码后对应的就是UTF8编码的字符串“程序员”
+ * 通过将%E7转为0xE7的字节，%A8转为0xA8的字节，从而实现解码
+ */
+static char * url_decode(char * str)
+{
+	int str_len = strlen(str);
+	char e_char[] = "00";
+	for(int i = 0; i < str_len;i++)
+	{
+		switch(str[i])
+		{
+		case '%':
+			if(str[i+1] == '\0')
+				return str;
+			if(isxdigit(str[i+1]) && isxdigit(str[i+2]))
+			{
+				e_char[0] = str[i+1];
+				e_char[1] = str[i+2];
+				long int x = strtol(e_char, NULL, 16);
+				/* remove the hex */
+				memmove(&str[i+1], &str[i+3], strlen(&str[i+3])+1);
+				str_len -= 2;
+				str[i] = x;
+			}
+			break;
+		case '+':
+			str[i] = ' ';
+			break;
+		}
+	}
+	return str;
+}
 
 /**
  * rqtGetHeaders模块函数，将请求头中的field和value字符串组成名值对，存储到哈希数组中，
@@ -115,6 +152,13 @@ ZL_EXP_VOID module_request_GetQueryAsString(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argc
  * 上面例子显示的结果就是：
  * querys['name']: zengl
  * querys['job']: programmer
+ *
+ * 该模块函数会自动将key:value进行url解码，例如：
+ * 对于 GET /v0_1_1/test.zl?%E5%B7%A5%E4%BD%9C=%E7%BC%96%E7%A8%8B HTTP/1.1 的http请求，
+ * 解析后的数组成员为：
+ * 工作: 编程
+ * 其中%E5%B7%A5%E4%BD%9C解码为UTF8字符串“工作”，%E7%BC%96%E7%A8%8B则解码为UTF8字符串“编程”
+ *
  * 该模块函数只会在第一次调用时，创建哈希数组，之后再调用该模块函数时，就会直接将之前创建过的数组返回
  */
 ZL_EXP_VOID module_request_GetQuery(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
@@ -134,6 +178,8 @@ ZL_EXP_VOID module_request_GetQuery(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 			ZL_EXP_INT q_len = url_parser->field_data[UF_QUERY].len;
 			ZL_EXP_INT k = -1;
 			ZL_EXP_INT v = -1;
+			ZL_EXP_CHAR * decode_k = ZL_EXP_NULL;
+			ZL_EXP_CHAR * decode_v = ZL_EXP_NULL;
 			for(ZL_EXP_INT i = 0; i <= q_len; i++) {
 				if(k == -1 && q[i] != '=' && q[i] != '&') {
 					k = i;
@@ -149,9 +195,19 @@ ZL_EXP_VOID module_request_GetQuery(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 						ZL_EXP_CHAR prev_v_char = q[v - 1];
 						ZL_EXP_CHAR current_char = q[i];
 						q[i] = q[v - 1] = STR_NULL;
+						if(decode_k == ZL_EXP_NULL)
+							decode_k = zenglApi_AllocMem(VM_ARG, (strlen(&q[k]) + 1));
+						else
+							decode_k = zenglApi_ReAllocMem(VM_ARG, decode_k, (strlen(&q[k]) + 1));
+						strcpy(decode_k, &q[k]);
+						if(decode_v == ZL_EXP_NULL)
+							decode_v = zenglApi_AllocMem(VM_ARG, (strlen(&q[v]) + 1));
+						else
+							decode_v = zenglApi_ReAllocMem(VM_ARG, decode_v, (strlen(&q[v]) + 1));
+						strcpy(decode_v, &q[v]);
 						arg.type = ZL_EXP_FAT_STR;
-						arg.val.str = &q[v];
-						zenglApi_SetMemBlockByHashKey(VM_ARG, &my_data->query_memblock, &q[k], &arg);
+						arg.val.str = url_decode(decode_v);
+						zenglApi_SetMemBlockByHashKey(VM_ARG, &my_data->query_memblock, url_decode(decode_k), &arg);
 						q[v - 1] = prev_v_char;
 						if(current_char != STR_NULL)
 							q[i] = current_char;
@@ -163,6 +219,10 @@ ZL_EXP_VOID module_request_GetQuery(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 					break;
 				}
 			}
+			if(decode_k != ZL_EXP_NULL)
+				zenglApi_FreeMem(VM_ARG, decode_k);
+			if(decode_v != ZL_EXP_NULL)
+				zenglApi_FreeMem(VM_ARG, decode_v);
 		}
 		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->query_memblock);
 	}

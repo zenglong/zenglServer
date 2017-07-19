@@ -10,6 +10,7 @@
  */
 #include "http_parser.h"
 #include "module_request.h"
+#include "module_builtin.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -313,6 +314,8 @@ ZL_EXP_INT main_userdef_run_info(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCou
  */
 ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
 {
+	// 设置builtin模块的初始化函数，和builtin模块相关的C函数代码位于module_builtin.c文件里
+	zenglApi_SetModInitHandle(VM_ARG,"builtin", module_builtin_init);
 	// 设置request模块的初始化函数，和request模块相关的C函数代码位于module_request.c文件里
 	zenglApi_SetModInitHandle(VM_ARG,"request", module_request_init);
 }

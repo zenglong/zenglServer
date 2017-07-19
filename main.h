@@ -8,18 +8,14 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
-#ifndef ZL_EXP_OS_IN_LINUX
-	#define ZL_EXP_OS_IN_LINUX
-#endif
-
-#include "zengl/linux/zengl_exportfuns.h"
+#include "common_header.h"
 #include "dynamic_string.h"
 #include "http_parser.h"
 #include <stdio.h>
 
 #define ZLSERVER_MAJOR_VERSION 0  // zenglServer 主版本号
 #define ZLSERVER_MINOR_VERSION 1  // zenglServer 子版本号
-#define ZLSERVER_REVISION 0       // zenglServer 修正版本号
+#define ZLSERVER_REVISION 1       // zenglServer 修正版本号
 
 #define URL_PATH_SIZE 120    // main.c中url_path可以容纳的字符数
 #define FULL_PATH_SIZE 200   // main.c中full_path完整路径可以容纳的字符数

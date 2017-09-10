@@ -1,0 +1,31 @@
+use builtin;
+use request;
+
+print '<!Doctype html>';
+print '<html><head><meta http-equiv="content-type" content="text/html;charset=utf-8" /></head><body>';
+
+headers = rqtGetHeaders();
+print 'Content-Length:' + headers['Content-Length'] + "<br/>";
+
+body = rqtGetBody(&body_count, &body_source);
+if(headers['Content-Length'] > body_count)
+	print 'body count: ' + body_count + '<br/>';
+	print '<h3>your content is too big, maybe the upload file is too big!</h3>';
+elif(body_count > 0)
+	print 'request body[count/' + body_count + ']: ' + body + '<br/><br/>';
+	body_array = rqtGetBodyAsArray();
+	for(i=0;bltIterArray(body_array,&i,&k,&v);)
+		print k +": " + v + '<br/>';
+		for(j=0;bltIterArray(v,&j,&inner_k,&inner_v);)
+			print "&nbsp;&nbsp;" + inner_k + ": " + inner_v + "<br/>";
+			if(inner_k == 'filename')
+				bltWriteFile(v['filename'], v['content_ptr'], v['length']);
+			endif
+		endfor
+	endfor
+	bltWriteFile('body.log', body);
+	bltWriteFile('body_source.log', body_source, body_count);
+endif
+
+print '</body></html>';
+

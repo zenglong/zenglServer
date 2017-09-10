@@ -7,3 +7,7 @@ test.txt
 *.a
 *.o
 *.log
+
+my_webroot/v0_2_0/*
+!my_webroot/v0_2_0/form.html
+!my_webroot/v0_2_0/post.zl

@@ -52,6 +52,22 @@ char config_zl_debug_log[120]; // 该全局变量用于存储配置文件中的z
 char * webroot; // 该字符串指针指向最终会使用的web根目录名，当配置文件中配置了webroot时，该指针就会指向上面的config_web_root，否则就指向WEB_ROOT_DEFAULT即默认的web根目录名
 char * zl_debug_log; // 该字符串指针指向最终会使用的zl_debug_log的值，当配置文件中设置了zl_debug_log时，就指向上面的config_zl_debug_log，否则就设置为NULL(空指针)
 
+char * main_get_webroot()
+{
+	return webroot;
+}
+
+int main_full_path_append(char * full_path, int full_path_length, int full_path_size, char * append_path)
+{
+	int append_path_length = strlen(append_path);
+	int max_length = full_path_size - full_path_length - 1;
+	if(append_path_length > max_length)
+		append_path_length = max_length;
+	if(append_path_length > 0)
+		strncpy((full_path + full_path_length), append_path, append_path_length);
+	return append_path_length;
+}
+
 /**
  * zenglServer启动时会执行的入口函数
  */
@@ -349,6 +365,7 @@ static int on_message_complete(http_parser* p) {
 	char str_null[1];
 	str_null[0] = STR_NULL;
 	dynamic_string_append(&my_data->request_body, str_null, 1, REQUEST_BODY_STR_SIZE);
+	my_data->is_request_body_append_null = ZL_EXP_TRUE;
 	return 0;
 }
 
@@ -664,12 +681,15 @@ void * routine(void *arg)
 			if(full_length > 3 && strncmp(full_path + (full_length - 3), ".zl", 3) == 0) {
 				// my_data是传递给zengl脚本的额外数据，里面包含了客户端套接字等可能需要用到的信息
 				MAIN_DATA my_data;
+				my_data.full_path = full_path;
 				my_data.client_socket_fd = client_socket_fd;
 				my_data.zl_debug_log = NULL;
 				my_data.headers_memblock.ptr = ZL_EXP_NULL;
 				my_data.headers_memblock.index = 0;
 				my_data.query_memblock.ptr = ZL_EXP_NULL;
 				my_data.query_memblock.index = 0;
+				my_data.body_memblock.ptr = ZL_EXP_NULL;
+				my_data.body_memblock.index = 0;
 				my_data.my_parser_data = &parser_data;
 				my_data.response_body.str = PTR_NULL;
 				my_data.response_body.count = my_data.response_body.size = 0;

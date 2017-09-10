@@ -50,7 +50,7 @@ int dynamic_string_append(DYNAMIC_STRING * dyn_str, char * append_str, int appen
 		if(dyn_str->str == PTR_NULL)
 			return -3;
 	}
-	strncpy((dyn_str->str + dyn_str->count), append_str, append_str_length);
+	memcpy((dyn_str->str + dyn_str->count), append_str, append_str_length);
 	dyn_str->count = total_count;
 	return 0;
 }

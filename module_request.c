@@ -7,39 +7,86 @@
 
 #include "main.h"
 #include "module_request.h"
+#include "multipart_parser.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
 
 /**
- * 对str字符串参数进行url解码，
+ * 对src字符串参数进行url解码，并存储到dest目标字符串中
  * 例如：%E7%A8%8B%E5%BA%8F%E5%91%98 解码后对应的就是UTF8编码的字符串“程序员”
  * 通过将%E7转为0xE7的字节，%A8转为0xA8的字节，从而实现解码
  */
-static char * url_decode(char * str)
+static char * url_decode(char * dest, char * src, int src_len)
+{
+	//int src_len = strlen(src);
+	int cp_start = 0, cp_count = 0, dest_len = 0, i = 0;
+	char e_char[] = "00";
+	for(;i < src_len;i++)
+	{
+		switch(src[i])
+		{
+		case '%':
+			if(src[i+1] == '\0')
+				continue;
+			if(isxdigit(src[i+1]) && isxdigit(src[i+2]))
+			{
+				e_char[0] = src[i+1];
+				e_char[1] = src[i+2];
+				long int x = strtol(e_char, NULL, 16);
+				cp_count = i - cp_start;
+				if(cp_count > 0) {
+					memcpy((dest + dest_len), &src[cp_start], cp_count);
+					dest_len += cp_count;
+				}
+				dest[dest_len++] = x;
+				i += 2;
+				cp_start = i + 1;
+			}
+			break;
+		case '+':
+			cp_count = i - cp_start;
+			if(cp_count > 0) {
+				memcpy((dest + dest_len), &src[cp_start], cp_count);
+				dest_len += cp_count;
+			}
+			dest[dest_len++] = ' ';
+			cp_start = i + 1;
+			break;
+		}
+	}
+	cp_count = i - cp_start;
+	if(cp_count > 0) {
+		memcpy((dest + dest_len), &src[cp_start], cp_count);
+		dest_len += cp_count;
+	}
+	dest[dest_len] = '\0';
+	return dest;
+}
+
+/**
+ * 对str字符串中的转义字符进行解析
+ * 例如：ti\"tl\"e解析后就是ti"tl"e
+ * 目前暂时只针对双引号，单引号和斜杠进行转义字符的解析
+ */
+static char * str_unescape(char * str)
 {
 	int str_len = strlen(str);
-	char e_char[] = "00";
+	char x;
 	for(int i = 0; i < str_len;i++)
 	{
 		switch(str[i])
 		{
-		case '%':
-			if(str[i+1] == '\0')
+		case '\\':
+			x = str[i+1];
+			if(x == '\0')
 				return str;
-			if(isxdigit(str[i+1]) && isxdigit(str[i+2]))
+			if(x == '"' || x == '\'' || x == '\\')
 			{
-				e_char[0] = str[i+1];
-				e_char[1] = str[i+2];
-				long int x = strtol(e_char, NULL, 16);
-				/* remove the hex */
-				memmove(&str[i+1], &str[i+3], strlen(&str[i+3])+1);
-				str_len -= 2;
+				memmove(&str[i+1], &str[i+2], strlen(&str[i+2])+1);
+				str_len -= 1;
 				str[i] = x;
 			}
-			break;
-		case '+':
-			str[i] = ' ';
 			break;
 		}
 	}
@@ -47,17 +94,74 @@ static char * url_decode(char * str)
 }
 
 /**
- * rqtGetHeaders模块函数，将请求头中的field和value字符串组成名值对，存储到哈希数组中，
- * 并将该数组作为结果返回，例如：
- * headers = rqtGetHeaders();
- * print 'user agent: ' + headers['User-Agent'] + '<br/>';
- * 该例子通过模块函数，获取到头部信息，并通过headers['User-Agent']来获取到浏览器的UA信息
- * 该模块函数只会在脚本第一次调用时，创建哈希数组，之后再调用该函数时，就会直接将之前创建的数组返回
+ * 对url编码的字符串进行解析，并将解析出来的名值对信息存储到memblock对应的内存块(数组)中
+ * 例如：title=hello&description=world&content=test&sb=Submit 的解析过程相当于执行下列语句：
+ * memblock['title'] = 'hello';
+ * memblock['description'] = 'world';
+ * memblock['content'] = 'test';
+ * memblock['sb'] = 'Submit';
+ * GET和POST请求都可以使用该函数来解析url编码的字符串
  */
-ZL_EXP_VOID module_request_GetHeaders(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+static void parse_urlencoded_str_to_memblock(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * q, ZL_EXP_INT q_len, ZENGL_EXPORT_MEMBLOCK * memblock)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
-	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	ZL_EXP_INT k = -1;
+	ZL_EXP_INT v = -1;
+	ZL_EXP_CHAR * decode_k = ZL_EXP_NULL;
+	ZL_EXP_CHAR * decode_v = ZL_EXP_NULL;
+	for(ZL_EXP_INT i = 0; i <= q_len; i++) {
+		if(k == -1 && q[i] != '=' && q[i] != '&') {
+			k = i;
+		}
+		switch(q[i]) {
+		case '=':
+			v = i + 1;
+			break;
+		case '&':
+		case '#':
+		case STR_NULL:
+			if(k >= 0 && v > 0) {
+				ZL_EXP_CHAR prev_v_char = q[v - 1];
+				ZL_EXP_CHAR current_char = q[i];
+				q[i] = q[v - 1] = STR_NULL;
+				if(decode_k == ZL_EXP_NULL)
+					decode_k = zenglApi_AllocMem(VM_ARG, (strlen(&q[k]) + 1));
+				else
+					decode_k = zenglApi_ReAllocMem(VM_ARG, decode_k, (strlen(&q[k]) + 1));
+				//strcpy(decode_k, &q[k]);
+				if(decode_v == ZL_EXP_NULL)
+					decode_v = zenglApi_AllocMem(VM_ARG, (strlen(&q[v]) + 1));
+				else
+					decode_v = zenglApi_ReAllocMem(VM_ARG, decode_v, (strlen(&q[v]) + 1));
+				//strcpy(decode_v, &q[v]);
+				arg.type = ZL_EXP_FAT_STR;
+				arg.val.str = url_decode(decode_v, &q[v], strlen(&q[v]));
+				zenglApi_SetMemBlockByHashKey(VM_ARG, memblock, url_decode(decode_k, &q[k], strlen(&q[k])), &arg);
+				q[v - 1] = prev_v_char;
+				if(current_char != STR_NULL)
+					q[i] = current_char;
+				k = v = -1;
+			}
+			else {
+				k = v = -1;
+			}
+			break;
+		}
+	}
+	if(decode_k != ZL_EXP_NULL)
+		zenglApi_FreeMem(VM_ARG, decode_k);
+	if(decode_v != ZL_EXP_NULL)
+		zenglApi_FreeMem(VM_ARG, decode_v);
+}
+
+/**
+ * 将请求头中的field和value字符串组成名值对，存储到哈希数组中
+ * 这里将存储过程写入到单独的get_headers的静态函数里，这样，rqtGetHeaders模块函数以及
+ * rqtGetBodyAsArray模块函数的内部就可以直接共用这个函数来获取头部信息了
+ */
+static void get_headers(ZL_EXP_VOID * VM_ARG, MAIN_DATA * my_data)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	MY_PARSER_DATA * my_parser_data = my_data->my_parser_data;
 
 	// 如果没有创建过哈希数组，则创建哈希数组，并将请求头中所有的field与value构成的名值对，存储到哈希数组中
@@ -82,12 +186,27 @@ ZL_EXP_VOID module_request_GetHeaders(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 				tmp = value + strlen(value) + 1;
 			}while(1);
 		}
-		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->headers_memblock);
+		return;
 	}
 	else {
-		// 如果之前已经创建过哈希数组，就直接将该数组返回
-		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->headers_memblock);
+		// 如果之前已经创建过哈希数组，就直接返回
+		return;
 	}
+}
+
+/**
+ * rqtGetHeaders模块函数，将请求头中的field和value字符串组成名值对，存储到哈希数组中，
+ * 并将该数组作为结果返回，例如：
+ * headers = rqtGetHeaders();
+ * print 'user agent: ' + headers['User-Agent'] + '<br/>';
+ * 该例子通过模块函数，获取到头部信息，并通过headers['User-Agent']来获取到浏览器的UA信息
+ * 该模块函数只会在脚本第一次调用时，创建哈希数组，之后再调用该函数时，就会直接将之前创建的数组返回
+ */
+ZL_EXP_VOID module_request_GetHeaders(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	get_headers(VM_ARG, my_data);
+	zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->headers_memblock);
 }
 
 /**
@@ -99,17 +218,538 @@ ZL_EXP_VOID module_request_GetHeaders(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * endif
  * 对于application/x-www-form-urlencoded类型(表单提交时Content-Type的默认类型)的post请求，该例子可能显示的结果为：
  * request body: title=hello&description=world&content=test&sb=Submit
+ * 如果指定了第一个参数，那么模块函数会将body(主体数据)的总的字节数写入到该参数中，
+ * 例如：rqtGetBody(&body_count) 会将字节数写入到body_count变量里，
+ * 如果指定了第二个参数，那么模块函数还会将body(主体数据)的起始字节的指针值写入到该参数中，
+ * 例如：rqtGetBody(&body_count, &body_ptr) 会将字节数写入到body_count变量，同时将指针值写入到body_ptr变量，
+ * 获取到指针值后，就可以通过bltWriteFile模块函数将body的所有数据(包括上传文件的二进制数据)都写入到文件中，
+ * 当然也可以通过其他模块函数，利用指针去做别的事情，
+ * 第一个和第二个参数必须是address type(引用类型)
  */
 ZL_EXP_VOID module_request_GetBody(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	MY_PARSER_DATA * my_parser_data = my_data->my_parser_data;
+
+	if(argcount == 1 || argcount == 2) {
+		zenglApi_GetFunArgInfo(VM_ARG,1,&arg);
+		switch(arg.type){
+		case ZL_EXP_FAT_ADDR:
+		case ZL_EXP_FAT_ADDR_LOC:
+		case ZL_EXP_FAT_ADDR_MEMBLK:
+			break;
+		default:
+			zenglApi_Exit(VM_ARG,"the first argument of rqtGetBody must be address type");
+			break;
+		}
+		arg.type = ZL_EXP_FAT_INT;
+		// 如果追加了NULL字符(正常情况都会追加)，那么body的count的值，会比实际追加的请求主体数据的字节数多一个字节，这里我们只返回实际的字节数
+		if(my_parser_data->is_request_body_append_null == ZL_EXP_TRUE)
+			arg.val.integer = (my_parser_data->request_body.count - 1);
+		else
+			arg.val.integer = my_parser_data->request_body.count;
+		zenglApi_SetFunArg(VM_ARG,1,&arg);
+		if(argcount == 2) {
+			zenglApi_GetFunArgInfo(VM_ARG,2,&arg);
+			switch(arg.type){
+			case ZL_EXP_FAT_ADDR:
+			case ZL_EXP_FAT_ADDR_LOC:
+			case ZL_EXP_FAT_ADDR_MEMBLK:
+				break;
+			default:
+				zenglApi_Exit(VM_ARG,"the second argument of rqtGetBody must be address type");
+				break;
+			}
+			arg.type = ZL_EXP_FAT_INT;
+			arg.val.integer = (ZL_EXP_LONG)my_parser_data->request_body.str;
+			zenglApi_SetFunArg(VM_ARG,2,&arg);
+		}
+	}
+	else if(argcount != 0) {
+		zenglApi_Exit(VM_ARG,"usage: rqtGetBody() | rqtGetBody(&body_count) | rqtGetBody(&body_count, &body_ptr)");
+	}
 
 	if(my_parser_data->request_body.str != PTR_NULL && my_parser_data->request_body.count > 0) {
 		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, my_parser_data->request_body.str, 0, 0);
 	}
 	else {
 		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, "", 0, 0);
+	}
+}
+
+/*** 与multipart解析相关的枚举值，类型定义，以及结构体的定义 ***/
+
+// 枚举值用于判断当前读取到的multipart头信息是Content-Disposition头信息
+// 还是Content-Type头信息
+enum _my_multipart_header_status {
+	MY_MULTIPART_HEADER_STATUS_NONE = 0,
+	MY_MULTIPART_HEADER_STATUS_DISPOSITION = 1,
+	MY_MULTIPART_HEADER_STATUS_CONTENT_TYPE = 2
+};
+
+// 对multipart头信息对应的值进行名值对解析时，需要用到的状态机
+enum _my_parser_status {
+	m_p_status_start = 1,
+	m_p_status_key_start,
+	m_p_status_key_end,
+	m_p_status_before_value,
+	m_p_status_value_start,
+	m_p_status_value_escape,
+	m_p_status_value_end,
+	m_p_status_end
+};
+
+typedef enum _my_multipart_header_status my_multipart_header_status;
+typedef enum _my_parser_status my_parser_status;
+typedef struct _my_multipart my_multipart;
+typedef struct _my_multipart_data my_multipart_data;
+typedef struct _my_multipart_alloc my_multipart_alloc;
+
+// 从multipart中解析的各种数据，例如，通过Content-Disposition头信息可以解析到name和filename
+// 从Content-Type头信息中可以解析到content_type内容类型
+// content字段会指向每个part的具体数据内容
+struct _my_multipart {
+	char * name;
+	char * filename;
+	char * content_type;
+	char * content;
+	int name_length;
+	int filename_length;
+	int content_type_length;
+	int content_length;
+};
+
+// 解析到的name，filename，content_type，content等，最终会通过zenglApi_AllocMem
+// 或者zenglApi_ReAllocMem为其分配相应堆空间，以方便进行解码和zenglApi_SetMemBlockByHashKey设置内存块数据的操作
+struct _my_multipart_alloc {
+	char * name;
+	char * filename;
+	char * content_type;
+	char * content;
+};
+
+// 使用第三方multipart_parser库解析multipart数据时，可以通过multipart_parser的
+// data字段向其传递一个额外的自定义数据，下面的my_multipart_data结构体就是我们需要
+// 传递的自定义数据，里面有VM_ARG(zengl虚拟机指针)，需要设置的memblock内存块，part和part_alloc(存储解析到的数据)等
+struct _my_multipart_data {
+	my_multipart_header_status status;
+	my_multipart part;
+	my_multipart_alloc part_alloc;
+	ZL_EXP_VOID * VM_ARG;
+	ZENGL_EXPORT_MEMBLOCK * memblock;
+};
+
+// 使用状态机，将multipart请求头中的名值对信息解析出来
+// 例如：Content-Disposition: form-data; name="我的文件"; filename="splashimage.jpg"
+// 下面的函数可以将name -> 我的文件，filename -> splashimage.jpg 这样的名值对信息给解析出来
+// 第三方multipart_parser库只会将外层的名值对解析出来，上例中，multipart_parser库只会解析出
+// Content-Disposition -> form-data; name="我的文件"; filename="splashimage.jpg"，
+// 也就是将冒号左侧当成请求头的字段名，冒号右侧当成请求头的字段值，而请求头的字段值中name和filename这种更具体的名值对信息
+// 就只有自己写状态机来解析了，所以有了下面的函数
+static int parse_multipart_header_value(char * s, int s_len,
+						char ** key, int * key_len,
+						char ** value, int * value_len)
+{
+	char c;
+	char * k = NULL, * v = NULL;
+	int k_len = 0, v_len = 0;
+	int i;
+	my_parser_status status = m_p_status_start;
+	for(i = 0;(i < s_len) && (status != m_p_status_end);i++) {
+		c = s[i];
+		switch(status){
+		case m_p_status_start:
+			if(c != ' ') {
+				k = &s[i];
+				status = m_p_status_key_start;
+			}
+			break;
+		case m_p_status_key_start:
+			if(c == '=') {
+				k_len = i - ((int)(k - s));
+				status = m_p_status_key_end;
+			}
+			else if(c == ';') {
+				k_len = i - ((int)(k - s));
+				status = m_p_status_end;
+			}
+			break;
+		case m_p_status_key_end:
+			if(c == '"')
+				status = m_p_status_before_value;
+			break;
+		case m_p_status_before_value:
+			if(c != '"') {
+				v = &s[i];
+				status = m_p_status_value_start;
+			}
+			break;
+		case m_p_status_value_start:
+			if(c == '\\') {
+				status = m_p_status_value_escape;
+			}
+			else if(c == '"') {
+				v_len = i - ((int)(v - s));
+				status = m_p_status_value_end;
+			}
+			break;
+		case m_p_status_value_escape:
+			status = m_p_status_value_start;
+			break;
+		case m_p_status_value_end:
+			if(c == ';')
+				status = m_p_status_end;
+			break;
+		}
+	}
+	if(k != NULL) {
+		if(k_len == 0)
+			k_len = s_len - ((int)(k - s));
+	}
+	if(v != NULL) {
+		if(v_len == 0)
+			v_len = s_len - ((int)(v - s));
+	}
+	(*key) = k;
+	(*key_len) = k_len;
+	(*value) = v;
+	(*value_len) = v_len;
+	return i;
+}
+
+// multipart_parser库在解析到每个请求头的字段名时会调用的回调函数
+// 对于请求头 Content-Disposition: form-data; name="我的文件"; filename="splashimage.jpg"
+// 当解析到冒号左侧的Content-Disposition时，就会调用下面这个回调函数，并将Content-Disposition的字符串起始指针at和对应的字符串长度length传递进来
+static int read_multipart_header_name(multipart_parser* p, const char *at, size_t length)
+{
+	my_multipart_data * data = (my_multipart_data *)p->data;
+	if(strncmp(at, "Content-Disposition", length) == 0) {
+		data->status = MY_MULTIPART_HEADER_STATUS_DISPOSITION;
+	}
+	else if(strncmp(at, "Content-Type", length) == 0) {
+		data->status = MY_MULTIPART_HEADER_STATUS_CONTENT_TYPE;
+	}
+	return 0;
+}
+
+// multipart_parser库在解析到每个请求头的字段值时会调用的回调函数
+// 对于请求头 Content-Disposition: form-data; name="我的文件"; filename="splashimage.jpg"
+// 当解析到冒号右侧的form-data; name="我的文件"; filename="splashimage.jpg"时，就会调用下面这个函数，
+// 并将整个右侧的字符串的起始指针at和长度length作为参数传递进来
+static int read_multipart_header_value(multipart_parser* p, const char *at, size_t length)
+{
+	my_multipart_data * data = (my_multipart_data *)p->data;
+	char *s,*k,*v;
+	int s_len, k_len, v_len, count;
+	switch(data->status) {
+	case MY_MULTIPART_HEADER_STATUS_DISPOSITION:
+		{
+			s = (char *)at; s_len = length;
+			count = parse_multipart_header_value(s, s_len, &k, &k_len, &v, &v_len);
+			if(!(k != NULL && strncmp(k, "form-data", k_len) == 0)) {
+				return 0;
+			}
+			s += count;
+			s_len -= count;
+			while(s_len > 0) {
+				count = parse_multipart_header_value(s, s_len, &k, &k_len, &v, &v_len);
+				if(k != NULL && k_len > 0) {
+					if(strncmp(k, "name", k_len) == 0) {
+						if(v != NULL && v_len > 0) {
+							data->part.name = v;
+							data->part.name_length = v_len;
+						}
+					}
+					else if(strncmp(k, "filename", k_len) == 0) {
+						if(v != NULL && v_len > 0) {
+							data->part.filename = v;
+							data->part.filename_length = v_len;
+						}
+					}
+				}
+				s += count;
+				s_len -= count;
+			}
+		}
+		break;
+	case MY_MULTIPART_HEADER_STATUS_CONTENT_TYPE:
+		{
+			s = (char *)at; s_len = length;
+			count = parse_multipart_header_value(s, s_len, &k, &k_len, &v, &v_len);
+			if(k != NULL && k_len > 0) {
+				data->part.content_type = k;
+				data->part.content_type_length = k_len;
+			}
+		}
+		break;
+	}
+	return 0;
+}
+
+// 当解析multipart中每个part的主体数据时，会调用的回调函数
+// 该回调函数可能会被调用很多次，每次at指向一部分主体数据，length对应这部分的长度，
+// 只有当后面的on_multipart_data_end回调函数被调用时，才能说明该part的主体数据被解析完
+static int read_multipart_data(multipart_parser* p, const char *at, size_t length)
+{
+	my_multipart_data * data = (my_multipart_data *)p->data;
+	if(data->part.content == NULL) {
+		data->part.content = (char *)at; // 回调函数第一次调用时的at指针才是part主体数据的起始指针
+		data->part.content_length = length; // 设置起始长度
+	}
+	else {
+		data->part.content_length += length; // 之后在调用该函数时，只需将length加入到主体数据的长度中即可
+	}
+	return 0;
+}
+
+// 当part的头部信息被全部解析完时，会调用的回调函数
+static int on_multipart_headers_complete(multipart_parser * p)
+{
+	//my_multipart_data * data = (my_multipart_data *)p->data;
+	return 0;
+}
+
+// 通过zenglApi_AllocMem或者zenglApi_ReAllocMem为part中的name，filename等的值分配堆空间，以方便对其进行解码，以及设置内存块的操作
+static char * multipart_alloc_zlmem(ZL_EXP_VOID * VM_ARG, char * s, int size)
+{
+	if(s == ZL_EXP_NULL)
+		s = zenglApi_AllocMem(VM_ARG, size);
+	else
+		s = zenglApi_ReAllocMem(VM_ARG, s, size);
+	return s;
+}
+
+// 将zenglApi分配的堆空间全部释放掉
+static void multipart_free_all_zlmem(multipart_parser * p)
+{
+	my_multipart_data * data = (my_multipart_data *)p->data;
+	ZL_EXP_VOID * VM_ARG = data->VM_ARG;
+	if(data->part_alloc.name)
+		zenglApi_FreeMem(VM_ARG, data->part_alloc.name);
+	if(data->part_alloc.filename)
+		zenglApi_FreeMem(VM_ARG, data->part_alloc.filename);
+	if(data->part_alloc.content_type)
+		zenglApi_FreeMem(VM_ARG, data->part_alloc.content_type);
+	if(data->part_alloc.content)
+		zenglApi_FreeMem(VM_ARG, data->part_alloc.content);
+}
+
+// 当part的主体数据被全部解析完时，会调用的回调函数
+static int on_multipart_data_end(multipart_parser * p)
+{
+	my_multipart_data * data = (my_multipart_data *)p->data;
+	ZL_EXP_VOID * VM_ARG = data->VM_ARG;
+	ZENGL_EXPORT_MEMBLOCK * memblock = data->memblock;
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+
+	if(data->part.name)
+		printf("name:%.*s\n", data->part.name_length, data->part.name);
+	if(data->part.filename)
+		printf("filename:%.*s\n", data->part.filename_length, data->part.filename);
+	if(data->part.content_type)
+		printf("content_type:%.*s\n", data->part.content_type_length, data->part.content_type);
+	if(data->part.content) {
+		printf("content:%.*s\n\n\n", data->part.content_length, data->part.content);
+	}
+
+	if(data->part.filename) {
+		if(data->part.name && data->part.content) {
+			ZENGL_EXPORT_MEMBLOCK file_memblock = {0};
+			if(zenglApi_CreateMemBlock(VM_ARG,&file_memblock,0) == -1) {
+				zenglApi_Exit(VM_ARG,zenglApi_GetErrorString(VM_ARG));
+			}
+			data->part_alloc.filename = multipart_alloc_zlmem(VM_ARG, data->part_alloc.filename, data->part.filename_length + 1);
+			//strncpy(data->part_alloc.filename, data->part.filename, data->part.filename_length);
+			//data->part_alloc.filename[data->part.filename_length] = '\0';
+			url_decode(data->part_alloc.filename, data->part.filename, data->part.filename_length);
+			str_unescape(data->part_alloc.filename);
+			arg.type = ZL_EXP_FAT_STR;
+			arg.val.str = data->part_alloc.filename;
+			zenglApi_SetMemBlockByHashKey(VM_ARG, &file_memblock, "filename", &arg);
+			if(data->part.content_type) {
+				data->part_alloc.content_type = multipart_alloc_zlmem(VM_ARG, data->part_alloc.content_type, data->part.content_type_length + 1);
+				strncpy(data->part_alloc.content_type, data->part.content_type, data->part.content_type_length);
+				data->part_alloc.content_type[data->part.content_type_length] = '\0';
+				arg.type = ZL_EXP_FAT_STR;
+				arg.val.str = data->part_alloc.content_type;
+				zenglApi_SetMemBlockByHashKey(VM_ARG, &file_memblock, "type", &arg);
+			}
+			arg.type = ZL_EXP_FAT_INT;
+			arg.val.integer = (ZL_EXP_LONG)data->part.content;
+			zenglApi_SetMemBlockByHashKey(VM_ARG, &file_memblock, "content_ptr", &arg);
+			arg.type = ZL_EXP_FAT_INT;
+			arg.val.integer = (ZL_EXP_LONG)data->part.content_length;
+			zenglApi_SetMemBlockByHashKey(VM_ARG, &file_memblock, "length", &arg);
+			data->part_alloc.name = multipart_alloc_zlmem(VM_ARG, data->part_alloc.name, data->part.name_length + 1);
+			//strncpy(data->part_alloc.name, data->part.name, data->part.name_length);
+			//data->part_alloc.name[data->part.name_length] = '\0';
+			url_decode(data->part_alloc.name, data->part.name, data->part.name_length);
+			str_unescape(data->part_alloc.name);
+			arg.type = ZL_EXP_FAT_MEMBLOCK;
+			arg.val.memblock = file_memblock;
+			zenglApi_SetMemBlockByHashKey(VM_ARG, memblock, data->part_alloc.name, &arg);
+		}
+	}
+	else if(data->part.name) {
+		if(data->part.content) {
+			data->part_alloc.name = multipart_alloc_zlmem(VM_ARG, data->part_alloc.name, data->part.name_length + 1);
+			//strncpy(data->part_alloc.name, data->part.name, data->part.name_length);
+			//data->part_alloc.name[data->part.name_length] = '\0';
+			url_decode(data->part_alloc.name, data->part.name, data->part.name_length);
+			str_unescape(data->part_alloc.name);
+			data->part_alloc.content = multipart_alloc_zlmem(VM_ARG, data->part_alloc.content, data->part.content_length + 1);
+			strncpy(data->part_alloc.content, data->part.content, data->part.content_length);
+			data->part_alloc.content[data->part.content_length] = '\0';
+			arg.type = ZL_EXP_FAT_STR;
+			arg.val.str = data->part_alloc.content;
+			zenglApi_SetMemBlockByHashKey(VM_ARG, memblock, data->part_alloc.name, &arg);
+		}
+	}
+
+	memset(&data->part, 0, sizeof(my_multipart));
+	data->status = MY_MULTIPART_HEADER_STATUS_NONE;
+	return 0;
+}
+
+/**
+ * rqtGetBodyAsArray模块函数，主要用于将POST请求的主体数据转为数组的形式返回，
+ * 该模块函数既可以解析Content-Type为application/x-www-form-urlencoded的表单请求，
+ * 也可以解析Content-Type为multipart/form-data的请求
+ * 例如：
+	body_array = rqtGetBodyAsArray();
+	for(i=0;bltIterArray(body_array,&i,&k,&v);)
+		print k +": " + v + '<br/>';
+		for(j=0;bltIterArray(v,&j,&inner_k,&inner_v);)
+			print "&nbsp;&nbsp;" + inner_k + ": " + inner_v + "<br/>";
+			if(inner_k == 'filename')
+				bltWriteFile(v['filename'], v['content_ptr'], v['length']);
+			endif
+		endfor
+	endfor
+
+	* 对于下面这个application/x-www-form-urlencoded类型的请求：
+
+	POST /v0_2_0/post.zl HTTP/1.1
+	Host: 192.168.0.103:8083
+	User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:55.0) Gecko/20100101 Firefox/55.0
+	Accept: text/html,application/xhtml+xml,application/xml;q=0.9,.....
+	Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3
+	Accept-Encoding: gzip, deflate
+	Content-Type: application/x-www-form-urlencoded
+	Content-Length: 116
+	Referer: http://192.168.0.103:8083/v0_2_0/form.html
+	Connection: keep-alive
+	Upgrade-Insecure-Requests: 1
+
+	ti%22tl%22e=%E6%A0%87%E9%A2%98&description=%E6%8F%8F%E8%BF%B0&content=%E5%86%85%E5%AE%B9%E9%83%A8%E5%88%86&sb=Submit
+
+	* 脚本在执行时，得到的结果如下：
+
+	ti"tl"e: 标题
+	description: 描述
+	content: 内容部分
+	sb: Submit
+
+	脚本会对主体数据中的名值对进行url解码，例如，ti%22tl%22e被解码为ti"tl"e，%E6%A0%87%E9%A2%98被解码为标题等等
+
+	* 对于下面这个multipart/form-data类型的请求：
+
+	POST /v0_2_0/post.zl HTTP/1.1
+	................................
+	Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryJLB14p6QUQR9oO4G
+	................................
+
+	------WebKitFormBoundaryJLB14p6QUQR9oO4G
+	Content-Disposition: form-data; name="ti%22tl%22e"
+
+	测试。。！
+	------WebKitFormBoundaryJLB14p6QUQR9oO4G
+	Content-Disposition: form-data; name="description"
+
+	描述。。
+	------WebKitFormBoundaryJLB14p6QUQR9oO4G
+	Content-Disposition: form-data; name="content"
+
+	内容哈哈。。。
+	------WebKitFormBoundaryJLB14p6QUQR9oO4G
+	Content-Disposition: form-data; name="我的文件"; filename="timg.jpg"
+	Content-Type: image/jpeg
+
+	.................................
+
+	* 脚本在执行时，得到的结果如下：
+
+	ti"tl"e: 测试。。！
+	description: 描述。。
+	content: 内容哈哈。。。
+	我的文件:
+	  filename: timg.jpg
+	  type: image/jpeg
+	  content_ptr: 140540188302856
+	  length: 16212
+	sb: Submit
+
+	请求中的name被转为了数组的字符串key，具体的内容则被转为了该key对应的值，
+	如果某个part上传的是文件，那么key对应的值将会是一个数组，该数组中包含了
+	filename文件名，type文件类型，content_ptr指向文件数据的指针，以及length文件长度
+	脚本中就可以通过 bltWriteFile(v['filename'], v['content_ptr'], v['length']);
+	将POST上传的文件数据保存到某个文件中
+ */
+ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZL_EXP_CHAR * content_type = ZL_EXP_NULL;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(my_data->body_memblock.ptr == ZL_EXP_NULL) {
+		if(zenglApi_CreateMemBlock(VM_ARG,&my_data->body_memblock,0) == -1) {
+			zenglApi_Exit(VM_ARG,zenglApi_GetErrorString(VM_ARG));
+		}
+		zenglApi_AddMemBlockRefCount(VM_ARG,&my_data->body_memblock,1); // 手动增加该内存块的引用计数值，使其不会在脚本函数返回时，被释放掉。
+		MY_PARSER_DATA * my_parser_data = my_data->my_parser_data;
+		if(my_parser_data->request_body.str != PTR_NULL && my_parser_data->request_body.count > 0) {
+			get_headers(VM_ARG, my_data);
+			ZENGL_EXPORT_MOD_FUN_ARG retval = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "Content-Type");
+			if(retval.type == ZL_EXP_FAT_STR) {
+				content_type = retval.val.str;
+				if(strcmp(content_type, "application/x-www-form-urlencoded") == 0) {
+					ZL_EXP_CHAR * q = my_parser_data->request_body.str;
+					ZL_EXP_INT q_len = my_parser_data->request_body.count;
+					parse_urlencoded_str_to_memblock(VM_ARG, q, q_len, &my_data->body_memblock);
+				}
+				else if(strstr(content_type, "multipart/form-data")) {
+					const ZL_EXP_CHAR * boundary_key = "boundary=";
+					ZL_EXP_CHAR * boundary = strstr(content_type, boundary_key);
+					if(boundary) {
+						ZL_EXP_INT content_type_length = strlen(content_type);
+						boundary += strlen(boundary_key);
+						if(boundary < (content_type + content_type_length)) {
+							ZL_EXP_CHAR * q = my_parser_data->request_body.str;
+							ZL_EXP_INT q_len = my_parser_data->request_body.count;
+							printf("%s[debug]\n", boundary); // debug
+							multipart_parser_settings callbacks;
+							memset(&callbacks, 0, sizeof(multipart_parser_settings));
+							callbacks.on_header_field = read_multipart_header_name;
+							callbacks.on_header_value = read_multipart_header_value;
+							callbacks.on_headers_complete = on_multipart_headers_complete;
+							callbacks.on_part_data = read_multipart_data;
+							callbacks.on_part_data_end = on_multipart_data_end;
+							multipart_parser* parser = multipart_parser_init(boundary, &callbacks);
+							my_multipart_data my_mp_data = {0};
+							my_mp_data.VM_ARG = VM_ARG;
+							my_mp_data.memblock = &my_data->body_memblock;
+							multipart_parser_set_data(parser, &my_mp_data);
+							multipart_parser_execute(parser, q, q_len);
+							multipart_free_all_zlmem(parser);
+							multipart_parser_free(parser);
+						}
+					}
+				}
+			}
+		}
+		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->body_memblock);
+	}
+	else {
+		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->body_memblock);
 	}
 }
 
@@ -163,11 +803,9 @@ ZL_EXP_VOID module_request_GetQueryAsString(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argc
  */
 ZL_EXP_VOID module_request_GetQuery(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
-	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	MY_PARSER_DATA * my_parser_data = my_data->my_parser_data;
 	struct http_parser_url * url_parser = &my_parser_data->url_parser;
-
 	if(my_data->query_memblock.ptr == ZL_EXP_NULL) {
 		if(zenglApi_CreateMemBlock(VM_ARG,&my_data->query_memblock,0) == -1) {
 			zenglApi_Exit(VM_ARG,zenglApi_GetErrorString(VM_ARG));
@@ -176,53 +814,7 @@ ZL_EXP_VOID module_request_GetQuery(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		if((url_parser->field_set & (1 << UF_QUERY)) && (url_parser->field_data[UF_QUERY].len > 0)) {
 			ZL_EXP_CHAR * q = my_parser_data->request_url.str + url_parser->field_data[UF_QUERY].off;
 			ZL_EXP_INT q_len = url_parser->field_data[UF_QUERY].len;
-			ZL_EXP_INT k = -1;
-			ZL_EXP_INT v = -1;
-			ZL_EXP_CHAR * decode_k = ZL_EXP_NULL;
-			ZL_EXP_CHAR * decode_v = ZL_EXP_NULL;
-			for(ZL_EXP_INT i = 0; i <= q_len; i++) {
-				if(k == -1 && q[i] != '=' && q[i] != '&') {
-					k = i;
-				}
-				switch(q[i]) {
-				case '=':
-					v = i + 1;
-					break;
-				case '&':
-				case '#':
-				case STR_NULL:
-					if(k >= 0 && v > 0) {
-						ZL_EXP_CHAR prev_v_char = q[v - 1];
-						ZL_EXP_CHAR current_char = q[i];
-						q[i] = q[v - 1] = STR_NULL;
-						if(decode_k == ZL_EXP_NULL)
-							decode_k = zenglApi_AllocMem(VM_ARG, (strlen(&q[k]) + 1));
-						else
-							decode_k = zenglApi_ReAllocMem(VM_ARG, decode_k, (strlen(&q[k]) + 1));
-						strcpy(decode_k, &q[k]);
-						if(decode_v == ZL_EXP_NULL)
-							decode_v = zenglApi_AllocMem(VM_ARG, (strlen(&q[v]) + 1));
-						else
-							decode_v = zenglApi_ReAllocMem(VM_ARG, decode_v, (strlen(&q[v]) + 1));
-						strcpy(decode_v, &q[v]);
-						arg.type = ZL_EXP_FAT_STR;
-						arg.val.str = url_decode(decode_v);
-						zenglApi_SetMemBlockByHashKey(VM_ARG, &my_data->query_memblock, url_decode(decode_k), &arg);
-						q[v - 1] = prev_v_char;
-						if(current_char != STR_NULL)
-							q[i] = current_char;
-						k = v = -1;
-					}
-					else {
-						k = v = -1;
-					}
-					break;
-				}
-			}
-			if(decode_k != ZL_EXP_NULL)
-				zenglApi_FreeMem(VM_ARG, decode_k);
-			if(decode_v != ZL_EXP_NULL)
-				zenglApi_FreeMem(VM_ARG, decode_v);
+			parse_urlencoded_str_to_memblock(VM_ARG, q, q_len, &my_data->query_memblock);
 		}
 		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->query_memblock);
 	}
@@ -238,6 +830,7 @@ ZL_EXP_VOID module_request_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 {
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetHeaders",module_request_GetHeaders);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetBody",module_request_GetBody);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetBodyAsArray",module_request_GetBodyAsArray);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetQueryAsString",module_request_GetQueryAsString);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetQuery",module_request_GetQuery);
 }

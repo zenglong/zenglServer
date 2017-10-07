@@ -221,6 +221,26 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	fclose(fp);
 }
 
+/*bltExit模块函数，直接退出zengl脚本*/
+ZL_EXP_VOID module_builtin_exit(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount > 0)
+	{
+		zenglApi_GetFunArg(VM_ARG,1,&arg); //得到第一个参数
+		if(arg.type != ZL_EXP_FAT_STR)
+		{
+			zenglApi_Exit(VM_ARG,"first argument of bltExit must be string");
+		}
+		zenglApi_Exit(VM_ARG,arg.val.str);
+	}
+	else
+	{
+		zenglApi_Stop(VM_ARG); //如果没有参数则直接停止脚本的执行，不会产生出错信息
+		return;
+	}
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -229,4 +249,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltArray",zenglApiBMF_array);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltIterArray",module_builtin_iterate_array);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltWriteFile",module_builtin_write_file);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltExit",module_builtin_exit);
 }

@@ -15,6 +15,21 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 如果要删除编译生成的文件的话，直接输入make clean即可。
 
+从v0.3.0版本开始，在编译时，可以添加mysql模块，从而可以进行相关的mysql数据库操作，只要在make命令后面加入USE_MYSQL=yes即可：
+
+zengl@zengl-ubuntu:~/zenglServer$ make USE_MYSQL=yes
+cd zengl/linux && make libzengl.a
+make[1]: Entering directory '/home/zengl/zenglServer/zengl/linux'
+gcc -D ZL_LANG_EN_WITH_CH -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c zengl_main.c zengl_parser.c zengl_symbol.c zengl_locals.c zengl_assemble.c zengl_ld.c zenglrun_main.c zenglrun_func.c zenglrun_hash_array.c zenglApi.c zenglApi_BltModFuns.c zenglDebug.c
+ar rc libzengl.a zengl_main.o zengl_parser.o zengl_symbol.o zengl_locals.o zengl_assemble.o zengl_ld.o zenglrun_main.o zenglrun_func.o zenglrun_hash_array.o zenglApi.o zenglApi_BltModFuns.o zenglDebug.o
+make[1]: Leaving directory '/home/zengl/zenglServer/zengl/linux'
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c dynamic_string.c multipart_parser.c resources.c  main.h http_parser.h common_header.h module_request.h module_builtin.h dynamic_string.h multipart_parser.h resources.h  module_mysql.c module_mysql.h  zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a -lpthread -DUSE_MYSQL `mysql_config --cflags --libs` 
+
+mysql module is enabled!!!
+zengl@zengl-ubuntu:~/zenglServer$ 
+
+注意：在加入mysql模块前，请确保你的系统中包含了mysql_config程式和mysql.h开发头文件，如果没有的话，如果是ubuntu系统，可以通过sudo apt-get install libmysqlclient-dev来添加开发mysql客户端所需要的文件，如果是centos系统，则可以通过yum install mysql-devel来加入开发所需的文件。此外，暂时没有对mysql多线程安全问题进行处理，如果在工作进程中设置了多线程的话，需要自行处理mysql客户端的多线程问题。
+
 在根目录中，有一个config.zl的默认配置文件(使用zengl脚本语法编写)，该配置文件里定义了zenglServer需要绑定的端口号，需要启动的进程数，线程数等。
 
 在编译成功后，直接运行生成好的zenglServer可执行文件即可：

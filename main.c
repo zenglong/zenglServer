@@ -11,6 +11,9 @@
 #include "http_parser.h"
 #include "module_request.h"
 #include "module_builtin.h"
+#ifdef USE_MYSQL
+#include "module_mysql.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -334,6 +337,10 @@ ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
 	zenglApi_SetModInitHandle(VM_ARG,"builtin", module_builtin_init);
 	// 设置request模块的初始化函数，和request模块相关的C函数代码位于module_request.c文件里
 	zenglApi_SetModInitHandle(VM_ARG,"request", module_request_init);
+#ifdef USE_MYSQL
+	// 设置mysql模块的初始化函数，和mysql模块相关的C函数代码位于module_mysql.c文件里
+	zenglApi_SetModInitHandle(VM_ARG,"mysql", module_mysql_init);
+#endif
 }
 
 /**
@@ -693,6 +700,8 @@ void * routine(void *arg)
 				my_data.my_parser_data = &parser_data;
 				my_data.response_body.str = PTR_NULL;
 				my_data.response_body.count = my_data.response_body.size = 0;
+				my_data.resource_list.list = PTR_NULL;
+				my_data.resource_list.count = my_data.resource_list.size = 0;
 				ZL_EXP_VOID * VM;
 				VM = zenglApi_Open();
 				zenglApi_SetFlags(VM,(ZENGL_EXPORT_VM_MAIN_ARG_FLAGS)(ZL_EXP_CP_AF_IN_DEBUG_MODE | ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO));
@@ -718,6 +727,7 @@ void * routine(void *arg)
 				else {
 					send(client_socket_fd, "HTTP/1.1 200 OK\r\n", 17, 0);
 				}
+				resource_list_remove_all_resources(VM, &(my_data.resource_list));
 				// 关闭zengl虚拟机及zl_debug_log日志文件
 				zenglApi_Close(VM);
 				if(my_data.zl_debug_log != NULL) {

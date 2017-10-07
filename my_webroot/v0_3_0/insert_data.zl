@@ -1,0 +1,59 @@
+use builtin;
+use mysql;
+use request;
+inc 'config.zl';
+
+fun finish_with_error(con)
+	err = mysqlError(con);
+	mysqlClose(con);
+	print '<p style="color:red">' + err + '</p></body></html>';
+	bltExit(err);
+endfun
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>插入数据到cars测试表</title>
+</head>
+<body>';
+
+body_array = rqtGetBodyAsArray();
+if(body_array['submit'])
+	con = mysqlInit();
+	if(!con)
+		bltExit('mysqlInit failed');
+	endif
+
+	if(!mysqlRealConnect(con, config['db_host'], config['db_user'], config['db_passwd'], config['db_name'], config['db_port']))
+		finish_with_error(con);
+	endif
+
+	if(mysqlSetCharacterSet(con, "utf8"))
+		finish_with_error(con);
+	endif
+	print 'mysql设置字符集:' + mysqlCharacterSetName(con) + '<br/>';
+
+	if(mysqlQuery(con, "INSERT INTO cars (`name`,`price`,`description`) VALUES('" +
+					mysqlRealEscapeString(con,body_array['name']) + "', '" +
+					mysqlRealEscapeString(con,body_array['price']) + "', '" + 
+					mysqlRealEscapeString(con,body_array['description']) + "')")
+		)
+		finish_with_error(con);
+	endif
+
+	print '<p style="color:green">插入数据到cars表成功!'+ '</p>';
+	mysqlClose(con);
+	print '关闭mysql连接!'+ 
+		'<br/><br/>
+		<a href="insert_data.zl">点击我，继续插入数据</a><br/><br/>';
+else
+	print '<form action="insert_data.zl" method="post" enctype="multipart/form-data">
+		<p>车名：<input name="name" value="" type="text"></p>
+		<p>价格：<input name="price" value="" type="text"></p>
+		<p>描述：<textarea name="description" rows="5" cols="40"></textarea></p>
+		<input name="submit" value="提交" type="submit" style="width:180px;height:25px">
+	</form><br/><br/><br/><br/>';
+endif
+
+print '<a href="select_data.zl">点击我来查看数据</a></body></html>';
+

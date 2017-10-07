@@ -1,0 +1,49 @@
+use builtin;
+use mysql;
+inc 'config.zl';
+
+fun finish_with_error(con)
+	err = mysqlError(con);
+	mysqlClose(con);
+	print '<p style="color:red">' + err + '</p></body></html>';
+	bltExit(err);
+endfun
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>创建数据库表结构</title>
+</head>
+<body>';
+
+print 'mysql客户端库的版本信息：' + mysqlGetClientInfo() + '<br/>';
+con = mysqlInit();
+if(!con)
+	bltExit('mysqlInit failed');
+endif
+
+if(!mysqlRealConnect(con, config['db_host'], config['db_user'], config['db_passwd'], config['db_name'], config['db_port']))
+	finish_with_error(con);
+endif
+
+server_version = mysqlGetServerVersion(con);
+print 'mysql服务端的版本号信息：' + server_version[0] + '.' + server_version[1] + '.' + server_version[2] + '<br/>';
+
+if(mysqlQuery(con, "DROP TABLE IF EXISTS cars"))
+	finish_with_error(con);
+endif
+
+if(mysqlQuery(con, "CREATE TABLE cars(
+					  id int NOT NULL AUTO_INCREMENT, 
+					  name varchar(255) NOT NULL DEFAULT '', 
+					  price int NOT NULL DEFAULT 0, 
+					  description text,
+					  PRIMARY KEY (id)
+					) ENGINE=MyISAM DEFAULT CHARSET utf8 COLLATE utf8_general_ci COMMENT='cars test table'"))
+	finish_with_error(con);
+endif
+
+print '<p style="color:green">创建表 cars 成功!' + '</p>';
+mysqlClose(con);
+print '<p>关闭mysql连接!' + '</p><a href="insert_data.zl">点击我，插入数据</a>';
+print '</body></html>';

@@ -30,6 +30,9 @@
 #define REQUEST_BODY_STR_MAX_SIZE 200000  // request_body动态字符串的最大允许长度
 #define REQUEST_URL_STR_MAX_SIZE 1024     // request_url动态字符串的最大允许长度
 
+#define WRITE_TO_PIPE 1
+#define WRITE_TO_LOG 0
+
 // 在解析请求头信息中的field和value时，会用到的枚举状态
 typedef enum _ON_HEADER_STATUS{
 	ON_HEADER_STATUS_ENUM_NONE,
@@ -65,5 +68,7 @@ typedef struct _MAIN_DATA{
 
 char * main_get_webroot();
 int main_full_path_append(char * full_path, int full_path_length, int full_path_size, char * append_path);
+int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...);
+void routine_close_single_socket(int client_socket_fd);
 
 #endif /* MAIN_H_ */

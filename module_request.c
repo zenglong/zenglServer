@@ -544,13 +544,13 @@ static int on_multipart_data_end(multipart_parser * p)
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 
 	if(data->part.name)
-		printf("name:%.*s\n", data->part.name_length, data->part.name);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "name:%.*s\n", data->part.name_length, data->part.name);
 	if(data->part.filename)
-		printf("filename:%.*s\n", data->part.filename_length, data->part.filename);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "filename:%.*s\n", data->part.filename_length, data->part.filename);
 	if(data->part.content_type)
-		printf("content_type:%.*s\n", data->part.content_type_length, data->part.content_type);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "content_type:%.*s\n", data->part.content_type_length, data->part.content_type);
 	if(data->part.content) {
-		printf("content:%.*s\n\n\n", data->part.content_length, data->part.content);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "content:%.*s\n\n\n", data->part.content_length, data->part.content);
 	}
 
 	if(data->part.filename) {
@@ -725,7 +725,7 @@ ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 						if(boundary < (content_type + content_type_length)) {
 							ZL_EXP_CHAR * q = my_parser_data->request_body.str;
 							ZL_EXP_INT q_len = my_parser_data->request_body.count;
-							printf("%s[debug]\n", boundary); // debug
+							write_to_server_log_pipe(WRITE_TO_PIPE, "%s[debug]\n", boundary); // debug
 							multipart_parser_settings callbacks;
 							memset(&callbacks, 0, sizeof(multipart_parser_settings));
 							callbacks.on_header_field = read_multipart_header_name;

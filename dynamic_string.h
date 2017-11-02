@@ -29,6 +29,8 @@ typedef struct _DYNAMIC_STRING{
  */
 int dynamic_string_append(DYNAMIC_STRING * dyn_str, char * append_str, int append_str_length, int extend_size);
 
+void dynamic_string_reset(DYNAMIC_STRING * dyn_str);
+
 // 释放动态字符串
 void dynamic_string_free(DYNAMIC_STRING * dyn_str);
 

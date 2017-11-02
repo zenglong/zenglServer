@@ -55,6 +55,14 @@ int dynamic_string_append(DYNAMIC_STRING * dyn_str, char * append_str, int appen
 	return 0;
 }
 
+void dynamic_string_reset(DYNAMIC_STRING * dyn_str)
+{
+	if(dyn_str->str == PTR_NULL) {
+		return;
+	}
+	dyn_str->count = 0;
+}
+
 /**
  * 释放动态字符串
  */
@@ -66,4 +74,5 @@ void dynamic_string_free(DYNAMIC_STRING * dyn_str)
 	free(dyn_str->str);
 	dyn_str->count = 0;
 	dyn_str->size = 0;
+	dyn_str->str = PTR_NULL;
 }

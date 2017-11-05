@@ -52,41 +52,44 @@ typedef struct _MY_THREAD_LOCK{
 	pthread_mutex_t lock;  // 线程锁
 } MY_THREAD_LOCK;
 
+// 写入日志时，会根据format格式，动态的构建需要写入的字符串
+// 这里用MY_SERVER_LOG_STR结构体来处理这种情况
 typedef struct _MY_SERVER_LOG_STR{
-	char * str;
-	int size;
+	char * str;  // 字符串的指针
+	int size;    // str指针指向的字符串最多可以容纳的字符数，会根据实际情况调整size
 } MY_SERVER_LOG_STR;
 
+// 注册信号时，需要使用的结构体
 typedef struct _MY_SIG_PAIR{
-    int signal;
-    struct sigaction action;
+    int signal;  // 要处理的信号
+    struct sigaction action; // 用于设置处理信号时，需要执行的动作(也就是设置相应的C函数)
 } MY_SIG_PAIR;
 
 #define PROCESS_NUM 3 // 如果在配置文件中没有设置process_num时，就使用该宏的值作为需要创建的进程数
-#define THREAD_NUM_PER_PROCESS 3 // 如果在配置文件中没有设置thread_num_per_process时，就使用该宏的值作为每个进程中需要创建的线程数
-#define THREAD_NUM_MAX 3 // 如果配置文件中设置的thread_num_per_process的值超过该宏定义的允许的最大值时，就会使用上面THREAD_NUM_PER_PROCESS宏定义的值来作为需要创建的线程数
-#define MAX_EPOLL_EVENTS 64
+#define THREAD_NUM_PER_PROCESS 1 // (暂不使用，epoll模式下，实际的工作线程数暂时由程序自己确定!)
+#define THREAD_NUM_MAX 3 // (暂不使用，epoll模式下，实际的工作线程数暂时由程序自己确定!)
+#define MAX_EPOLL_EVENTS 64 // 每次epoll_wait时，最多可以读取的事件数，如果事件数超过该数量，则剩下的事件将等到下一次epoll_wait时再取出来
 #define WEB_ROOT_DEFAULT "webroot" // 如果配置文件中没有设置webroot时，就使用该宏对应的目录名作为web的根目录的目录名
 #define DEFAULT_CONFIG_FILE "config.zl" // 当启动zenglServer时，如果没有使用-c命令行参数来指定配置文件名时，就会使用该宏对应的值来作为默认的配置文件名
-#define SERVER_LOG_PIPE_STR_SIZE 1024
-#define WRITE_TO_PIPE 1
-#define WRITE_TO_LOG 0
+#define SERVER_LOG_PIPE_STR_SIZE 1024 // 写入日志的动态字符串的初始化及动态扩容的大小
+#define WRITE_TO_PIPE 1 // 子进程统一将日志写入管道中，再由主进程从管道中将日志读取出来并写入日志文件
+#define WRITE_TO_LOG 0  // 主进程的日志信息，则可以直接写入日志文件
 
-char * current_process_name;
-int server_log_fd = -1;
-int server_log_pipefd[2];
-int server_sig_count = 0;
-pid_t server_child_process[0xff];
-MY_SIG_PAIR server_sig_pairs[0xff];
-MY_SERVER_LOG_STR server_log_pipe_string = {0};
+char * current_process_name; // 指向当前进程的名称，通过修改该指针指向的内容，就可以修改当前进程的名称(目前名称的最大长度为255个字符)
+int server_log_fd = -1;   // 为守护进程打开的日志文件的文件描述符
+int server_log_pipefd[2]; // 该数组用于存储管道的文件描述符，子进程会将日志写入管道的一端，主进程则从另一端将其读取出来
+int server_sig_count = 0; // 需要注册的信号数
+pid_t server_child_process[0xff]; // 存储子进程的进程ID，目前最多存储255个
+MY_SIG_PAIR server_sig_pairs[0xff]; // 该数组，用于注册要处理的信号，以及设置处理信号的C函数
+MY_SERVER_LOG_STR server_log_pipe_string = {0}; // 写入日志时，会根据format格式，动态的构建需要写入的字符串
 MY_THREAD_LOCK my_thread_lock = {0}; // 全局锁变量，包含了进程锁和线程锁
 int server_socket_fd; // zenglServer的服务端套接字对应的文件描述符
-int process_epoll_fd;
-int epoll_fd_add_count;
-int process_max_open_fd_num;
-struct epoll_event * process_epoll_events;
+int process_epoll_fd; // 每个进程创建的epoll实例对应的文件描述符
+int epoll_fd_add_count; // 用于统计添加到epoll实例中的需要监听的文件描述符的数量
+int process_max_open_fd_num; // 用于存储进程最多能打开的文件描述符数
+struct epoll_event * process_epoll_events; // epoll_wait接收到EPOLLIN之类的事件时，会将这些事件写入到该数组中
 long config_debug_mode = 0; // 该全局变量用于存储配置文件中的debug_mode的值，用于判断当前的配置是否处于调试模式
-long server_process_num;
+long server_process_num; // 需要创建的子进程数
 char config_web_root[150];  // 该全局变量用于存储配置文件中的webroot对应的字符串值，也就是web根目录对应的目录名
 char config_zl_debug_log[120]; // 该全局变量用于存储配置文件中的zl_debug_log的值，也就是zengl脚本的调试日志文件，里面存储了脚本对应的虚拟汇编指令，仅用于调试zengl脚本库的BUG时才需要用到
 char * webroot; // 该字符串指针指向最终会使用的web根目录名，当配置文件中配置了webroot时，该指针就会指向上面的config_web_root，否则就指向WEB_ROOT_DEFAULT即默认的web根目录名
@@ -108,11 +111,20 @@ int main_full_path_append(char * full_path, int full_path_length, int full_path_
 	return append_path_length;
 }
 
+/**
+ * 将logstr写入server_log_fd文件描述符对应的日志文件中
+ */
 int write_to_server_log(char * logstr)
 {
 	return write(server_log_fd, logstr, strlen(logstr));
 }
 
+/**
+ * 子进程会将日志信息写入server_log_pipefd管道的一端
+ * 主进程则会循环读取管道的另一端，并将读取到的日志信息，统一写入到日志文件中，
+ * 通过这种方式，日志信息就可以交由主进程统一管理，由主进程来决定写入到哪个日志文件中
+ * (虽然目前的版本还是写入到一个日志文件里，但是以后可能会根据日期将日志写入不同的日志文件中)
+ */
 int read_from_server_log_pipe()
 {
 	while(1)
@@ -125,6 +137,12 @@ int read_from_server_log_pipe()
 	}
 }
 
+/**
+ * 主进程和子进程都会通过这个函数来写入日志信息，
+ * 当write_to_pipe参数为WRITE_TO_LOG(就是整数0)时，就直接将信息写入日志文件(一般是主进程使用WRITE_TO_LOG方式)
+ * 当write_to_pipe参数为WRITE_TO_PIPE(整数1)时，就将日志写入管道(一般是子进程使用WRITE_TO_PIPE方式)
+ * 写入日志时，可以提供format格式，下面会通过vsnprintf来根据format和arglist参数列表，来构建需要写入的字符串
+ */
 int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...)
 {
 	if(server_log_pipe_string.str == NULL) {
@@ -244,7 +262,7 @@ int main(int argc, char * argv[])
 	}
 
 	long port; // 服务端需要绑定的端口号
-	long thread_num_per_process; // 每个进程需要创建的线程数
+	long thread_num_per_process; // 每个进程需要创建的线程数(暂停使用!)
 	ZL_EXP_VOID * VM; // 由于配置文件是使用zengl脚本语法编写的，因此，需要使用zengl虚拟机来运行该脚本
 	VM = zenglApi_Open(); // 打开一个zengl虚拟机
 	zenglApi_SetFlags(VM,(ZENGL_EXPORT_VM_MAIN_ARG_FLAGS)(ZL_EXP_CP_AF_IN_DEBUG_MODE | ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO)); // 设置一些调试标志
@@ -271,8 +289,8 @@ int main(int argc, char * argv[])
 	if(zenglApi_GetValueAsInt(VM,"thread_num_per_process", &thread_num_per_process) < 0)
 		thread_num_per_process = THREAD_NUM_PER_PROCESS; // 如果没有设置，则使用THREAD_NUM_PER_PROCESS宏定义的值
 	// 如果thread_num_per_process的值超过THREAD_NUM_MAX允许的最大值，则将其重置为THREAD_NUM_PER_PROCESS对应的值
-	else if(thread_num_per_process > THREAD_NUM_MAX) {
-		write_to_server_log_pipe(WRITE_TO_LOG, "warning: thread_num_per_process in %s too big, use default thread_num_per_process\n", config_file);
+	else if(thread_num_per_process > THREAD_NUM_MAX || thread_num_per_process <= 0) {
+		write_to_server_log_pipe(WRITE_TO_LOG, "warning: thread_num_per_process is not use now \n", config_file);
 		thread_num_per_process = THREAD_NUM_PER_PROCESS;
 	}
 
@@ -305,7 +323,7 @@ int main(int argc, char * argv[])
 	}
 	// 显示出配置文件中定义的配置信息，如果配置文件没有定义这些值，则显示出默认值
 	write_to_server_log_pipe(WRITE_TO_LOG, "run %s complete, config: \n", config_file);
-	write_to_server_log_pipe(WRITE_TO_LOG, "port: %ld process_num: %ld thread_num_per_process: %ld\n", port, server_process_num, thread_num_per_process);
+	write_to_server_log_pipe(WRITE_TO_LOG, "port: %ld process_num: %ld\n", port, server_process_num);
 	write_to_server_log_pipe(WRITE_TO_LOG, "webroot: %s\n", webroot);
 	if(zl_debug_log != NULL)
 		write_to_server_log_pipe(WRITE_TO_LOG, "zl_debug_log: %s\n", zl_debug_log);

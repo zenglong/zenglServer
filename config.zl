@@ -6,11 +6,9 @@ port = 8083; // 绑定的端口
 
 if(!debug_mode)
 	process_num = 3; // 进程数
-	thread_num_per_process = 3; // 线程数
 else
 	print '*** config is in debug mode ***';
 	process_num = 1; // 进程数
-	thread_num_per_process = 1; // 线程数
 endif
 
 webroot = "my_webroot"; // web根目录

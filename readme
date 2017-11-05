@@ -15,6 +15,8 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 如果要删除编译生成的文件的话，直接输入make clean即可。
 
+从v0.4.0版本开始，zenglServer使用epoll来处理请求，因此，需要先确定linux支持epoll，epoll的API是从linux kernel 2.5.44开始引入的
+
 从v0.3.0版本开始，在编译时，可以添加mysql模块，从而可以进行相关的mysql数据库操作，只要在make命令后面加入USE_MYSQL=yes即可：
 
 zengl@zengl-ubuntu:~/zenglServer$ make USE_MYSQL=yes
@@ -28,72 +30,94 @@ gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.
 mysql module is enabled!!!
 zengl@zengl-ubuntu:~/zenglServer$ 
 
-注意：在加入mysql模块前，请确保你的系统中包含了mysql_config程式和mysql.h开发头文件，如果没有的话，如果是ubuntu系统，可以通过sudo apt-get install libmysqlclient-dev来添加开发mysql客户端所需要的文件，如果是centos系统，则可以通过yum install mysql-devel来加入开发所需的文件。此外，暂时没有对mysql多线程安全问题进行处理，如果在工作进程中设置了多线程的话，需要自行处理mysql客户端的多线程问题。
+注意：在加入mysql模块前，请确保你的系统中包含了mysql_config程式和mysql.h开发头文件，如果没有的话，如果是ubuntu系统，可以通过sudo apt-get install libmysqlclient-dev来添加开发mysql客户端所需要的文件，如果是centos系统，则可以通过yum install mysql-devel来加入开发所需的文件。
 
-在根目录中，有一个config.zl的默认配置文件(使用zengl脚本语法编写)，该配置文件里定义了zenglServer需要绑定的端口号，需要启动的进程数，线程数等。
+在根目录中，有一个config.zl的默认配置文件(使用zengl脚本语法编写)，该配置文件里定义了zenglServer需要绑定的端口号，需要启动的进程数等。
 
-在编译成功后，直接运行生成好的zenglServer可执行文件即可：
+在编译成功后，直接运行生成好的zenglServer可执行文件即可(从v0.4.0版本开始，zenglServer默认以守护进程模式启动，并采用epoll方式来处理请求)：
 
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer 
+zengl@zengl-ubuntu:~/zenglServer$ ps -aux | grep zenglServer
+zengl     4940  0.0  0.0  26352  2436 ?        Ss   14:41   0:00 zenglServer: master
+zengl     4941  0.0  0.0  42744   532 ?        Sl   14:41   0:00 zenglServer: child(0)
+zengl@zengl-ubuntu:~/zenglServer$ cat logfile
+create master process for daemon [pid:4940] 
 use default config: config.zl
 *** config is in debug mode ***
 run config.zl complete, config: 
-port: 8083 process_num: 1 thread_num_per_process: 1
+port: 8083 process_num: 1
 webroot: my_webroot
 bind done
 accept sem initialized.
+process_max_open_fd_num: 1024 
+Master: Spawning child(0) [pid 4941] 
+epoll max fd count : 896 
+zengl@zengl-ubuntu:~/zenglServer$ 
 
-默认绑定的端口号为：8083，打开你的浏览器，输入 http://<your ip address>:8083，<your ip address>表示zenglServer所在的linux系统的ip地址，假设为：192.168.1.104，那么输入 http://192.168.1.104:8083 应该可以看到Hello World!静态页面，同时终端里面会有如下输出：
+默认绑定的端口号为：8083，打开你的浏览器，输入 http://<your ip address>:8083，<your ip address>表示zenglServer所在的linux系统的ip地址，假设为：192.168.0.105，那么输入 http://192.168.0.105:8083 应该可以看到Hello World!静态页面，可以在日志文件logfile中查看到相关信息：
 
-Connection accepted, accept pid: 5131 tid: 5132 
+zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
 -----------------------------------
-Thu Jul  6 16:54:25 2017
-recv [client_socket_fd:5]: 50[50] 50[100] 50[150] 50[200] 50[250] 50[300] 43[343]
+Sun Nov  5 14:50:25 2017
+recv [client_socket_fd:9] [lst_idx:0] [pid:4941] [tid:4943]:
+
+request header: Host: 192.168.0.105:8083 | Connection: keep-alive | Cache-Control: max-age=0 | Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8 | User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36 | Accept-Encoding: gzip,deflate,sdch | Accept-Language: zh-CN,zh;q=0.8 | 
 
 url: /
 url_path: /
-close client_socket_fd: 5
-===============================
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:1 pid:4941 tid:4943
+-----------------------------------
+Sun Nov  5 14:50:25 2017
+recv [client_socket_fd:11] [lst_idx:0] [pid:4941] [tid:4943]:
 
-可以看到请求的url资源路径，处理该请求的pid(进程ID)和tid(线程ID)
+request header: Host: 192.168.0.105:8083 | Connection: keep-alive | Accept: */* | User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36 | Accept-Encoding: gzip,deflate,sdch | Accept-Language: zh-CN,zh;q=0.8 | 
 
-在浏览器中输入测试用的表单地址：http://192.168.1.104:8083/form.html 在表单中随便填些东西，点击Submit提交按钮，交由test.zl测试脚本去处理，处理后会返回类似如下的测试结果：
+url: /favicon.ico
+url_path: /favicon.ico
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:4941 tid:4943
+
+
+可以看到请求头信息，请求的url资源路径，处理该请求的pid(进程ID)等
+
+在浏览器中输入测试用的表单地址：http://192.168.0.105:8083/form.html 在表单中随便填些东西，点击Submit提交按钮，交由test.zl测试脚本去处理，处理后会返回类似如下的测试结果：
 
 a is 20 end
-user agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
-other_headers, user agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
-request body: title=hello&description=world&content=zengl+program&sb=Submit 
+user agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36
+other_headers, user agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36
+request body: title=hello&description=world&content=zengl+program&sb=Submit
 
 test.zl测试脚本中，获取了当前浏览器的UA信息，以及请求的body(主体数据)。
 
 还可以直接在浏览器地址中输入test.zl并附加一些查询字符串，脚本会将查询字符串自动解析为哈希数组：
-在浏览器中输入：http://192.168.1.104:8083/test.zl?name=zengl&job=programmer
+在浏览器中输入：http://192.168.0.105:8083/test.zl?name=zengl&job=programmer
 反馈结果如下：
 
 a is 20 end
-user agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
-other_headers, user agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
+user agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36
+other_headers, user agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36
 query string: name=zengl&job=programmer
 querys['name']: zengl
 querys['job']: programmer
 
+要退出zenglServer，需要kill掉主进程(名称为zenglServer: master的进程)，注意：kill子进程的话，主进程会自动重启子进程：
 
-每个请求的HTTP头信息都会写入到recv.log的日志文件中，打开日志文件，应该可以看到类似如下的信息：
+zengl@zengl-ubuntu:~/zenglServer$ ps aux | grep zenglServer
+zengl     4940  0.0  0.0  26352  2436 ?        Ss   14:41   0:00 zenglServer: master
+zengl     4941  0.0  0.0 108280   532 ?        Sl   14:41   0:00 zenglServer: child(0)
+zengl@zengl-ubuntu:~/zenglServer$ kill 4940
+zengl@zengl-ubuntu:~/zenglServer$ ps aux | grep zenglServer
+zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:1 pid:4941 tid:4943
+ **** warning: 0 data length occured 0[0]
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:4941 tid:4943
+Termination signal received! Killing children.
+All children reaped, shutting down.
+closed accept_sem
+shutdowned server socket
+closed server socket
+===================================
 
-Thu Jul  6 17:02:20 2017
-
-GET /test.zl?name=zengl&job=programmer HTTP/1.1
-Host: 192.168.1.104:8083
-User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
-Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3
-Accept-Encoding: gzip, deflate
-Connection: keep-alive
-Upgrade-Insecure-Requests: 1
-Cache-Control: max-age=0
-
-
-要退出zenglServer，直接在终端按Ctrl+C即可。
+可以在logfile中看到Killing children以及shutting down之类的退出信息。
 
 zenglServer有几个可选的命令行参数，可以使用-h查看帮助信息：
 
@@ -107,19 +131,22 @@ zengl@zengl-ubuntu:~/zenglServer$
 通过-v可以查看zenglServer的版本号以及所使用的zengl脚本语言的版本号，-c可以指定需要加载的配置文件(配置文件必须使用zengl脚本语法编写)：
 
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
-zenglServer version: v0.1.0
-zengl language version: v1.7.1
-zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
+zenglServer version: v0.4.0
+zengl language version: v1.7.2
+zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl 
+zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
 use config: config.zl
 *** config is in debug mode ***
 run config.zl complete, config: 
-port: 8083 process_num: 1 thread_num_per_process: 1
+port: 8083 process_num: 1
 webroot: my_webroot
 bind done
 accept sem initialized.
+process_max_open_fd_num: 1024 
+Master: Spawning child(0) [pid 5514] 
+epoll max fd count : 896 
 
-
-zenglServer是在Ubuntu 16.04 LTS x86-64系统中进行的开发测试(GCC版本号为：5.4.0)，并且在CentOS 7 x86-64 (gcc: 4.8.5)中进行了简单的测试。
+zenglServer是在Ubuntu 16.04 LTS x86-64系统中进行的开发测试(GCC版本号为：5.4.0)，并在CentOS 5.8, 6.x, 7.x中进行了简单的测试。
 
 zenglServer的C源代码中，加入了必要的注释信息，读者可以通过阅读源码的相关注释来理解代码。
 

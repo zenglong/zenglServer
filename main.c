@@ -249,9 +249,6 @@ int main(int argc, char * argv[])
 		exit(errno);
 	}
 
-	// 将主进程的名称设置为zenglServer: master，可以在ps aux命令的输出信息中查看到该名称
-	strncpy(current_process_name, "zenglServer: master", 0xff);
-
 	// 当没有使用-c命令行参数指定配置文件名时，就使用默认的配置文件名
 	if(config_file == NULL) {
 		write_to_server_log_pipe(WRITE_TO_LOG, "use default config: " DEFAULT_CONFIG_FILE "\n");
@@ -329,6 +326,9 @@ int main(int argc, char * argv[])
 		write_to_server_log_pipe(WRITE_TO_LOG, "zl_debug_log: %s\n", zl_debug_log);
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源
 	zenglApi_Close(VM);
+
+	// 将主进程的名称设置为zenglServer: master，可以在ps aux命令的输出信息中查看到该名称
+	strncpy(current_process_name, "zenglServer: master", 0xff);
 
 	struct sockaddr_in server_addr;
 	// 创建服务端套接字

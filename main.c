@@ -886,6 +886,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	char full_path[FULL_PATH_SIZE];
 	// status_code存储响应状态码，默认为200
 	int status_code = 200;
+	int content_length = 0;
 	// 如果是访问根目录，则将webroot根目录中的index.html文件里的内容，作为结果反馈给客户端
 	if(strlen(url_path) == 1 && url_path[0] == '/') {
 		tmp_len = strlen("/index.html");
@@ -924,9 +925,13 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			my_data.query_memblock.index = 0;
 			my_data.body_memblock.ptr = ZL_EXP_NULL;
 			my_data.body_memblock.index = 0;
+			my_data.cookie_memblock.ptr = ZL_EXP_NULL;
+			my_data.cookie_memblock.index = 0;
 			my_data.my_parser_data = parser_data;
 			my_data.response_body.str = PTR_NULL;
 			my_data.response_body.count = my_data.response_body.size = 0;
+			my_data.response_header.str = PTR_NULL;
+			my_data.response_header.count = my_data.response_header.size = 0;
 			my_data.resource_list.list = PTR_NULL;
 			my_data.resource_list.count = my_data.resource_list.size = 0;
 			ZL_EXP_VOID * VM;
@@ -951,6 +956,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				write_to_server_log_pipe(WRITE_TO_PIPE, "zengl run <%s> failed: %s\n",full_path, zenglApi_GetErrorString(VM));
 				client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 500 Internal Server Error\r\n", 36);
 				dynamic_string_append(&my_data.response_body, "500 Internal Server Error", 25, 200);
+				status_code = 500;
 			}
 			else {
 				client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 200 OK\r\n", 17);
@@ -962,17 +968,24 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			if(my_data.zl_debug_log != NULL) {
 				fclose(my_data.zl_debug_log);
 			}
+			// 如果在zengl脚本中设置了响应头，则先将响应头输出给客户端
+			if(my_data.response_header.count > 0) {
+				client_socket_list_append_send_data(socket_list, lst_idx, my_data.response_header.str, my_data.response_header.count);
+				// 输出完响应头后，将response_header动态字符串释放掉
+				dynamic_string_free(&my_data.response_header);
+			}
 			// zengl脚本中的输出数据会写入到my_data里的response_body动态字符串中，
 			// 因此，将response_body动态字符串的长度作为Content-Length，并将其作为响应内容，反馈给客户端
 			char response_content_length[20];
-			sprintf(response_content_length, "%d", my_data.response_body.count);
+			content_length = my_data.response_body.count;
+			sprintf(response_content_length, "%d", content_length);
 			client_socket_list_append_send_data(socket_list, lst_idx, "Content-Length: ", 16);
 			client_socket_list_append_send_data(socket_list, lst_idx, response_content_length, strlen(response_content_length));
 			client_socket_list_append_send_data(socket_list, lst_idx, "\r\nConnection: Closed\r\nServer: zenglServer\r\n\r\n", 45);
 			client_socket_list_append_send_data(socket_list, lst_idx, my_data.response_body.str, my_data.response_body.count);
 			// 释放response_body动态字符串
 			dynamic_string_free(&my_data.response_body);
-			doc_fd = -1; // 将其设置为-1，就可以跳过后面的静态内容输出过程，因为上面已经输出过动态脚本的内容了
+			doc_fd = -2; // 将其设置为-2，就可以跳过后面的静态内容输出过程，因为上面已经输出过动态脚本的内容了
 		}
 		else {
 			// 如果不是zengl脚本，则直接打开full_path对应的文件，如果打不开，说明文件不存在，
@@ -1002,7 +1015,8 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			break;
 		}
 		char doc_fd_content_length[20];
-		sprintf(doc_fd_content_length, "%d", (int)lseek(doc_fd, 0, SEEK_END));
+		content_length = (int)lseek(doc_fd, 0, SEEK_END);
+		sprintf(doc_fd_content_length, "%d", content_length);
 		lseek(doc_fd, 0, SEEK_SET);
 		client_socket_list_append_send_data(socket_list, lst_idx, "Content-Length: ", 16);
 		client_socket_list_append_send_data(socket_list, lst_idx, doc_fd_content_length, strlen(doc_fd_content_length));
@@ -1015,9 +1029,13 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		close(doc_fd);
 	}
 	// 如果连404.html也不存在的话，则直接反馈404状态信息
-	else if(status_code == 404) {
+	else if(status_code == 404 && doc_fd == -1) {
 		client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 404 Not Found\r\n", 9);
 		client_socket_list_append_send_data(socket_list, lst_idx, "Connection: Closed\r\nServer: zenglServer\r\n\r\n", 43);
 	}
+	// 在日志中输出响应状态码和响应主体数据的长度
+	write_to_server_log_pipe(WRITE_TO_PIPE, "status: %d, content length: %d\n", status_code, content_length);
+	// 通过client_socket_list_log_response_header函数，在日志中记录完整的响应头信息
+	client_socket_list_log_response_header(socket_list, lst_idx);
 	return lst_idx;
 }

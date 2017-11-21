@@ -138,6 +138,24 @@ void client_socket_list_append_send_data(CLIENT_SOCKET_LIST * list, int idx, voi
 }
 
 /**
+ * 在日志中记录完整的响应头信息
+ */
+void client_socket_list_log_response_header(CLIENT_SOCKET_LIST * list, int idx)
+{
+	if(list->member[idx].send_data.count > 0) {
+		char * data = list->member[idx].send_data.str;
+		// 响应头是以\r\n\r\n结尾的，因此，先确定响应头的结束位置，接着就可以将完整的响应头写入到日志中了
+		char * header_last_ptr = strstr(data, "\r\n\r\n");
+		if(header_last_ptr != NULL) {
+			char prev_char = header_last_ptr[2];
+			header_last_ptr[2] = STR_NULL;
+			write_to_server_log_pipe(WRITE_TO_PIPE, "response header: %s", data);
+			header_last_ptr[2] = prev_char;
+		}
+	}
+}
+
+/**
  * 在调用http_parser_execute函数，解析http协议时，需要传递下面的settings作为参数，
  * 来设置解析时，需要调用的各个回调函数
  */

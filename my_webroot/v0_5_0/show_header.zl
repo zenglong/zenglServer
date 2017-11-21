@@ -1,0 +1,29 @@
+use request, builtin;
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>显示请求头信息</title>
+</head>
+<body>';
+
+print '请求头信息：<br/><br/>';
+headers = rqtGetHeaders();
+for(i=0; bltIterArray(headers,&i,&k,&v); )
+	if(k == 'Cookie')
+		print '<span style="color:green">' + k +": " + v + '</span><br/>';
+	else
+		print k +": " + v + '<br/>';
+	endif
+endfor
+
+if(headers['Cookie'] != '')
+	print '<br/><br/>获取到的Cookie数组：<br/><br/>';
+	cookies = rqtGetCookie();
+	for(i=0; bltIterArray(cookies,&i,&k,&v); )
+		print k +": " + v + '<br/>';
+	endfor
+endif
+
+print '</body></html>';
+

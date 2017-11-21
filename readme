@@ -65,6 +65,12 @@ request header: Host: 192.168.0.105:8083 | Connection: keep-alive | Cache-Contro
 
 url: /
 url_path: /
+status: 200, content length: 90
+response header: HTTP/1.1 200 OK
+Cache-Control: max-age=120
+Content-Length: 90
+Connection: Closed
+Server: zenglServer
 free socket_list[0]/list_cnt:0 epoll_fd_add_count:1 pid:4941 tid:4943
 -----------------------------------
 Sun Nov  5 14:50:25 2017
@@ -74,10 +80,10 @@ request header: Host: 192.168.0.105:8083 | Connection: keep-alive | Accept: */* 
 
 url: /favicon.ico
 url_path: /favicon.ico
-free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:4941 tid:4943
+...........................
 
 
-可以看到请求头信息，请求的url资源路径，处理该请求的pid(进程ID)等
+可以看到请求头信息，请求的url资源路径，处理该请求的pid(进程ID)等，从v0.5.0版本开始，还可以看到完整的response header(响应头)信息
 
 在浏览器中输入测试用的表单地址：http://192.168.0.105:8083/form.html 在表单中随便填些东西，点击Submit提交按钮，交由test.zl测试脚本去处理，处理后会返回类似如下的测试结果：
 

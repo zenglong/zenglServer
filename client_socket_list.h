@@ -37,5 +37,6 @@ void client_socket_list_free_by_idx(CLIENT_SOCKET_LIST * list, int idx);
 int client_socket_list_process_epollin(CLIENT_SOCKET_LIST * list, int client_socket_fd);
 int client_socket_list_process_epollout(CLIENT_SOCKET_LIST * list, int idx);
 void client_socket_list_append_send_data(CLIENT_SOCKET_LIST * list, int idx, void * data, int data_len);
+void client_socket_list_log_response_header(CLIENT_SOCKET_LIST * list, int idx);
 
 #endif /* CLIENT_SOCKET_LIST_H_ */

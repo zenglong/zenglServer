@@ -12,6 +12,76 @@
 #include <ctype.h>
 #include <stdlib.h>
 
+// 枚举值用于判断当前读取到的multipart头信息是Content-Disposition头信息
+// 还是Content-Type头信息
+enum _my_multipart_header_status {
+	MY_MULTIPART_HEADER_STATUS_NONE = 0,
+	MY_MULTIPART_HEADER_STATUS_DISPOSITION = 1,
+	MY_MULTIPART_HEADER_STATUS_CONTENT_TYPE = 2
+};
+
+// 对multipart头信息对应的值进行名值对解析时，需要用到的状态机
+enum _my_parser_status {
+	m_p_status_start = 1,
+	m_p_status_key_start,
+	m_p_status_key_end,
+	m_p_status_before_value,
+	m_p_status_value_start,
+	m_p_status_value_escape,
+	m_p_status_value_end,
+	m_p_status_end
+};
+
+// 对请求头中的Cookie名值对进行解析时，需要用到的状态机
+enum _my_cookie_parser_status {
+	m_cookie_p_status_start = 1,
+	m_cookie_p_status_key_start,
+	m_cookie_p_status_key_end,
+	m_cookie_p_status_value_start
+};
+
+// 从multipart中解析的各种数据，例如，通过Content-Disposition头信息可以解析到name和filename
+// 从Content-Type头信息中可以解析到content_type内容类型
+// content字段会指向每个part的具体数据内容
+struct _my_multipart {
+	char * name;
+	char * filename;
+	char * content_type;
+	char * content;
+	int name_length;
+	int filename_length;
+	int content_type_length;
+	int content_length;
+};
+
+// 解析到的name，filename，content_type，content等，最终会通过zenglApi_AllocMem
+// 或者zenglApi_ReAllocMem为其分配相应堆空间，以方便进行解码和zenglApi_SetMemBlockByHashKey设置内存块数据的操作
+struct _my_multipart_alloc {
+	char * name;
+	char * filename;
+	char * content_type;
+	char * content;
+};
+
+typedef enum _my_multipart_header_status my_multipart_header_status;
+typedef enum _my_parser_status my_parser_status;
+typedef enum _my_cookie_parser_status my_cookie_parser_status;
+typedef struct _my_multipart my_multipart;
+typedef struct _my_multipart_alloc my_multipart_alloc;
+
+// 使用第三方multipart_parser库解析multipart数据时，可以通过multipart_parser的
+// data字段向其传递一个额外的自定义数据，下面的my_multipart_data结构体就是我们需要
+// 传递的自定义数据，里面有VM_ARG(zengl虚拟机指针)，需要设置的memblock内存块，part和part_alloc(存储解析到的数据)等
+struct _my_multipart_data {
+	my_multipart_header_status status;
+	my_multipart part;
+	my_multipart_alloc part_alloc;
+	ZL_EXP_VOID * VM_ARG;
+	ZENGL_EXPORT_MEMBLOCK * memblock;
+};
+
+typedef struct _my_multipart_data my_multipart_data;
+
 /**
  * 对src字符串参数进行url解码，并存储到dest目标字符串中
  * 例如：%E7%A8%8B%E5%BA%8F%E5%91%98 解码后对应的就是UTF8编码的字符串“程序员”
@@ -193,152 +263,6 @@ static void get_headers(ZL_EXP_VOID * VM_ARG, MAIN_DATA * my_data)
 		return;
 	}
 }
-
-/**
- * rqtGetHeaders模块函数，将请求头中的field和value字符串组成名值对，存储到哈希数组中，
- * 并将该数组作为结果返回，例如：
- * headers = rqtGetHeaders();
- * print 'user agent: ' + headers['User-Agent'] + '<br/>';
- * 该例子通过模块函数，获取到头部信息，并通过headers['User-Agent']来获取到浏览器的UA信息
- * 该模块函数只会在脚本第一次调用时，创建哈希数组，之后再调用该函数时，就会直接将之前创建的数组返回
- */
-ZL_EXP_VOID module_request_GetHeaders(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
-{
-	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
-	get_headers(VM_ARG, my_data);
-	zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->headers_memblock);
-}
-
-/**
- * rqtGetBody模块函数，用于返回请求的body(主体数据)，如果没有请求主体数据，则返回空字符串，
- * 例如：
- * body = rqtGetBody();
- * if(body)
- * 		print 'request body: ' + body;
- * endif
- * 对于application/x-www-form-urlencoded类型(表单提交时Content-Type的默认类型)的post请求，该例子可能显示的结果为：
- * request body: title=hello&description=world&content=test&sb=Submit
- * 如果指定了第一个参数，那么模块函数会将body(主体数据)的总的字节数写入到该参数中，
- * 例如：rqtGetBody(&body_count) 会将字节数写入到body_count变量里，
- * 如果指定了第二个参数，那么模块函数还会将body(主体数据)的起始字节的指针值写入到该参数中，
- * 例如：rqtGetBody(&body_count, &body_ptr) 会将字节数写入到body_count变量，同时将指针值写入到body_ptr变量，
- * 获取到指针值后，就可以通过bltWriteFile模块函数将body的所有数据(包括上传文件的二进制数据)都写入到文件中，
- * 当然也可以通过其他模块函数，利用指针去做别的事情，
- * 第一个和第二个参数必须是address type(引用类型)
- */
-ZL_EXP_VOID module_request_GetBody(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
-{
-	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
-	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
-	MY_PARSER_DATA * my_parser_data = my_data->my_parser_data;
-
-	if(argcount == 1 || argcount == 2) {
-		zenglApi_GetFunArgInfo(VM_ARG,1,&arg);
-		switch(arg.type){
-		case ZL_EXP_FAT_ADDR:
-		case ZL_EXP_FAT_ADDR_LOC:
-		case ZL_EXP_FAT_ADDR_MEMBLK:
-			break;
-		default:
-			zenglApi_Exit(VM_ARG,"the first argument of rqtGetBody must be address type");
-			break;
-		}
-		arg.type = ZL_EXP_FAT_INT;
-		// 如果追加了NULL字符(正常情况都会追加)，那么body的count的值，会比实际追加的请求主体数据的字节数多一个字节，这里我们只返回实际的字节数
-		if(my_parser_data->is_request_body_append_null == ZL_EXP_TRUE)
-			arg.val.integer = (my_parser_data->request_body.count - 1);
-		else
-			arg.val.integer = my_parser_data->request_body.count;
-		zenglApi_SetFunArg(VM_ARG,1,&arg);
-		if(argcount == 2) {
-			zenglApi_GetFunArgInfo(VM_ARG,2,&arg);
-			switch(arg.type){
-			case ZL_EXP_FAT_ADDR:
-			case ZL_EXP_FAT_ADDR_LOC:
-			case ZL_EXP_FAT_ADDR_MEMBLK:
-				break;
-			default:
-				zenglApi_Exit(VM_ARG,"the second argument of rqtGetBody must be address type");
-				break;
-			}
-			arg.type = ZL_EXP_FAT_INT;
-			arg.val.integer = (ZL_EXP_LONG)my_parser_data->request_body.str;
-			zenglApi_SetFunArg(VM_ARG,2,&arg);
-		}
-	}
-	else if(argcount != 0) {
-		zenglApi_Exit(VM_ARG,"usage: rqtGetBody() | rqtGetBody(&body_count) | rqtGetBody(&body_count, &body_ptr)");
-	}
-
-	if(my_parser_data->request_body.str != PTR_NULL && my_parser_data->request_body.count > 0) {
-		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, my_parser_data->request_body.str, 0, 0);
-	}
-	else {
-		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, "", 0, 0);
-	}
-}
-
-/*** 与multipart解析相关的枚举值，类型定义，以及结构体的定义 ***/
-
-// 枚举值用于判断当前读取到的multipart头信息是Content-Disposition头信息
-// 还是Content-Type头信息
-enum _my_multipart_header_status {
-	MY_MULTIPART_HEADER_STATUS_NONE = 0,
-	MY_MULTIPART_HEADER_STATUS_DISPOSITION = 1,
-	MY_MULTIPART_HEADER_STATUS_CONTENT_TYPE = 2
-};
-
-// 对multipart头信息对应的值进行名值对解析时，需要用到的状态机
-enum _my_parser_status {
-	m_p_status_start = 1,
-	m_p_status_key_start,
-	m_p_status_key_end,
-	m_p_status_before_value,
-	m_p_status_value_start,
-	m_p_status_value_escape,
-	m_p_status_value_end,
-	m_p_status_end
-};
-
-typedef enum _my_multipart_header_status my_multipart_header_status;
-typedef enum _my_parser_status my_parser_status;
-typedef struct _my_multipart my_multipart;
-typedef struct _my_multipart_data my_multipart_data;
-typedef struct _my_multipart_alloc my_multipart_alloc;
-
-// 从multipart中解析的各种数据，例如，通过Content-Disposition头信息可以解析到name和filename
-// 从Content-Type头信息中可以解析到content_type内容类型
-// content字段会指向每个part的具体数据内容
-struct _my_multipart {
-	char * name;
-	char * filename;
-	char * content_type;
-	char * content;
-	int name_length;
-	int filename_length;
-	int content_type_length;
-	int content_length;
-};
-
-// 解析到的name，filename，content_type，content等，最终会通过zenglApi_AllocMem
-// 或者zenglApi_ReAllocMem为其分配相应堆空间，以方便进行解码和zenglApi_SetMemBlockByHashKey设置内存块数据的操作
-struct _my_multipart_alloc {
-	char * name;
-	char * filename;
-	char * content_type;
-	char * content;
-};
-
-// 使用第三方multipart_parser库解析multipart数据时，可以通过multipart_parser的
-// data字段向其传递一个额外的自定义数据，下面的my_multipart_data结构体就是我们需要
-// 传递的自定义数据，里面有VM_ARG(zengl虚拟机指针)，需要设置的memblock内存块，part和part_alloc(存储解析到的数据)等
-struct _my_multipart_data {
-	my_multipart_header_status status;
-	my_multipart part;
-	my_multipart_alloc part_alloc;
-	ZL_EXP_VOID * VM_ARG;
-	ZENGL_EXPORT_MEMBLOCK * memblock;
-};
 
 // 使用状态机，将multipart请求头中的名值对信息解析出来
 // 例如：Content-Disposition: form-data; name="我的文件"; filename="splashimage.jpg"
@@ -613,6 +537,157 @@ static int on_multipart_data_end(multipart_parser * p)
 }
 
 /**
+ * 使用状态机，将请求头中的Cookie名值对信息解析出来
+ * 例如：Cookie: name=zengl; hobby=play game;
+ * 下面的函数可以将name -> zengl和hobby -> play game这样的名值对信息给解析出来
+ * 外部调用者，就可以通过解析出来的key(名)，value(值)，来设置哈希数组成员
+ */
+static int parse_cookie_header_value(char * s, int s_len,
+						char ** key, int * key_len,
+						char ** value, int * value_len)
+{
+	char c;
+	char * k = NULL, * v = NULL;
+	int k_len = 0, v_len = 0;
+	int i;
+	my_cookie_parser_status status = m_cookie_p_status_start;
+	for(i = 0; i < s_len; i++) {
+		c = s[i];
+		if(c == ';') {
+			i++;
+			break;
+		}
+		switch(status){
+		case m_cookie_p_status_start:
+			if(c != ' ') {
+				if(c == '=') {
+					k_len = 0;
+					status = m_cookie_p_status_key_end;
+				}
+				else {
+					k = &s[i];
+					k_len++;
+					status = m_cookie_p_status_key_start;
+				}
+			}
+			break;
+		case m_cookie_p_status_key_start:
+			if(c == '=')
+				status = m_cookie_p_status_key_end;
+			else
+				k_len++;
+			break;
+		case m_cookie_p_status_key_end:
+			v = &s[i];
+			v_len++;
+			status = m_cookie_p_status_value_start;
+			break;
+		case m_cookie_p_status_value_start:
+			v_len++;
+			break;
+		}
+	}
+	// 对于请求头 Cookie: name=zengl; hobby=play game; hello worlds
+	// 其中 hello worlds 等效于 =hello worlds ，也就是key是空的，因此，这种情况，需要将解析出来的key作为value进行返回，而key则设置为NULL
+	if(status == m_cookie_p_status_key_start) {
+		// 将k对应的指针赋值给v，长度赋值给v_len，再将k设置为NULL，k_len设置为0，也就是将解析出来的key设置为空，并将原始的key作为value返回
+		v = k;
+		v_len = k_len;
+		k = NULL;
+		k_len = 0;
+	}
+	(*key) = k;
+	(*key_len) = k_len;
+	(*value) = v;
+	(*value_len) = v_len;
+	return i;
+}
+
+/**
+ * rqtGetHeaders模块函数，将请求头中的field和value字符串组成名值对，存储到哈希数组中，
+ * 并将该数组作为结果返回，例如：
+ * headers = rqtGetHeaders();
+ * print 'user agent: ' + headers['User-Agent'] + '<br/>';
+ * 该例子通过模块函数，获取到头部信息，并通过headers['User-Agent']来获取到浏览器的UA信息
+ * 该模块函数只会在脚本第一次调用时，创建哈希数组，之后再调用该函数时，就会直接将之前创建的数组返回
+ */
+ZL_EXP_VOID module_request_GetHeaders(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	get_headers(VM_ARG, my_data);
+	zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->headers_memblock);
+}
+
+/**
+ * rqtGetBody模块函数，用于返回请求的body(主体数据)，如果没有请求主体数据，则返回空字符串，
+ * 例如：
+ * body = rqtGetBody();
+ * if(body)
+ * 		print 'request body: ' + body;
+ * endif
+ * 对于application/x-www-form-urlencoded类型(表单提交时Content-Type的默认类型)的post请求，该例子可能显示的结果为：
+ * request body: title=hello&description=world&content=test&sb=Submit
+ * 如果指定了第一个参数，那么模块函数会将body(主体数据)的总的字节数写入到该参数中，
+ * 例如：rqtGetBody(&body_count) 会将字节数写入到body_count变量里，
+ * 如果指定了第二个参数，那么模块函数还会将body(主体数据)的起始字节的指针值写入到该参数中，
+ * 例如：rqtGetBody(&body_count, &body_ptr) 会将字节数写入到body_count变量，同时将指针值写入到body_ptr变量，
+ * 获取到指针值后，就可以通过bltWriteFile模块函数将body的所有数据(包括上传文件的二进制数据)都写入到文件中，
+ * 当然也可以通过其他模块函数，利用指针去做别的事情，
+ * 第一个和第二个参数必须是address type(引用类型)
+ */
+ZL_EXP_VOID module_request_GetBody(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	MY_PARSER_DATA * my_parser_data = my_data->my_parser_data;
+
+	if(argcount == 1 || argcount == 2) {
+		zenglApi_GetFunArgInfo(VM_ARG,1,&arg);
+		switch(arg.type){
+		case ZL_EXP_FAT_ADDR:
+		case ZL_EXP_FAT_ADDR_LOC:
+		case ZL_EXP_FAT_ADDR_MEMBLK:
+			break;
+		default:
+			zenglApi_Exit(VM_ARG,"the first argument of rqtGetBody must be address type");
+			break;
+		}
+		arg.type = ZL_EXP_FAT_INT;
+		// 如果追加了NULL字符(正常情况都会追加)，那么body的count的值，会比实际追加的请求主体数据的字节数多一个字节，这里我们只返回实际的字节数
+		if(my_parser_data->is_request_body_append_null == ZL_EXP_TRUE)
+			arg.val.integer = (my_parser_data->request_body.count - 1);
+		else
+			arg.val.integer = my_parser_data->request_body.count;
+		zenglApi_SetFunArg(VM_ARG,1,&arg);
+		if(argcount == 2) {
+			zenglApi_GetFunArgInfo(VM_ARG,2,&arg);
+			switch(arg.type){
+			case ZL_EXP_FAT_ADDR:
+			case ZL_EXP_FAT_ADDR_LOC:
+			case ZL_EXP_FAT_ADDR_MEMBLK:
+				break;
+			default:
+				zenglApi_Exit(VM_ARG,"the second argument of rqtGetBody must be address type");
+				break;
+			}
+			arg.type = ZL_EXP_FAT_INT;
+			arg.val.integer = (ZL_EXP_LONG)my_parser_data->request_body.str;
+			zenglApi_SetFunArg(VM_ARG,2,&arg);
+		}
+	}
+	else if(argcount != 0) {
+		zenglApi_Exit(VM_ARG,"usage: rqtGetBody() | rqtGetBody(&body_count) | rqtGetBody(&body_count, &body_ptr)");
+	}
+
+	if(my_parser_data->request_body.str != PTR_NULL && my_parser_data->request_body.count > 0) {
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, my_parser_data->request_body.str, 0, 0);
+	}
+	else {
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, "", 0, 0);
+	}
+}
+
+/**
  * rqtGetBodyAsArray模块函数，主要用于将POST请求的主体数据转为数组的形式返回，
  * 该模块函数既可以解析Content-Type为application/x-www-form-urlencoded的表单请求，
  * 也可以解析Content-Type为multipart/form-data的请求
@@ -824,6 +899,114 @@ ZL_EXP_VOID module_request_GetQuery(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 }
 
 /**
+ * rqtSetResponseHeader模块函数，用于设置需要输出到客户端的响应头
+ * 例如：rqtSetResponseHeader("Set-Cookie: name=zengl"); 在执行后
+ * 响应头中就会输出Set-Cookie: name=zengl\r\n信息，从而可以设置客户端的cookie
+ */
+ZL_EXP_VOID module_request_SetResponseHeader(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount != 1)
+		zenglApi_Exit(VM_ARG,"usage: rqtSetHeader(response_header)");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument of rqtSetHeader must be string");
+	}
+	char * response_header = arg.val.str;
+	int response_header_length = strlen(response_header);
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	dynamic_string_append(&my_data->response_header, response_header, response_header_length, RESPONSE_HEADER_STR_SIZE);
+	dynamic_string_append(&my_data->response_header, "\r\n", 2, RESPONSE_HEADER_STR_SIZE);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, (response_header_length + 2), 0);
+}
+
+/**
+ * rqtGetResponseHeader模块函数，用于返回脚本中设置过的响应头信息
+ */
+ZL_EXP_VOID module_request_GetResponseHeader(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	// 响应头信息存储在response_header动态字符串中
+	if(my_data->response_header.count > 0) {
+		char * response_header = (char *)zenglApi_AllocMem(VM_ARG, my_data->response_header.count + 1);
+		strncpy(response_header, my_data->response_header.str, my_data->response_header.count);
+		// 动态字符串是通过response_header.count来确定字符串的长度的，并没有对数据进行过清0处理，因此，需要手动追加一个'\0'的字符串终止符，这样返回的字符串中才不会包含count后的无效字符。
+		response_header[my_data->response_header.count] = STR_NULL;
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, response_header, 0, 0);
+		zenglApi_FreeMem(VM_ARG, response_header);
+	}
+	else {
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, "", 0, 0);
+	}
+}
+
+/**
+ * rqtGetCookie模块函数，用于将请求头中的Cookie名值对信息以数组的形式返回
+ * 例如：
+ * cookies = rqtGetCookie();
+ * for(i=0; bltIterArray(cookies,&i,&k,&v); )
+ *		print k +": " + v + '<br/>';
+ * endfor
+ * 该脚本在执行时，如果客户端的请求头中包含 Cookie: name=zengl; hobby=play game; hello worlds 信息时
+ * 执行的结果就会是：
+ *	name: zengl
+ *	hobby: play game
+ *	: hello worlds
+ *	请求头Cookie中的hello worlds等效于=hello worlds，也就是key为空
+ */
+ZL_EXP_VOID module_request_GetCookie(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(my_data->cookie_memblock.ptr == ZL_EXP_NULL) {
+		if(zenglApi_CreateMemBlock(VM_ARG,&my_data->cookie_memblock,0) == -1) {
+			zenglApi_Exit(VM_ARG,zenglApi_GetErrorString(VM_ARG));
+		}
+		zenglApi_AddMemBlockRefCount(VM_ARG,&my_data->cookie_memblock,1); // 手动增加该内存块的引用计数值，使其不会在脚本函数返回时，被释放掉。
+		get_headers(VM_ARG, my_data);
+		ZENGL_EXPORT_MOD_FUN_ARG cookie_header_value = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "Cookie");
+		if(cookie_header_value.type == ZL_EXP_FAT_STR) {
+			ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+			char *s,*k,*v, prev_last_k_char, prev_last_v_char;
+			int s_len, k_len, v_len, count;
+			s = cookie_header_value.val.str; s_len = strlen(cookie_header_value.val.str);
+			while(s_len > 0) {
+				count = parse_cookie_header_value(s, s_len, &k, &k_len, &v, &v_len);
+				if(k_len > 0) {
+					prev_last_k_char = k[k_len];
+					k[k_len] = STR_NULL;
+					arg.type = ZL_EXP_FAT_STR;
+					if(v_len > 0) {
+						prev_last_v_char = v[v_len];
+						v[v_len] = STR_NULL;
+						arg.val.str = v;
+						zenglApi_SetMemBlockByHashKey(VM_ARG, &my_data->cookie_memblock, k, &arg);
+						v[v_len] = prev_last_v_char;
+					}
+					else if(v_len == 0) {
+						arg.val.str = "";
+						zenglApi_SetMemBlockByHashKey(VM_ARG, &my_data->cookie_memblock, k, &arg);
+					}
+					k[k_len] = prev_last_k_char;
+				}
+				else if(k_len == 0 && v_len > 0) {
+					prev_last_v_char = v[v_len];
+					v[v_len] = STR_NULL;
+					arg.val.str = v;
+					zenglApi_SetMemBlockByHashKey(VM_ARG, &my_data->cookie_memblock, "", &arg);
+					v[v_len] = prev_last_v_char;
+				}
+				s += count;
+				s_len -= count;
+			}
+		}
+		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->cookie_memblock);
+	}
+	else {
+		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->cookie_memblock);
+	}
+}
+
+/**
  * request模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
 ZL_EXP_VOID module_request_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
@@ -833,4 +1016,7 @@ ZL_EXP_VOID module_request_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetBodyAsArray",module_request_GetBodyAsArray);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetQueryAsString",module_request_GetQueryAsString);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetQuery",module_request_GetQuery);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtSetResponseHeader",module_request_SetResponseHeader);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetResponseHeader",module_request_GetResponseHeader);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"rqtGetCookie",module_request_GetCookie);
 }

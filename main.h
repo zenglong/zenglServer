@@ -15,7 +15,7 @@
 #include <stdio.h>
 
 #define ZLSERVER_MAJOR_VERSION 0  // zenglServer 主版本号
-#define ZLSERVER_MINOR_VERSION 4  // zenglServer 子版本号
+#define ZLSERVER_MINOR_VERSION 5  // zenglServer 子版本号
 #define ZLSERVER_REVISION 0       // zenglServer 修正版本号
 
 #define URL_PATH_SIZE 120    // main.c中url_path可以容纳的字符数
@@ -25,6 +25,7 @@
 #define REQUEST_BODY_STR_SIZE 200     // MY_PARSER_DATA结构体中request_body动态字符串初始化及动态扩容的大小
 #define REQUEST_URL_STR_SIZE 200      // MY_PARSER_DATA结构体中request_url动态字符串初始化及动态扩容的大小
 #define RESPONSE_BODY_STR_SIZE 2000   // MAIN_DATA结构体中response_body动态字符串初始化及动态扩容的大小
+#define RESPONSE_HEADER_STR_SIZE 200  // MAIN_DATA结构体中response_header动态字符串初始化及动态扩容的大小
 
 #define REQUEST_HEADER_STR_MAX_SIZE 5000  // request_header动态字符串的最大允许长度
 #define REQUEST_BODY_STR_MAX_SIZE 200000  // request_body动态字符串的最大允许长度
@@ -60,8 +61,10 @@ typedef struct _MAIN_DATA{
 	ZENGL_EXPORT_MEMBLOCK headers_memblock; // 该内存块作为哈希数组，用于存储请求头中所有的field和value构成的名值对信息
 	ZENGL_EXPORT_MEMBLOCK query_memblock;   // 该内存块作为哈希数组，用于存储查询字符串中所有的名值对信息
 	ZENGL_EXPORT_MEMBLOCK body_memblock;    // 该内存块作为哈希数组，用于存储解析后的body名值对信息
+	ZENGL_EXPORT_MEMBLOCK cookie_memblock;  // 该内存块作为哈希数组，用于存储请求头中的cookie名值对信息
 	MY_PARSER_DATA * my_parser_data; // 需要依赖该结构里的解析结果来获取各种所需的数据，例如：里面的url_parser字段，可以用于获取查询字符串等
 	DYNAMIC_STRING response_body;    // zengl脚本的输出内容会先追加到response_body动态字符串中，最后在脚本结束时，再将该动态字符串作为响应主体反馈给客户端
+	DYNAMIC_STRING response_header;  // zengl脚本中设置的响应头信息
 	RESOURCE_LIST resource_list; // 资源列表中存储了在脚本退出时，需要自动清理的资源，例如mysql数据库连接资源，mysql查询结果相关的资源等等
 	char * full_path;
 } MAIN_DATA;

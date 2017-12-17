@@ -15,6 +15,7 @@
 #ifdef USE_MYSQL
 #include "module_mysql.h"
 #endif
+#include "module_session.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,8 +35,10 @@
 #include <semaphore.h>
 #include <pthread.h>
 #include <stdarg.h>
+#include <dirent.h>
 
 void fork_child_process(int idx);
+void fork_cleaner_process();
 void register_signals();
 int trap_signals(ZL_EXP_BOOL on);
 
@@ -70,6 +73,9 @@ typedef struct _MY_SIG_PAIR{
 #define THREAD_NUM_MAX 3 // (暂不使用，epoll模式下，实际的工作线程数暂时由程序自己确定!)
 #define MAX_EPOLL_EVENTS 64 // 每次epoll_wait时，最多可以读取的事件数，如果事件数超过该数量，则剩下的事件将等到下一次epoll_wait时再取出来
 #define WEB_ROOT_DEFAULT "webroot" // 如果配置文件中没有设置webroot时，就使用该宏对应的目录名作为web的根目录的目录名
+#define SESSION_DIR_DEFAULT "sessions" // 如果配置文件中没有设置session_dir时，就使用该宏对应的目录名作为会话文件的存储目录
+#define SESSION_EXPIRE 1440 // 如果配置文件中没有设置session_expire时，就使用该宏的值作为session会话的超时时间(以秒为单位)
+#define SESSION_CLEANER_INTERVAL 3600 // 如果配置文件中没有设置session_cleaner_interval时，就使用该宏的值作为会话文件清理进程的清理时间间隔(以秒为单位)
 #define DEFAULT_CONFIG_FILE "config.zl" // 当启动zenglServer时，如果没有使用-c命令行参数来指定配置文件名时，就会使用该宏对应的值来作为默认的配置文件名
 #define SERVER_LOG_PIPE_STR_SIZE 1024 // 写入日志的动态字符串的初始化及动态扩容的大小
 #define WRITE_TO_PIPE 1 // 子进程统一将日志写入管道中，再由主进程从管道中将日志读取出来并写入日志文件
@@ -80,6 +86,7 @@ int server_log_fd = -1;   // 为守护进程打开的日志文件的文件描述
 int server_log_pipefd[2]; // 该数组用于存储管道的文件描述符，子进程会将日志写入管道的一端，主进程则从另一端将其读取出来
 int server_sig_count = 0; // 需要注册的信号数
 pid_t server_child_process[0xff]; // 存储子进程的进程ID，目前最多存储255个
+pid_t server_cleaner_process; // 存储cleaner进程的进程ID
 MY_SIG_PAIR server_sig_pairs[0xff]; // 该数组，用于注册要处理的信号，以及设置处理信号的C函数
 MY_SERVER_LOG_STR server_log_pipe_string = {0}; // 写入日志时，会根据format格式，动态的构建需要写入的字符串
 MY_THREAD_LOCK my_thread_lock = {0}; // 全局锁变量，包含了进程锁和线程锁
@@ -95,6 +102,10 @@ char config_zl_debug_log[120]; // 该全局变量用于存储配置文件中的z
 char * webroot; // 该字符串指针指向最终会使用的web根目录名，当配置文件中配置了webroot时，该指针就会指向上面的config_web_root，否则就指向WEB_ROOT_DEFAULT即默认的web根目录名
 char * zl_debug_log; // 该字符串指针指向最终会使用的zl_debug_log的值，当配置文件中设置了zl_debug_log时，就指向上面的config_zl_debug_log，否则就设置为NULL(空指针)
 
+static char config_session_dir[120]; // session会话目录
+static long config_session_expire; // session会话默认超时时间(以秒为单位)
+static long config_session_cleaner_interval; // session会话文件清理进程的清理时间间隔(以秒为单位)
+
 char * main_get_webroot()
 {
 	return webroot;
@@ -109,6 +120,19 @@ int main_full_path_append(char * full_path, int full_path_length, int full_path_
 	if(append_path_length > 0)
 		strncpy((full_path + full_path_length), append_path, append_path_length);
 	return append_path_length;
+}
+
+/**
+ * 模块函数中，可以通过此函数来获取配置文件设置过的会话目录，会话超时时间，以及cleaner进程的清理时间间隔
+ */
+void main_get_session_config(char ** session_dir, long * session_expire, long * session_cleaner_interval)
+{
+	if(session_dir != NULL)
+		(*session_dir) = config_session_dir;
+	if(session_expire != NULL)
+		(*session_expire) = config_session_expire;
+	if(session_cleaner_interval != NULL)
+		(*session_cleaner_interval) = config_session_cleaner_interval;
 }
 
 /**
@@ -299,7 +323,7 @@ int main(int argc, char * argv[])
 	// 因为当虚拟机被关闭时，会释放掉虚拟机分配过的所有字符串资源，所以需要将字符串保存到其他地方
 	else if(strlen(webroot) < sizeof(config_web_root)){
 		strncpy(config_web_root, webroot, strlen(webroot));
-		config_web_root[strlen(webroot) + 1] = '\0';
+		config_web_root[strlen(webroot)] = '\0';
 		webroot = config_web_root;
 	}
 	// 否则抛出警告，并使用默认的web根目录名
@@ -318,12 +342,35 @@ int main(int argc, char * argv[])
 		config_zl_debug_log[zl_debug_log_len] = '\0';
 		zl_debug_log = config_zl_debug_log;
 	}
+
+	char * session_dir;
+	// 获取配置文件中设置的session_dir会话目录，如果没有定义，则默认使用SESSION_DIR_DEFAULT宏定义的值
+	if((session_dir = zenglApi_GetValueAsString(VM,"session_dir")) == NULL)
+		session_dir = SESSION_DIR_DEFAULT;
+	else if(strlen(session_dir) >= sizeof(config_session_dir)) {
+		write_to_server_log_pipe(WRITE_TO_LOG, "warning: session_dir in %s is too long, use default session_dir\n", config_file);
+		session_dir = SESSION_DIR_DEFAULT;
+	}
+	strncpy(config_session_dir, session_dir, strlen(session_dir));
+	config_session_dir[strlen(session_dir)] = '\0';
+
+	// 获取配置文件中设置的session_expire会话文件的过期时间，如果没有定义，则默认使用SESSION_EXPIRE宏定义的值
+	if(zenglApi_GetValueAsInt(VM,"session_expire", &config_session_expire) < 0)
+		config_session_expire = SESSION_EXPIRE;
+
+	// 获取配置文件中设置的session_cleaner_interval清理进程的清理时间间隔，如果没有定义，则默认使用SESSION_CLEANER_INTERVAL宏定义的值
+	if(zenglApi_GetValueAsInt(VM,"session_cleaner_interval", &config_session_cleaner_interval) < 0)
+		config_session_cleaner_interval = SESSION_CLEANER_INTERVAL;
+
 	// 显示出配置文件中定义的配置信息，如果配置文件没有定义这些值，则显示出默认值
 	write_to_server_log_pipe(WRITE_TO_LOG, "run %s complete, config: \n", config_file);
 	write_to_server_log_pipe(WRITE_TO_LOG, "port: %ld process_num: %ld\n", port, server_process_num);
 	write_to_server_log_pipe(WRITE_TO_LOG, "webroot: %s\n", webroot);
 	if(zl_debug_log != NULL)
 		write_to_server_log_pipe(WRITE_TO_LOG, "zl_debug_log: %s\n", zl_debug_log);
+	write_to_server_log_pipe(WRITE_TO_LOG, "session_dir: %s session_expire: %ld cleaner_interval: %ld\n", config_session_dir,
+			config_session_expire,
+			config_session_cleaner_interval);
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源
 	zenglApi_Close(VM);
 
@@ -384,6 +431,9 @@ int main(int argc, char * argv[])
 	{
 		fork_child_process(i);
 	}
+
+	// 创建cleaner清理进程，该进程会定期清理过期的会话文件
+	fork_cleaner_process();
 
 	// 注册信号，主要是进程终止信号，子进程结束信号等
 	register_signals();
@@ -471,6 +521,91 @@ void fork_child_process(int idx)
 }
 
 /**
+ * 创建cleaner清理进程，该进程会定期清理过期的会话文件
+ */
+void fork_cleaner_process()
+{
+	pid_t childpid = fork();
+
+	if(childpid == 0) {
+		// 设置cleaner进程的进程名
+		snprintf(current_process_name, 0xff, "zenglServer: cleaner");
+		// 将cleaner进程从父进程继承过来的信号处理函数取消掉
+		if (!trap_signals(ZL_EXP_FALSE)) {
+			fprintf(stderr, "Cleaner [pid:%d]: trap_signals() failed!\n", childpid);
+			exit(1);
+		}
+		do {
+			DIR * dp;
+			struct dirent * ep;
+			char * path = config_session_dir;
+			char filename[SESSION_FILEPATH_MAX_LEN];
+			int path_dir_len = strlen(path);
+			int ep_name_len, left_len;
+			struct stat ep_stat;
+			strncpy(filename, path, path_dir_len);
+			filename[path_dir_len] = '/';
+			left_len = SESSION_FILEPATH_MAX_LEN - path_dir_len - 2;
+
+			dp = opendir(path);
+			if (dp != NULL)
+			{
+				time_t cur_time = time(NULL);
+				time_t compare_time = (cur_time - 10); // 删除10秒前的超时会话文件，预留10秒，防止当前时间刚生成的会话文件被误删除
+				int cpy_len;
+				while((ep = readdir(dp)))
+				{
+					ep_name_len = strlen(ep->d_name);
+					if(ep_name_len > 20) {
+						cpy_len = (ep_name_len <= left_len) ?  ep_name_len : left_len;
+						strncpy(filename + path_dir_len + 1, ep->d_name, cpy_len);
+						filename[path_dir_len + 1 + cpy_len] = '\0';
+						if(stat(filename, &ep_stat) == 0) {
+							if(ep_stat.st_mtime < compare_time) {
+								remove(filename);
+								write_to_server_log_pipe(WRITE_TO_PIPE, "************ cleaner remove file: %s [m_time:%d < %d]\n", ep->d_name, ep_stat.st_mtime, compare_time);
+							}
+						}
+						else
+							write_to_server_log_pipe(WRITE_TO_PIPE, "!!!******!!! cleaner remove \"%s\" failed [%d] %s\n", filename, errno, strerror(errno));
+					}
+				}
+				closedir(dp);
+			}
+			else {
+				write_to_server_log_pipe(WRITE_TO_PIPE, "!!!******!!! cleaner opendir \"%s\" failed [%d] %s\n", path, errno, strerror(errno));
+			}
+			write_to_server_log_pipe(WRITE_TO_PIPE, "------------ cleaner sleep begin: %d\n", time(NULL));
+			sleep(config_session_cleaner_interval);
+			write_to_server_log_pipe(WRITE_TO_PIPE, "------------ cleaner sleep end: %d\n", time(NULL));
+		} while(1);
+	}
+	else if(childpid > 0) { // childpid大于0，表示当前是主进程，就向日志中输出创建的子进程的信息
+		write_to_server_log_pipe(WRITE_TO_LOG, "Master: Spawning cleaner [pid %d] \n", childpid);
+		server_cleaner_process = childpid;
+	}
+}
+
+/**
+ * 将子进程退出的原因写入到日志中
+ */
+static void log_sig_child_exit(const char * child_name, pid_t pid, int status)
+{
+	if (WIFEXITED(status))
+		write_to_server_log_pipe(WRITE_TO_LOG, "%s PID %d exited normally.  Exit number:  %d\n", child_name, pid, WEXITSTATUS(status));
+	else {
+		if (WIFSTOPPED(status))
+			write_to_server_log_pipe(WRITE_TO_LOG, "%s PID %d was stopped by %d\n", child_name, pid, WSTOPSIG(status));
+		else {
+			if (WIFSIGNALED(status))
+				write_to_server_log_pipe(WRITE_TO_LOG, "%s PID %d exited due to signal %d\n.", child_name, pid, WTERMSIG(status));
+			else
+				write_to_server_log_pipe(WRITE_TO_LOG, "%s PID %d exited, status: %d", child_name, pid, status);
+		}
+	}
+}
+
+/**
  * 子进程退出时，主进程会收到SIGCHLD信号，并触发下面这个sig_child_callback函数去处理该信号
  */
 void sig_child_callback()
@@ -491,22 +626,26 @@ void sig_child_callback()
         }
         else {
         	// pid大于0，说明对应的子进程已经退出，则根据status退出码，将子进程退出的原因写入到日志中
-			if (WIFEXITED(status[i]))
-				write_to_server_log_pipe(WRITE_TO_LOG, "child PID %d exited normally.  Exit number:  %d\n", pid, WEXITSTATUS(status[i]));
-			else {
-				if (WIFSTOPPED(status[i]))
-					write_to_server_log_pipe(WRITE_TO_LOG, "child PID %d was stopped by %d\n", pid, WSTOPSIG(status[i]));
-				else {
-					if (WIFSIGNALED(status[i]))
-						write_to_server_log_pipe(WRITE_TO_LOG, "child PID %d exited due to signal %d\n.", pid, WTERMSIG(status[i]));
-					else
-						write_to_server_log_pipe(WRITE_TO_LOG, "child PID %d exited, status: %d", pid, status[i]);
-				}
-			}
+        	log_sig_child_exit("child", pid, status[i]);
 			// 通过fork_child_process函数重新创建一个新的子进程，继续工作
 			fork_child_process(i);
         }
     }
+    int cleaner_status;
+    pid = waitpid(server_cleaner_process, &cleaner_status, WNOHANG); /* waitpid时采用WNOHANG非阻塞模式 */
+    if(pid < 0) {
+		write_to_server_log_pipe(WRITE_TO_LOG, "waitpid error [%d] %s", errno, strerror(errno));
+	}
+	else if(!pid) {
+		/* waitpid返回0，表示该cleaner进程正在运行中 */
+		return;
+	}
+	else {
+		// pid大于0，说明cleaner进程已经退出，则根据cleaner_status退出码，将进程退出的原因写入到日志中
+		log_sig_child_exit("cleaner", pid, cleaner_status);
+		// 通过fork_cleaner_process函数重新创建一个新的cleaner进程，继续工作
+		fork_cleaner_process();
+	}
 }
 
 /**
@@ -529,6 +668,9 @@ void sig_terminate_master_callback()
     // 循环向子进程发送SIGTERM(终止信号)，从而结束掉子进程
     for (i = 0; i < server_process_num; ++i)
         kill(server_child_process[i], SIGTERM);
+
+    // 向清理进程发送终止信号
+    kill(server_cleaner_process, SIGTERM);
 
     /* 循环等待所有子进程结束 */
     while ((pid = wait(&status)) != -1)
@@ -642,6 +784,8 @@ ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
 	// 设置mysql模块的初始化函数，和mysql模块相关的C函数代码位于module_mysql.c文件里
 	zenglApi_SetModInitHandle(VM_ARG,"mysql", module_mysql_init);
 #endif
+	// 设置session模块的初始化函数，和session会话相关的C函数代码位于module_session.c文件里
+	zenglApi_SetModInitHandle(VM_ARG,"session", module_session_init);
 }
 
 /**

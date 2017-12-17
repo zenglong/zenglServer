@@ -907,10 +907,10 @@ ZL_EXP_VOID module_request_SetResponseHeader(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT arg
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount != 1)
-		zenglApi_Exit(VM_ARG,"usage: rqtSetHeader(response_header)");
+		zenglApi_Exit(VM_ARG,"usage: rqtSetResponseHeader(response_header)");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
-		zenglApi_Exit(VM_ARG,"the first argument of rqtSetHeader must be string");
+		zenglApi_Exit(VM_ARG,"the first argument of rqtSetResponseHeader must be string");
 	}
 	char * response_header = arg.val.str;
 	int response_header_length = strlen(response_header);

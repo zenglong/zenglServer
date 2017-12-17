@@ -1,0 +1,31 @@
+use builtin, request, session;
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>显示会话json数据</title>
+</head>
+<body>';
+
+cookies = rqtGetCookie();
+sess_id = cookies['SESSION'];
+if(!sess_id)
+	print '暂无会话id';
+	bltExit();
+endif
+
+print '会话中的json数组：<br/><br/>';
+sessions = sessGetData(sess_id);
+for(i=0; bltIterArray(sessions,&i,&k,&v); )
+	//if(k == 'array')
+	if(k == '4')
+		for(j=0; bltIterArray(v,&j,&inner_k,&inner_v); )
+			print ' -- ' + inner_k +": " + inner_v + '<br/>';
+		endfor
+	else
+		print k +": " + v + '<br/>';
+	endif
+endfor
+
+print '</body></html>';
+

@@ -1,0 +1,48 @@
+use builtin, request, session;
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>显示会话json数据</title>
+</head>
+<body>';
+
+fun get_default_data(sess_id)
+	data['hello'] = 'world "世界你好"吗\\"\'？';
+	print data['hello'];
+
+	data['integer'] = 1213334;
+	data['float'] = 123.121355;
+	data['sess_id'] = sess_id;
+	item_array = bltArray();
+	item_array[] = 123;
+	item_array[] = 15.34;
+	item_array[] = "hello \"world\"";
+	item_array[] = "走自己的路，让别人去说吧!!！";
+	data[] = item_array;
+	return data;
+endfun
+
+cookies = rqtGetCookie();
+sess_id = cookies['SESSION'];
+if(!sess_id)
+	sess_id = sessMakeId();
+	data = get_default_data(sess_id);
+	rqtSetResponseHeader("Set-Cookie: SESSION="+sess_id+"; path=/");
+else 
+	data = sessGetData(sess_id);
+	if(data['integer'])
+		print ++data['integer'];
+	else
+		data = get_default_data(sess_id);
+	endif
+endif
+
+sessSetData(sess_id, data);
+
+print '设置会话数据成功<br/>';
+
+print 'sess_id:' + sess_id + '<br/>';
+
+print '</body></html>';
+

@@ -15,7 +15,7 @@
 #include <stdio.h>
 
 #define ZLSERVER_MAJOR_VERSION 0  // zenglServer 主版本号
-#define ZLSERVER_MINOR_VERSION 5  // zenglServer 子版本号
+#define ZLSERVER_MINOR_VERSION 6  // zenglServer 子版本号
 #define ZLSERVER_REVISION 0       // zenglServer 修正版本号
 
 #define URL_PATH_SIZE 120    // main.c中url_path可以容纳的字符数
@@ -71,6 +71,8 @@ typedef struct _MAIN_DATA{
 
 char * main_get_webroot();
 int main_full_path_append(char * full_path, int full_path_length, int full_path_size, char * append_path);
+//模块函数中，可以通过main_get_session_config函数来获取配置文件设置过的会话目录，会话超时时间，以及cleaner进程的清理时间间隔
+void main_get_session_config(char ** session_dir, long * session_expire, long * session_cleaner_interval);
 int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...);
 void routine_close_single_socket(int client_socket_fd);
 

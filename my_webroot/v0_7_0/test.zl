@@ -1,0 +1,30 @@
+use builtin;
+
+data['title'] = 'mustache模板测试';
+
+data["val"] = "my world!";
+data["zl"] = "welcome to zengl!";
+data["score"] = 552;
+data['money'] = 2200000.88;
+
+dts[0, 'name'] = 'black';
+dts[0, 'job'] = 'player';
+dts[2, 'name'] = 'hacker';
+dts[2, 'job'] = 'programmer';
+dts[4, 'name'] = 'zengl';
+dts[4, 'job'] = 'worker';
+data['dts'] = dts;
+
+schools[] = '哈佛大学';
+schools[] = '牛津大学';
+schools[] = '家里蹲大学';
+schools[] = 1234567;
+schools[] = 3.14159;
+data['schools'] = schools;
+
+userinfo['name'] = 'zenglong';
+userinfo['from'] = 'china';
+data['userinfo'] = userinfo;
+
+data['copyright'] = '当前页面的版权归zengl.com所有';
+print bltMustacheFileRender("test.tpl",data);

@@ -12,18 +12,23 @@ else
 endif
 SRCS += zengl/linux/zengl_exportfuns.h 
 
-zenglServer: $(SRCS) zengl/linux/libzengl.a
-		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a $(LIB_FLAG) $(MYSQL_FLAG)
+zenglServer: $(SRCS) zengl/linux/libzengl.a crustache/libcrustache.a
+		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a $(LIB_FLAG) $(MYSQL_FLAG)
 		@echo 
 		@echo $(MYSQL_OUTPUT_INFO)
 
 zengl/linux/libzengl.a:
 	cd zengl/linux && $(MAKE) libzengl.a
 
+crustache/libcrustache.a:
+	cd crustache && $(MAKE) libcrustache.a
+
 clean:
 	rm -fv zenglServer
 	rm -fv *.o
 	rm -fv zengl/linux/*.o
 	rm -fv zengl/linux/libzengl.a
+	rm -fv crustache/*.o
+	rm -fv crustache/libcrustache.a
 
 all: zenglServer

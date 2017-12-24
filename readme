@@ -8,7 +8,14 @@ make[1]: Entering directory '/home/zengl/zenglServer/zengl/linux'
 gcc -D ZL_LANG_EN_WITH_CH -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c zengl_main.c zengl_parser.c zengl_symbol.c zengl_locals.c zengl_assemble.c zengl_ld.c zenglrun_main.c zenglrun_func.c zenglrun_hash_array.c zenglApi.c zenglApi_BltModFuns.c zenglDebug.c
 ar rc libzengl.a zengl_main.o zengl_parser.o zengl_symbol.o zengl_locals.o zengl_assemble.o zengl_ld.o zenglrun_main.o zenglrun_func.o zenglrun_hash_array.o zenglApi.o zenglApi_BltModFuns.o zenglDebug.o
 make[1]: Leaving directory '/home/zengl/zenglServer/zengl/linux'
-gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c dynamic_string.c main.h http_parser.h module_request.h dynamic_string.h zengl/linux/zengl_exportfuns.h -o zenglServer zengl/linux/libzengl.a -lpthread
+cd crustache && make libcrustache.a
+make[1]: Entering directory '/home/zengl/zenglServer/crustache'
+gcc -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c buffer.c crustache.c houdini_html.c stack.c
+ar rc libcrustache.a buffer.o crustache.o houdini_html.o stack.o
+make[1]: Leaving directory '/home/zengl/zenglServer/crustache'
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm 
+
+*** notice: mysql module not enabled, you can use 'make USE_MYSQL=yes' to enable it, make sure you have mysql_config and mysql.h in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
 
 第一次编译时，它会先进入zengl/linux目录，编译生成libzengl.a的静态库文件，该静态库主要用于执行zengl脚本。
@@ -25,7 +32,12 @@ make[1]: Entering directory '/home/zengl/zenglServer/zengl/linux'
 gcc -D ZL_LANG_EN_WITH_CH -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c zengl_main.c zengl_parser.c zengl_symbol.c zengl_locals.c zengl_assemble.c zengl_ld.c zenglrun_main.c zenglrun_func.c zenglrun_hash_array.c zenglApi.c zenglApi_BltModFuns.c zenglDebug.c
 ar rc libzengl.a zengl_main.o zengl_parser.o zengl_symbol.o zengl_locals.o zengl_assemble.o zengl_ld.o zenglrun_main.o zenglrun_func.o zenglrun_hash_array.o zenglApi.o zenglApi_BltModFuns.o zenglDebug.o
 make[1]: Leaving directory '/home/zengl/zenglServer/zengl/linux'
-gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c dynamic_string.c multipart_parser.c resources.c  main.h http_parser.h common_header.h module_request.h module_builtin.h dynamic_string.h multipart_parser.h resources.h  module_mysql.c module_mysql.h  zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a -lpthread -DUSE_MYSQL `mysql_config --cflags --libs` 
+cd crustache && make libcrustache.a
+make[1]: Entering directory '/home/zengl/zenglServer/crustache'
+gcc -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c buffer.c crustache.c houdini_html.c stack.c
+ar rc libcrustache.a buffer.o crustache.o houdini_html.o stack.o
+make[1]: Leaving directory '/home/zengl/zenglServer/crustache'
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h module_mysql.c module_mysql.h  zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs` 
 
 mysql module is enabled!!!
 zengl@zengl-ubuntu:~/zenglServer$ 
@@ -38,30 +50,34 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer 
 zengl@zengl-ubuntu:~/zenglServer$ ps -aux | grep zenglServer
-zengl     4940  0.0  0.0  26352  2436 ?        Ss   14:41   0:00 zenglServer: master
-zengl     4941  0.0  0.0  42744   532 ?        Sl   14:41   0:00 zenglServer: child(0)
+zengl      300  0.0  0.0  26440  2124 ?        Ss   19:08   0:00 zenglServer: master
+zengl      301  0.0  0.0  42832   528 ?        Sl   19:08   0:00 zenglServer: child(0)
+zengl      302  0.0  0.0  26440   528 ?        S    19:08   0:00 zenglServer: cleaner
 zengl@zengl-ubuntu:~/zenglServer$ cat logfile
-create master process for daemon [pid:4940] 
+create master process for daemon [pid:300]
 use default config: config.zl
 *** config is in debug mode ***
-run config.zl complete, config: 
+run config.zl complete, config:
 port: 8083 process_num: 1
 webroot: my_webroot
+session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
 bind done
 accept sem initialized.
-process_max_open_fd_num: 1024 
-Master: Spawning child(0) [pid 4941] 
-epoll max fd count : 896 
+process_max_open_fd_num: 1024
+Master: Spawning child(0) [pid 301]
+Master: Spawning cleaner [pid 302]
+epoll max fd count : 896
+------------ cleaner sleep begin: 1515236908
 zengl@zengl-ubuntu:~/zenglServer$ 
 
-默认绑定的端口号为：8083，打开你的浏览器，输入 http://<your ip address>:8083，<your ip address>表示zenglServer所在的linux系统的ip地址，假设为：192.168.0.105，那么输入 http://192.168.0.105:8083 应该可以看到Hello World!静态页面，可以在日志文件logfile中查看到相关信息：
+默认绑定的端口号为：8083，打开你的浏览器，输入 http://<your ip address>:8083，<your ip address>表示zenglServer所在的linux系统的ip地址，假设为：10.7.20.220，那么输入 http://10.7.20.220:8083 应该可以看到Hello World!静态页面，可以在日志文件logfile中查看到相关信息：
 
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
 -----------------------------------
-Sun Nov  5 14:50:25 2017
-recv [client_socket_fd:9] [lst_idx:0] [pid:4941] [tid:4943]:
+Sat Jan  6 19:16:33 2018
+recv [client_socket_fd:9] [lst_idx:0] [pid:301] [tid:304]:
 
-request header: Host: 192.168.0.105:8083 | Connection: keep-alive | Cache-Control: max-age=0 | Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8 | User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36 | Accept-Encoding: gzip,deflate,sdch | Accept-Language: zh-CN,zh;q=0.8 | 
+request header: Host: 10.7.20.220:8083 | Connection: keep-alive | User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36 | Upgrade-Insecure-Requests: 1 | Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8 | Accept-Encoding: gzip, deflate | Accept-Language: zh-CN,zh;q=0.8 | 
 
 url: /
 url_path: /
@@ -71,36 +87,42 @@ Cache-Control: max-age=120
 Content-Length: 90
 Connection: Closed
 Server: zenglServer
-free socket_list[0]/list_cnt:0 epoll_fd_add_count:1 pid:4941 tid:4943
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:1 pid:301 tid:304
 -----------------------------------
-Sun Nov  5 14:50:25 2017
-recv [client_socket_fd:11] [lst_idx:0] [pid:4941] [tid:4943]:
+Sat Jan  6 19:16:33 2018
+recv [client_socket_fd:10] [lst_idx:0] [pid:301] [tid:304]:
 
-request header: Host: 192.168.0.105:8083 | Connection: keep-alive | Accept: */* | User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36 | Accept-Encoding: gzip,deflate,sdch | Accept-Language: zh-CN,zh;q=0.8 | 
+request header: Host: 10.7.20.220:8083 | Connection: keep-alive | User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36 | Accept: image/webp,image/apng,image/*,*/*;q=0.8 | Referer: http://10.7.20.220:8083/ | Accept-Encoding: gzip, deflate | Accept-Language: zh-CN,zh;q=0.8 | 
 
 url: /favicon.ico
 url_path: /favicon.ico
-...........................
+status: 200, content length: 67646
+response header: HTTP/1.1 200 OK
+Cache-Control: max-age=120
+Content-Length: 67646
+Connection: Closed
+Server: zenglServer
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:301 tid:304
 
 
 可以看到请求头信息，请求的url资源路径，处理该请求的pid(进程ID)等，从v0.5.0版本开始，还可以看到完整的response header(响应头)信息
 
-在浏览器中输入测试用的表单地址：http://192.168.0.105:8083/form.html 在表单中随便填些东西，点击Submit提交按钮，交由test.zl测试脚本去处理，处理后会返回类似如下的测试结果：
+在浏览器中输入测试用的表单地址：http://10.7.20.220:8083/form.html 在表单中随便填些东西，点击Submit提交按钮，交由test.zl测试脚本去处理，处理后会返回类似如下的测试结果：
 
 a is 20 end
-user agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36
-other_headers, user agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36
+user agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36
+other_headers, user agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36
 request body: title=hello&description=world&content=zengl+program&sb=Submit
 
 test.zl测试脚本中，获取了当前浏览器的UA信息，以及请求的body(主体数据)。
 
 还可以直接在浏览器地址中输入test.zl并附加一些查询字符串，脚本会将查询字符串自动解析为哈希数组：
-在浏览器中输入：http://192.168.0.105:8083/test.zl?name=zengl&job=programmer
+在浏览器中输入：http://10.7.20.220:8083/test.zl?name=zengl&job=programmer
 反馈结果如下：
 
 a is 20 end
-user agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36
-other_headers, user agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/537.36
+user agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36
+other_headers, user agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36
 query string: name=zengl&job=programmer
 querys['name']: zengl
 querys['job']: programmer
@@ -108,15 +130,16 @@ querys['job']: programmer
 要退出zenglServer，需要kill掉主进程(名称为zenglServer: master的进程)，注意：kill子进程的话，主进程会自动重启子进程：
 
 zengl@zengl-ubuntu:~/zenglServer$ ps aux | grep zenglServer
-zengl     4940  0.0  0.0  26352  2436 ?        Ss   14:41   0:00 zenglServer: master
-zengl     4941  0.0  0.0 108280   532 ?        Sl   14:41   0:00 zenglServer: child(0)
-zengl@zengl-ubuntu:~/zenglServer$ kill 4940
+zengl      300  0.0  0.0  26440  2124 ?        Ss   19:08   0:00 zenglServer: master
+zengl      301  0.0  0.0 108368   528 ?        Sl   19:08   0:00 zenglServer: child(0)
+zengl      302  0.0  0.0  26440   528 ?        S    19:08   0:00 zenglServer: cleaner
+zengl@zengl-ubuntu:~/zenglServer$ kill 300
 zengl@zengl-ubuntu:~/zenglServer$ ps aux | grep zenglServer
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
-free socket_list[0]/list_cnt:0 epoll_fd_add_count:1 pid:4941 tid:4943
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:1 pid:301 tid:304
  **** warning: 0 data length occured 0[0]
-free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:4941 tid:4943
-Termination signal received! Killing children.
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:301 tid:304
+Termination signal received! Killing children
 All children reaped, shutting down.
 closed accept_sem
 shutdowned server socket
@@ -137,22 +160,25 @@ zengl@zengl-ubuntu:~/zenglServer$
 通过-v可以查看zenglServer的版本号以及所使用的zengl脚本语言的版本号，-c可以指定需要加载的配置文件(配置文件必须使用zengl脚本语法编写)：
 
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
-zenglServer version: v0.4.0
-zengl language version: v1.7.2
-zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl 
+zenglServer version: v0.7.0
+zengl language version: v1.7.3
+zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
 use config: config.zl
 *** config is in debug mode ***
 run config.zl complete, config: 
 port: 8083 process_num: 1
 webroot: my_webroot
+session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
 bind done
 accept sem initialized.
 process_max_open_fd_num: 1024 
-Master: Spawning child(0) [pid 5514] 
-epoll max fd count : 896 
+Master: Spawning child(0) [pid 673] 
+Master: Spawning cleaner [pid 674] 
+epoll max fd count : 896
+------------ cleaner sleep begin: 1515237890
 
-zenglServer是在Ubuntu 16.04 LTS x86-64系统中进行的开发测试(GCC版本号为：5.4.0)，并在CentOS 5.8, 6.x, 7.x中进行了简单的测试。
+zenglServer是在Ubuntu 16.04 LTS x86-64(GCC版本号为：5.4.0)，Ubuntu 17.04 x86-64(GCC版本号为：6.3.0)中进行的开发测试，并在CentOS 5.8, 6.x, 7.x中进行了简单的测试。
 
 zenglServer的C源代码中，加入了必要的注释信息，读者可以通过阅读源码的相关注释来理解代码。
 

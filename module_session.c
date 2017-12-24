@@ -96,7 +96,8 @@ static void session_write_array_to_file(ZL_EXP_VOID * VM_ARG, FILE * session_fil
 	// make_object用于判断是否生成对象格式的json，对象格式的json字符串会用大括号包起来，并用冒号来分隔数组成员的哈希key与值
 	ZL_EXP_BOOL make_object = ZL_EXP_FALSE;
 	ZENGL_EXPORT_MOD_FUN_ARG mblk_val = {ZL_EXP_FAT_NONE,{0}};
-	zenglApi_GetMemBlockInfo(VM_ARG,&memblock,&size,&count);
+	zenglApi_GetMemBlockInfo(VM_ARG,&memblock,&size,ZL_EXP_NULL);
+	count = zenglApi_GetMemBlockNNCount(VM_ARG, &memblock);
 	if(count > 0)
 	{
 		for(i=1,process_count=0; i<=size && process_count < count; i++)

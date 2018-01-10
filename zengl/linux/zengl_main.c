@@ -1510,6 +1510,7 @@ ZL_CHAR * zengl_makeInfoString(ZL_VOID * VM_ARG,ZENGL_INFO_STRING_TYPE * infoStr
 	ZENGL_COMPILE_TYPE * compile = &((ZENGL_VM_TYPE *)VM_ARG)->compile;
 	ZENGL_SYS_ARG_LIST tmp_arglist;
 	ZL_INT retcount = -1;
+	ZENGL_SYS_ARG_END(tmp_arglist);
 	if(infoStringPtr->str == ZL_NULL)
 	{
 		infoStringPtr->size = ZL_INFO_STRING_SIZE;
@@ -1517,10 +1518,10 @@ ZL_CHAR * zengl_makeInfoString(ZL_VOID * VM_ARG,ZENGL_INFO_STRING_TYPE * infoStr
 	}
 	do
 	{
-		memcpy( tmp_arglist, arglist, sizeof(ZENGL_SYS_ARG_LIST));
+		ZENGL_SYS_ARG_COPY(tmp_arglist, arglist);
 		retcount = ZENGL_SYS_SPRINTF_ARG_NUM((infoStringPtr->str + infoStringPtr->cur),
 			(infoStringPtr->size - infoStringPtr->count),format,tmp_arglist);
-
+		ZENGL_SYS_ARG_END(tmp_arglist);
 		if(retcount >= 0 && retcount < (infoStringPtr->size - infoStringPtr->count))
 		{
 			infoStringPtr->count += retcount;

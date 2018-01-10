@@ -175,9 +175,10 @@ int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...
 	}
 	int retcount = 0;
 	va_list arglist;
-	va_start(arglist, format);
 	while(1) {
+		va_start(arglist, format);
 		retcount = vsnprintf(server_log_pipe_string.str, server_log_pipe_string.size, format, arglist);
+		va_end(arglist);
 		if(retcount >=0 && retcount < server_log_pipe_string.size) {
 			server_log_pipe_string.str[retcount] = STR_NULL;
 			if(write_to_pipe) {
@@ -191,7 +192,6 @@ int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...
 		server_log_pipe_string.size += SERVER_LOG_PIPE_STR_SIZE;
 		server_log_pipe_string.str = (char *)realloc(server_log_pipe_string.str, server_log_pipe_string.size * sizeof(char));
 	}
-	va_end(arglist);
 	return retcount;
 }
 

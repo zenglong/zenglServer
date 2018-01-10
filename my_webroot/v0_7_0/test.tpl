@@ -2,8 +2,12 @@
 <b>hello {{val}}!</b>
 <br/>
 <h3>{{ zl }}</h3>
+<h3>{{{ zl }}}</h3>
+<h3>{{& zl }}</h3>
 
 <p><b>score: {{ score }}</b></p>
+<p><b>score: {{{ score }}}</b></p>
+<p><b>score: {{& score }}</b></p>
 
 <p><b>money: {{ money }}$</b></p>
 

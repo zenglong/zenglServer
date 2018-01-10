@@ -473,16 +473,18 @@ ZL_CHAR * zenglrun_SetApiError(ZL_VOID * VM_ARG,ZENGL_ERRORNO errorno ,ZENGL_SYS
 ZL_CHAR * zenglrun_makeInfoString(ZL_VOID * VM_ARG,ZENGL_RUN_INFO_STRING_TYPE * infoStringPtr , ZL_CONST ZL_CHAR * format , ZENGL_SYS_ARG_LIST arglist)
 {
 	ZENGL_RUN_TYPE * run = &((ZENGL_VM_TYPE *)VM_ARG)->run;
+	ZENGL_SYS_ARG_LIST tmp_arglist;
 	ZL_INT retcount = -1;
 	if(infoStringPtr->str == ZL_NULL)
 	{
 		infoStringPtr->size = ZL_INFO_STRING_SIZE;
 		infoStringPtr->str = run->memAlloc(VM_ARG,infoStringPtr->size * sizeof(ZL_CHAR),&infoStringPtr->mempool_index);
 	}
-	while(ZL_TRUE)
+	do
 	{
+		memcpy( tmp_arglist, arglist, sizeof(ZENGL_SYS_ARG_LIST));
 		retcount = ZENGL_SYS_SPRINTF_ARG_NUM((infoStringPtr->str + infoStringPtr->cur),
-											 (infoStringPtr->size - infoStringPtr->count),format,arglist);
+											 (infoStringPtr->size - infoStringPtr->count),format,tmp_arglist);
 
 		if(retcount >= 0 && retcount < (infoStringPtr->size - infoStringPtr->count))
 		{
@@ -494,7 +496,7 @@ ZL_CHAR * zenglrun_makeInfoString(ZL_VOID * VM_ARG,ZENGL_RUN_INFO_STRING_TYPE * 
 
 		infoStringPtr->size += ZL_INFO_STRING_SIZE;
 		infoStringPtr->str = run->memReAlloc(VM_ARG,infoStringPtr->str,infoStringPtr->size * sizeof(ZL_CHAR),&infoStringPtr->mempool_index);
-	}
+	} while(ZL_TRUE);
 	return ZL_NULL;
 }
 

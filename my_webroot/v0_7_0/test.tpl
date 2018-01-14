@@ -26,7 +26,7 @@
 </table>
 
 <br/>
-<span>使用<%...%>作为分隔符</span><br/>
+<span>使用&lt;%...%&gt;作为分隔符</span><br/>
 {{=<% %>=}}
 <%# userinfo %><p><span>user name: <% name %></span>
 <span style="margin-left:25px;">from: <% from %></span></p><%/ userinfo %>

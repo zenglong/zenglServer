@@ -24,7 +24,7 @@
  * 解析json时，自定义的内存分配函数，将使用zenglApi_AllocMem来分配内存
  * 该Api接口分配的内存，如果没有在脚本中手动释放的话，会在脚本结束并关闭虚拟机时，被自动释放掉
  */
-static void * my_json_mem_alloc(size_t size, int zero, ZL_EXP_VOID * VM_ARG)
+void * my_json_mem_alloc(size_t size, int zero, ZL_EXP_VOID * VM_ARG)
 {
 	void * retptr = zenglApi_AllocMem(VM_ARG, size);
 	if(zero) {
@@ -36,7 +36,7 @@ static void * my_json_mem_alloc(size_t size, int zero, ZL_EXP_VOID * VM_ARG)
 /**
  * 解析json时，自定义的内存释放函数，将使用zenglApi_FreeMem接口函数来释放内存
  */
-static void my_json_mem_free(void * ptr, ZL_EXP_VOID * VM_ARG)
+void my_json_mem_free(void * ptr, ZL_EXP_VOID * VM_ARG)
 {
 	zenglApi_FreeMem(VM_ARG, ptr);
 }
@@ -44,7 +44,7 @@ static void my_json_mem_free(void * ptr, ZL_EXP_VOID * VM_ARG)
 /**
  * 由于json中的字符串是用双引号包起来的，因此，字符串内部的双引号和反斜杠需要进行转义
  */
-static void session_escape_str(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR ** e_str, ZL_EXP_CHAR * s_str)
+void session_escape_str(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR ** e_str, ZL_EXP_CHAR * s_str)
 {
 	ZL_EXP_CHAR * escape_str = (*e_str);
 	if(escape_str == ZL_EXP_NULL)
@@ -246,10 +246,14 @@ static void session_make_filename(char * filename, char * session_dir, ZL_EXP_CH
  * a[3] = 3.14159;
  * a[4] = "zengl language";
  */
-void process_json_object_array(ZL_EXP_VOID * VM_ARG, ZENGL_EXPORT_MEMBLOCK * memblock, json_value * value)
+void process_json_object_array(ZL_EXP_VOID * VM_ARG, ZENGL_EXPORT_MEMBLOCK * memblock, json_value * value,
+		unsigned int depth, unsigned int max_depth)
 {
 	if (value == NULL) {
 		return;
+	}
+	if(depth > max_depth) {
+		zenglApi_Exit(VM_ARG, "json depth %u is big than %u", depth, max_depth);
 	}
 	int length = value->u.object.length;
 	char * member_name;
@@ -290,7 +294,7 @@ void process_json_object_array(ZL_EXP_VOID * VM_ARG, ZENGL_EXPORT_MEMBLOCK * mem
 			if(zenglApi_CreateMemBlock(VM_ARG,&arg.val.memblock,0) == -1) {
 				zenglApi_Exit(VM_ARG,zenglApi_GetErrorString(VM_ARG));
 			}
-			process_json_object_array(VM_ARG, &arg.val.memblock, member_value);
+			process_json_object_array(VM_ARG, &arg.val.memblock, member_value, (++depth), max_depth);
 			break;
 		default:
 			arg.type = ZL_EXP_FAT_NONE;
@@ -315,7 +319,12 @@ ZL_EXP_VOID module_session_get_data(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	// 获取第一个参数，也就是会话文件名
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
-		zenglApi_Exit(VM_ARG,"the first argument of sessGetData must be string");
+		zenglApi_Exit(VM_ARG,"the first argument [sess_file_name] of sessGetData must be string");
+	}
+	// 如果是空的会话文件名，直接返回空数组
+	if(strlen(arg.val.str) == 0) {
+		session_return_empty_array(VM_ARG);
+		return;
 	}
 	char filename[SESSION_FILEPATH_MAX_LEN];
 	char * session_dir;
@@ -376,7 +385,7 @@ ZL_EXP_VOID module_session_get_data(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 			zenglApi_Exit(VM_ARG,zenglApi_GetErrorString(VM_ARG));
 		}
 		// 通过process_json_object_array函数，循环将value中的json成员填充到memblock中
-		process_json_object_array(VM_ARG, &memblock, value);
+		process_json_object_array(VM_ARG, &memblock, value, 1, 1000);
 		zenglApi_SetRetValAsMemBlock(VM_ARG,&memblock);
 		break;
 	case json_integer:
@@ -419,7 +428,12 @@ ZL_EXP_VOID module_session_set_data(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	// 获取第一个参数，也就是会话文件名
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
-		zenglApi_Exit(VM_ARG,"the first argument of sessSetData must be string");
+		zenglApi_Exit(VM_ARG,"the first argument [sess_file_name] of sessSetData must be string");
+	}
+	// 如果是空的会话文件名，直接返回0
+	if(strlen(arg.val.str) == 0) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+		return;
 	}
 	char filename[SESSION_FILEPATH_MAX_LEN];
 	char * session_dir;
@@ -471,6 +485,38 @@ ZL_EXP_VOID module_session_set_data(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 }
 
 /**
+ * sessDelete模块函数，根据sess_file_name会话文件名删除会话文件
+ */
+ZL_EXP_VOID module_session_delete(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount != 1)
+		zenglApi_Exit(VM_ARG,"usage:sessDelete(sess_file_name)");
+	// 获取第一个参数，也就是会话文件名
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [sess_file_name] of sessDelete must be string");
+	}
+	// 如果是空的会话文件名，直接返回0
+	if(strlen(arg.val.str) == 0) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+		return;
+	}
+	char filename[SESSION_FILEPATH_MAX_LEN];
+	char * session_dir;
+	long session_expire;
+	// 先通过main_get_session_config函数获取会话目录，然后根据会话目录和会话文件名生成会话文件的相对路径
+	main_get_session_config(&session_dir, &session_expire, NULL);
+	session_make_filename(filename, session_dir, arg.val.str);
+
+	struct stat filestatus;
+	if ( stat(filename, &filestatus) == 0) {
+		remove(filename); // 删除会话文件
+	}
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 1, 0);
+}
+
+/**
  * sessMakeId模块函数，生成40个字符的随机字符串，并将该字符串作为结果返回
  * 该随机字符串可以用作会话文件名
  * 生成随机字符串时，所使用的random_get_bytes函数，是从libuuid库中移植过来的，
@@ -497,5 +543,6 @@ ZL_EXP_VOID module_session_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 {
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"sessGetData", module_session_get_data);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"sessSetData", module_session_set_data);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"sessDelete", module_session_delete);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"sessMakeId", module_session_make_id);
 }

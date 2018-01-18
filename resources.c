@@ -39,6 +39,24 @@ static int resource_list_init(RESOURCE_LIST * resource_list)
 }
 
 /**
+ * 从资源列表中，获取资源指针对应的列表索引值，如果返回-1表示该指针不存在，是一个无效的资源指针，或者指针类型不是期望的类型(通过callback判断资源类型)
+ */
+int resource_list_get_ptr_idx(RESOURCE_LIST * resource_list, void * ptr, ResourceDestroyCallBack callback)
+{
+	if(!ptr || !resource_list || !resource_list->list)
+		return -1;
+	for(int i = 0; i < resource_list->size;i++) {
+		if(resource_list->list[i].ptr == ptr) {
+			if(resource_list->list[i].destroy_callback == callback)
+				return i;
+			else
+				return -1;
+		}
+	}
+	return -1;
+}
+
+/**
  * 向资源列表中添加成员
  * ptr参数表示资源相关的指针，如果ptr资源没有在脚本中被手动清理的话，
  * 那么在脚本退出时，就会自动调用destroy_callback回调函数去清理ptr指针所对应的资源

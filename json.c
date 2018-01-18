@@ -973,7 +973,10 @@ void json_value_free_ex (json_settings * settings, json_value * value)
                break;
             }
 
-            value = value->u.array.values [-- value->u.array.length];
+            if(value->u.array.values == NULL) // 当json解析发生错误时，如内存分配失败时，values可能为空
+            	break;
+            else
+            	value = value->u.array.values [-- value->u.array.length];
             continue;
 
          case json_object:
@@ -984,7 +987,10 @@ void json_value_free_ex (json_settings * settings, json_value * value)
                break;
             }
 
-            value = value->u.object.values [-- value->u.object.length].value;
+            if(value->u.object.values == NULL)
+            	break;
+            else
+            	value = value->u.object.values [-- value->u.object.length].value;
             continue;
 
          case json_string:

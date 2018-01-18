@@ -786,7 +786,7 @@ ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 			ZENGL_EXPORT_MOD_FUN_ARG retval = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "Content-Type");
 			if(retval.type == ZL_EXP_FAT_STR) {
 				content_type = retval.val.str;
-				if(strcmp(content_type, "application/x-www-form-urlencoded") == 0) {
+				if(strstr(content_type, "application/x-www-form-urlencoded")) {
 					ZL_EXP_CHAR * q = my_parser_data->request_body.str;
 					ZL_EXP_INT q_len = my_parser_data->request_body.count;
 					parse_urlencoded_str_to_memblock(VM_ARG, q, q_len, &my_data->body_memblock);

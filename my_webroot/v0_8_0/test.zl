@@ -1,0 +1,69 @@
+use builtin;
+
+def TRUE 1;
+def FALSE 0;
+def MD5_LOWER_CASE 1;
+def MD5_UPPER_CASE 0;
+def MD5_32BIT 1;
+def MD5_16BIT 0;
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>json编解码测试</title>
+</head>
+<body>';
+
+json = '{"hello": "world!!", "name": "zengl", "val": "programmer", "arr":[1,2,3]}';
+
+json = bltJsonDecode(json);
+//json = bltJsonDecode(json,1);
+//json = bltJsonDecode(json,2,400);
+
+for(i=0; bltIterArray(json,&i,&k,&v); )
+	if(k == 'arr')
+		print 'arr:<br/>';
+		for(j=0; bltIterArray(v,&j,&inner_k,&inner_v); )
+			print ' -- ' + inner_k +": " + inner_v + '<br/>';
+		endfor
+	else
+		print k +": " + v + '<br/>';
+	endif
+endfor
+
+array['username'] = 'zenglong';
+array['password'] = '123456';
+tmp = bltArray(100,200,300,400,500,600);
+array['tmp'] = tmp;
+json = bltJsonEncode(array);
+
+print '<br/>';
+print 'array转json字符串：<br/>';
+print json + '<br/><br/>';
+
+print '"admin@123456"的md5值:<br/>';
+print bltMd5('admin@123456') + ' [32位小写]<br/>';
+print bltMd5('admin@123456', MD5_UPPER_CASE) + ' [32位大写]<br/>';
+print bltMd5('admin@123456', MD5_LOWER_CASE, MD5_16BIT) + ' [16位小写]<br/>';
+print bltMd5('admin@123456', MD5_UPPER_CASE, MD5_16BIT) + ' [16位大写]<br/><br/>';
+
+print 'bltStr(test): "' + bltStr(test) + '"<br/>';
+print 'bltStr(&amp;test): "' + bltStr(&test) + '"<br/>';
+print 'test: "' + test + '"<br/>';
+bltStr(&test, TRUE);
+print 'test: "' + test + '"<br/><br/>';
+
+print 'bltCount(array): ' + bltCount(array) + '<br/>';
+print 'bltCount("hello world"): ' + bltCount("hello world") + '<br/><br/>';
+
+bltUnset(&array['tmp']);
+print 'array after unset:<br/>';
+print bltJsonEncode(array) + '<br/>';
+print 'bltCount(array): ' + bltCount(array) + '<br/><br/>';
+
+zls_version = bltGetZenglServerVersion();
+print 'zenglServer版本号：' + zls_version[0] + '.' + zls_version[1] + '.' + zls_version[2] + '<br/>';
+zl_version = bltGetZenglVersion();
+print 'zengl语言版本号：' + zl_version[0] + '.' + zl_version[1] + '.' + zl_version[2];
+
+print '</body></html>';

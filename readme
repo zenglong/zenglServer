@@ -81,6 +81,7 @@ request header: Host: 10.7.20.220:8083 | Connection: keep-alive | User-Agent: Mo
 
 url: /
 url_path: /
+full_path: my_webroot/index.html
 status: 200, content length: 90
 response header: HTTP/1.1 200 OK
 Cache-Control: max-age=120
@@ -96,6 +97,7 @@ request header: Host: 10.7.20.220:8083 | Connection: keep-alive | User-Agent: Mo
 
 url: /favicon.ico
 url_path: /favicon.ico
+full_path: my_webroot/favicon.ico
 status: 200, content length: 67646
 response header: HTTP/1.1 200 OK
 Cache-Control: max-age=120
@@ -160,8 +162,8 @@ zengl@zengl-ubuntu:~/zenglServer$
 通过-v可以查看zenglServer的版本号以及所使用的zengl脚本语言的版本号，-c可以指定需要加载的配置文件(配置文件必须使用zengl脚本语法编写)：
 
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
-zenglServer version: v0.7.0
-zengl language version: v1.7.3
+zenglServer version: v0.8.0
+zengl language version: v1.7.4
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
 use config: config.zl

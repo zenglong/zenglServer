@@ -1,0 +1,27 @@
+use builtin, request, session;
+def TRUE 1;
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>删除会话测试</title>
+</head>
+<body>';
+
+cookies = rqtGetCookie();
+bltStr(&cookies['SESSION'], TRUE);
+if(bltCount(cookies['SESSION']) == 0)
+	print 'cookie中的SESSION为空，没有要删除的会话！';
+else
+	sess_data = sessGetData(cookies['SESSION']);
+	if(bltCount(sess_data) > 0)
+		sessDelete(cookies['SESSION']);
+		rqtSetResponseHeader("Set-Cookie: SESSION=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;");
+		print '删除会话: ' + cookies['SESSION'] + ' 成功！';
+	else
+		print '会话: ' + cookies['SESSION'] + ' 不存在，或者已经被删除！';
+	endif
+endif
+
+print '</body></html>';
+

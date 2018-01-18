@@ -1,0 +1,5 @@
+use builtin, request;
+
+rqtSetResponseHeader("HTTP/1.1 302 Moved Temporarily");
+rqtSetResponseHeader("Location: test.zl");
+bltExit();

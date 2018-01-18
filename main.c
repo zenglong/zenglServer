@@ -1030,34 +1030,36 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	char full_path[FULL_PATH_SIZE];
 	// status_code存储响应状态码，默认为200
 	int status_code = 200;
+	ZL_EXP_BOOL is_custom_status_code = ZL_EXP_FALSE; // 是否是自定义的请求头
 	int content_length = 0;
 	// 如果是访问根目录，则将webroot根目录中的index.html文件里的内容，作为结果反馈给客户端
 	if(strlen(url_path) == 1 && url_path[0] == '/') {
-		tmp_len = strlen("/index.html");
-		strncpy(full_path, webroot, strlen(webroot));
-		strncpy(full_path + strlen(webroot), "/index.html", tmp_len);
-		int full_length = strlen(webroot) + tmp_len;
-		full_path[full_length] = '\0';
+		int append_length = main_full_path_append(full_path, 0, FULL_PATH_SIZE, webroot);
+		int root_length = append_length;
+		append_length += main_full_path_append(full_path, append_length, FULL_PATH_SIZE, "/index.html");
+		full_path[append_length] = '\0';
+		write_to_server_log_pipe(WRITE_TO_PIPE, "full_path: %s\n", full_path);
 		// 以只读方式打开文件
 		doc_fd = open(full_path, O_RDONLY);
+		if(doc_fd == -1) {
+			append_length = root_length;
+			append_length += main_full_path_append(full_path, append_length, FULL_PATH_SIZE, "/404.html");
+			full_path[append_length] = '\0';
+			doc_fd = open(full_path, O_RDONLY);
+			status_code = 404;
+		}
 	}
 	else {
 		// 下面会根据webroot根目录，和url_path来构建full_path完整路径
-		int webroot_length = strlen(webroot);
-		if(webroot_length >= FULL_PATH_SIZE)
-			webroot_length = FULL_PATH_SIZE - 1;
-		if(webroot_length > 0)
-			strncpy(full_path, webroot, webroot_length);
-		int url_path_length = strlen(url_path);
-		if(url_path_length >= (FULL_PATH_SIZE - webroot_length))
-			url_path_length = FULL_PATH_SIZE - webroot_length - 1;
-		if(url_path_length > 0)
-			strncpy(full_path + webroot_length, url_path, url_path_length);
-		int full_length = webroot_length + url_path_length;
+		int full_length = main_full_path_append(full_path, 0, FULL_PATH_SIZE, webroot);
+		int root_length = full_length;
+		full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, url_path);
 		full_path[full_length] = '\0';
+		write_to_server_log_pipe(WRITE_TO_PIPE, "full_path: %s\n", full_path);
 
+		struct stat filestatus;
 		// 如果要访问的文件是以.zl结尾的，就将该文件当做zengl脚本来进行编译执行
-		if(full_length > 3 && strncmp(full_path + (full_length - 3), ".zl", 3) == 0) {
+		if(full_length > 3 && (stat(full_path, &filestatus) == 0) && (strncmp(full_path + (full_length - 3), ".zl", 3) == 0)) {
 			// my_data是传递给zengl脚本的额外数据，里面包含了客户端套接字等可能需要用到的信息
 			MAIN_DATA my_data;
 			my_data.full_path = full_path;
@@ -1080,7 +1082,14 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			my_data.resource_list.count = my_data.resource_list.size = 0;
 			ZL_EXP_VOID * VM;
 			VM = zenglApi_Open();
-			zenglApi_SetFlags(VM,(ZENGL_EXPORT_VM_MAIN_ARG_FLAGS)(ZL_EXP_CP_AF_IN_DEBUG_MODE | ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO));
+			ZENGL_EXPORT_VM_MAIN_ARG_FLAGS flags = ZL_EXP_CP_AF_IN_DEBUG_MODE;
+			/**
+			 * 如果不需要输出调试日志，就不用设置ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO输出调试信息的标志，输出调试信息会占用很多执行时间
+			 * 即便没有设置ZL_EXP_VFLAG_HANDLE_RUN_INFO处理句柄，也就是没有写入zl_debug_log日志文件，也会占用不少执行时间
+			 */
+			if(my_data.zl_debug_log != NULL)
+				flags |= ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO;
+			zenglApi_SetFlags(VM, flags);
 			// 只有在调试模式下，并且在配置文件中，设置了zl_debug_log时，才设置run_info处理函数，该函数会将zengl脚本的虚拟汇编指令写入到指定的日志文件
 			if(config_debug_mode && (zl_debug_log != NULL)) {
 				my_data.zl_debug_log = fopen(zl_debug_log,"w+");
@@ -1103,7 +1112,10 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				status_code = 500;
 			}
 			else {
-				client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 200 OK\r\n", 17);
+				if(!(my_data.response_header.count > 0 && strncmp(my_data.response_header.str, "HTTP/", 5) == 0))
+					client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 200 OK\r\n", 17);
+				else
+					is_custom_status_code = ZL_EXP_TRUE; // 用户自定义了http状态码
 			}
 			pthread_mutex_unlock(&(my_thread_lock.lock));
 			resource_list_remove_all_resources(VM, &(my_data.resource_list));
@@ -1136,10 +1148,8 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			// 则打开web根目录中的404.html文件，并设置404状态码
 			doc_fd = open(full_path, O_RDONLY);
 			if(doc_fd == -1) {
-				tmp_len = strlen("/404.html");
-				strncpy(full_path, webroot, strlen(webroot));
-				strncpy(full_path + strlen(webroot), "/404.html", tmp_len);
-				full_length = strlen(webroot) + tmp_len;
+				full_length = root_length;
+				full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, "/404.html");
 				full_path[full_length] = '\0';
 				doc_fd = open(full_path, O_RDONLY);
 				status_code = 404;
@@ -1174,11 +1184,15 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	}
 	// 如果连404.html也不存在的话，则直接反馈404状态信息
 	else if(status_code == 404 && doc_fd == -1) {
-		client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 404 Not Found\r\n", 9);
+		client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 404 Not Found\r\n", 24);
 		client_socket_list_append_send_data(socket_list, lst_idx, "Connection: Closed\r\nServer: zenglServer\r\n\r\n", 43);
 	}
 	// 在日志中输出响应状态码和响应主体数据的长度
-	write_to_server_log_pipe(WRITE_TO_PIPE, "status: %d, content length: %d\n", status_code, content_length);
+	if(is_custom_status_code)
+		write_to_server_log_pipe(WRITE_TO_PIPE, "status: customize, ");
+	else
+		write_to_server_log_pipe(WRITE_TO_PIPE, "status: %d, ", status_code);
+	write_to_server_log_pipe(WRITE_TO_PIPE, "content length: %d\n", content_length);
 	// 通过client_socket_list_log_response_header函数，在日志中记录完整的响应头信息
 	client_socket_list_log_response_header(socket_list, lst_idx);
 	return lst_idx;

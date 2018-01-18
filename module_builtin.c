@@ -7,6 +7,7 @@
 
 #include "main.h"
 #include "module_builtin.h"
+#include "module_session.h"
 /**
  * zenglServer通过crustache第三方库来解析mustache模板
  * crustache的github地址：https://github.com/vmg/crustache
@@ -16,10 +17,21 @@
  */
 #include "crustache/crustache.h"
 #include "crustache/buffer.h"
+#include "md5.h"
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/stat.h>
+
+#define BUILTIN_INFO_STRING_SIZE 1024 // 动态字符串初始化和动态扩容的大小
+
+// json编码时，需要使用的动态字符串的结构体定义
+typedef struct _BUILTIN_INFO_STRING{
+	char * str;   //字符串指针
+	int size;  //字符串的动态大小
+	int count; //存放的字符数
+	int cur;   //当前游标
+} BUILTIN_INFO_STRING;
 
 static int builtin_crustache__context_get(
 		ZL_EXP_VOID * VM_ARG,
@@ -303,6 +315,142 @@ static int builtin_crustache__partial(ZL_EXP_VOID * VM_ARG, crustache_template *
 	(*partial) = builtin_crustache_new_template(VM_ARG, file_contents, api_name, file_size, full_path);
 	zenglApi_FreeMem(VM_ARG, file_contents);
 	return 0;
+}
+
+/**
+ * 将格式化后的字符串追加到infoStringPtr动态字符串的末尾，动态字符串会根据格式化的字符串的大小进行动态扩容
+ */
+static void builtin_make_info_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoStringPtr, const char * format, ...)
+{
+	va_list arglist;
+	int retcount = -1;
+	if(infoStringPtr->str == NULL)
+	{
+		infoStringPtr->size = BUILTIN_INFO_STRING_SIZE;
+		infoStringPtr->str = zenglApi_AllocMem(VM_ARG,infoStringPtr->size * sizeof(char));
+	}
+	do
+	{
+		va_start(arglist, format);
+		retcount = vsnprintf((infoStringPtr->str + infoStringPtr->cur),
+							(infoStringPtr->size - infoStringPtr->count), format, arglist);
+		va_end(arglist);
+		if(retcount >= 0 && retcount < (infoStringPtr->size - infoStringPtr->count))
+		{
+			infoStringPtr->count += retcount;
+			infoStringPtr->cur = infoStringPtr->count;
+			infoStringPtr->str[infoStringPtr->cur] = '\0';
+			return;
+		}
+
+		infoStringPtr->size += BUILTIN_INFO_STRING_SIZE;
+		infoStringPtr->str = zenglApi_ReAllocMem(VM_ARG, infoStringPtr->str, infoStringPtr->size * sizeof(char));
+	} while(ZL_EXP_TRUE);
+}
+
+/**
+ * 将zengl脚本中的数组转为json格式，并追加到infoString动态字符串
+ * 如果数组中还包含了数组，那么所包含的数组在转为json时，会递归调用当前函数
+ * 如果数组成员有对应的哈希key(字符串作为key)，那么生成的json会用大括号包起来
+ * 例如：{"hello":"world","name":"zengl"}
+ * 如果数组成员没有哈希key，那么生成的json会用中括号包起来
+ * 例如：[1,2,3,3.14159,"zengl language"]
+ */
+static void builtin_write_array_to_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoString, ZENGL_EXPORT_MEMBLOCK memblock)
+{
+	ZL_EXP_INT size,count,process_count,i,j;
+	ZL_EXP_CHAR * key, * mblk_str;
+	ZL_EXP_CHAR * escape_str = ZL_EXP_NULL;
+	// make_object用于判断是否生成对象格式的json，对象格式的json字符串会用大括号包起来，并用冒号来分隔数组成员的哈希key与值
+	ZL_EXP_BOOL make_object = ZL_EXP_FALSE;
+	ZENGL_EXPORT_MOD_FUN_ARG mblk_val = {ZL_EXP_FAT_NONE,{0}};
+	zenglApi_GetMemBlockInfo(VM_ARG,&memblock,&size,ZL_EXP_NULL);
+	count = zenglApi_GetMemBlockNNCount(VM_ARG, &memblock);
+	if(count > 0)
+	{
+		for(i=1,process_count=0; i<=size && process_count < count; i++)
+		{
+			mblk_val = zenglApi_GetMemBlock(VM_ARG,&memblock,i);
+			zenglApi_GetMemBlockHashKey(VM_ARG,&memblock,i-1,&key);
+			switch(mblk_val.type)
+			{
+			case ZL_EXP_FAT_INT:
+			case ZL_EXP_FAT_FLOAT:
+			case ZL_EXP_FAT_STR:
+			case ZL_EXP_FAT_MEMBLOCK:
+				if(process_count == 0) {
+					if(key != ZL_EXP_NULL) {
+						builtin_make_info_string(VM_ARG, infoString, "{");
+						make_object = ZL_EXP_TRUE;
+					}
+					else {
+						builtin_make_info_string(VM_ARG, infoString, "[");
+						make_object = ZL_EXP_FALSE;
+					}
+				}
+				process_count++;
+				break;
+			}
+			switch(mblk_val.type)
+			{
+			case ZL_EXP_FAT_INT: // 对数组中的整数进行转换处理
+				if(make_object) {
+					if(key != ZL_EXP_NULL)
+						builtin_make_info_string(VM_ARG, infoString, "\"%s\":%ld", key, mblk_val.val.integer);
+					else
+						builtin_make_info_string(VM_ARG, infoString, "\"%d\":%ld",i-1,mblk_val.val.integer);
+				}
+				else
+					builtin_make_info_string(VM_ARG, infoString, "%ld",mblk_val.val.integer);
+				break;
+			case ZL_EXP_FAT_FLOAT: // 对数组中的浮点数进行转换处理
+				if(make_object) {
+					if(key != ZL_EXP_NULL)
+						builtin_make_info_string(VM_ARG, infoString, "\"%s\":%.16g",key,mblk_val.val.floatnum);
+					else
+						builtin_make_info_string(VM_ARG, infoString, "\"%d\":%.16g",i-1,mblk_val.val.floatnum);
+				}
+				else
+					builtin_make_info_string(VM_ARG, infoString, "%.16g",mblk_val.val.floatnum);
+				break;
+			case ZL_EXP_FAT_STR: // 对数组中的字符串进行处理
+				// 通过strchr库函数来检测字符串中是否包含双引号或者反斜杠，如果都不包含可以无需进行转义
+				if(strchr(mblk_val.val.str, '"') == NULL &&  strchr(mblk_val.val.str, '\\') == NULL) {
+					mblk_str = mblk_val.val.str;
+				}
+				else {
+					// 如果字符串中包含双引号或者反斜杠，就需要先将双引号和反斜杠进行转义
+					session_escape_str(VM_ARG, &escape_str, mblk_val.val.str);
+					mblk_str = escape_str;
+				}
+				if(make_object) {
+					if(key != ZL_EXP_NULL)
+						builtin_make_info_string(VM_ARG, infoString, "\"%s\":\"%s\"",key,mblk_str);
+					else
+						builtin_make_info_string(VM_ARG, infoString, "\"%d\":\"%s\"",i-1,mblk_str);
+				}
+				else
+					builtin_make_info_string(VM_ARG, infoString, "\"%s\"",mblk_str);
+				break;
+			case ZL_EXP_FAT_MEMBLOCK: // 如果数组成员本身又是一个数组，那么就递归调用当前函数去生成内部数组的json格式
+				if(make_object) {
+					if(key != ZL_EXP_NULL)
+						builtin_make_info_string(VM_ARG, infoString, "\"%s\":",key);
+					else
+						builtin_make_info_string(VM_ARG, infoString, "\"%d\":",i-1);
+				}
+				builtin_write_array_to_string(VM_ARG, infoString, mblk_val.val.memblock);
+				break;
+			}
+			if(process_count == count)
+				builtin_make_info_string(VM_ARG, infoString, "%s", (make_object ? "}" : "]")); // 如果处理完当前数组的所有成员，就用大括号或者中括号来闭合
+			else
+				builtin_make_info_string(VM_ARG, infoString, ","); // 数组成员之间在生成的json中用逗号分隔开
+		}
+		if(escape_str != ZL_EXP_NULL) { // 释放掉转义字符串所分配的内存
+			zenglApi_FreeMem(VM_ARG, escape_str);
+		}
+	}
 }
 
 /**
@@ -598,13 +746,367 @@ ZL_EXP_VOID module_builtin_mustache_file_render(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT 
 }
 
 /**
+ * bltJsonDecode模块函数，将字符串进行json解码
+ * 例如：
+ * json = '{"hello": "world!!", "name": "zengl", "val": "programmer", "arr":[1,2,3]}';
+ * json = bltJsonDecode(json);
+ * for(i=0; bltIterArray(json,&i,&k,&v); )
+ *	if(k == 'arr')
+ *		print 'arr:<br/>';
+ *		for(j=0; bltIterArray(v,&j,&inner_k,&inner_v); )
+ *			print ' -- ' + inner_k +": " + inner_v + '<br/>';
+ *		endfor
+ *	else
+ *		print k +": " + v + '<br/>';
+ *	endif
+ * endfor
+ * 执行结果如下：
+ * hello: world!!
+ * name: zengl
+ * val: programmer
+ * arr:
+ * -- 0: 1
+ * -- 1: 2
+ * -- 2: 3
+ * 上面将json字符串解码为了zengl数组
+ * 第二个参数max_depth用于设置json最多解析的对象或数组的层次
+ * 例如，将上面代码json = bltJsonDecode(json);修改为json = bltJsonDecode(json,1);后，执行时就会报500错误
+ * 并在日志中输出 user defined error: json depth 2 is big than 1 的错误信息，也就是只能解析一层json对象或数组
+ * 第三个参数max_memory用于设置json解析最多可以使用的内存，例如：
+ * 将代码修改为：json = bltJsonDecode(json,2,400);表示最多解析两层json对象或数组，同时，最多只能分配400字节的内存，
+ * 如果json解析时，使用的内存超过400字节时，就会报500错误，同时日志中输出
+ * user defined error: bltJsonDecode error: Unable to parse data, json error: Memory allocation failure 的错误信息
+ * 表示内存分配失败，这里是由于内存超出允许使用的最大值而引起的
+ */
+ZL_EXP_VOID module_builtin_json_decode(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltJsonDecode(str[, max_depth[, max_memory]])");
+	zenglApi_GetFunArg(VM_ARG,1,&arg); //得到第一个参数
+	if(arg.type != ZL_EXP_FAT_STR)
+		zenglApi_Exit(VM_ARG,"first argument str of bltJsonDecode must be string");
+	json_char * json = (json_char *)arg.val.str;
+	json_settings settings = { 0 };
+	settings.mem_alloc = my_json_mem_alloc;
+	settings.mem_free = my_json_mem_free;
+	settings.user_data = VM_ARG;
+	settings.settings = json_enable_comments;
+	unsigned int max_depth = 1000;
+	if(argcount >= 2) {
+		zenglApi_GetFunArg(VM_ARG,2,&arg); //得到第二个参数
+		if(arg.type != ZL_EXP_FAT_INT)
+			zenglApi_Exit(VM_ARG,"the second argument max_depth of bltJsonDecode must be integer");
+		max_depth = (unsigned int)arg.val.integer;
+		if(argcount >= 3) {
+			zenglApi_GetFunArg(VM_ARG,3,&arg); //得到第三个参数
+			if(arg.type != ZL_EXP_FAT_INT)
+				zenglApi_Exit(VM_ARG,"the third argument max_memory of bltJsonDecode must be integer");
+			settings.max_memory = (unsigned long)arg.val.integer;
+		}
+	}
+	json_char json_error_str[json_error_max];
+	json_value * value;
+	size_t json_length = strlen(json);
+	// 通过json-parser第三方解析程式来解析会话文件中的json数据，解析的结果是一个json_value结构
+	value = json_parse_ex (&settings, json, json_length, json_error_str);
+	if (value == NULL) {
+		zenglApi_Exit(VM_ARG,"bltJsonDecode error: Unable to parse data, json error: %s", json_error_str);
+	}
+	ZENGL_EXPORT_MEMBLOCK memblock;
+	switch (value->type) {
+	case json_none: // 将json中的null转为整数0
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+		break;
+	case json_object:
+	case json_array:
+		// 如果是json对象或json数组，则创建一个memblock内存块
+		if(zenglApi_CreateMemBlock(VM_ARG,&memblock,0) == -1) {
+			zenglApi_Exit(VM_ARG,zenglApi_GetErrorString(VM_ARG));
+		}
+		// 通过process_json_object_array函数，循环将value中的json成员填充到memblock中
+		process_json_object_array(VM_ARG, &memblock, value, 1, max_depth);
+		zenglApi_SetRetValAsMemBlock(VM_ARG,&memblock);
+		break;
+	case json_integer:
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)value->u.integer, 0);
+		break;
+	case json_double:
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_FLOAT, ZL_EXP_NULL, 0, value->u.dbl);
+		break;
+	case json_string:
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, value->u.string.ptr, 0, 0);
+		break;
+	case json_boolean: // 将json中的bool类型转为整数，例如：true转为1，false转为0
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)value->u.boolean, 0);
+		break;
+	default:
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+		break;
+	}
+	json_value_free_ex (&settings, value);
+}
+
+/**
+ * bltJsonEncode模块函数，将data参数进行json编码，返回json格式的字符串
+ * 例如：
+ * array['username'] = 'zenglong';
+ * array['password'] = '123456';
+ * tmp = bltArray(100,200,300,400,500,600);
+ * array['tmp'] = tmp;
+ * json = bltJsonEncode(array);
+ * print 'array转json字符串：<br/>';
+ * print json + '<br/><br/>';
+ * 执行结果如下：
+ * array转json字符串：
+ * {"username":"zenglong","password":"123456","tmp":[100,200,300,400,500,600]}
+ * 上面是数组转json的例子，对于整数，浮点数，直接返回整数和浮点数的字符串形式
+ * 对于字符串类型的参数，直接将字符串的原值返回
+ * 其他类型的参数都返回null字符串
+ */
+ZL_EXP_VOID module_builtin_json_encode(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltJsonEncode(data)");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	BUILTIN_INFO_STRING infoString = { 0 };
+	switch(arg.type) {
+	case ZL_EXP_FAT_MEMBLOCK:
+		// 通过builtin_write_array_to_string函数将zengl数组转为json格式的字符串
+		builtin_write_array_to_string(VM_ARG, &infoString, arg.val.memblock);
+		break;
+	case ZL_EXP_FAT_INT:
+		builtin_make_info_string(VM_ARG, &infoString, "%ld",arg.val.integer);
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		builtin_make_info_string(VM_ARG, &infoString, "%.16g",arg.val.floatnum);
+		break;
+	case ZL_EXP_FAT_STR:
+		builtin_make_info_string(VM_ARG, &infoString, "%s",arg.val.str);
+		break;
+	default:
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "null", 0, 0);
+		return;
+	}
+	if(infoString.str != NULL) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, infoString.str, 0, 0);
+		zenglApi_FreeMem(VM_ARG, infoString.str);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "null", 0, 0);
+}
+
+/**
+ * bltMd5模块函数，获取字符串的md5值，第一个参数str是要转成md5的字符串
+ * 第二个参数isLowerCase表示是否生成小写的md5值(默认值是1，也就是小写，将该参数设置为0，可以生成大写的md5值)
+ * 第三个参数is32表示是否生成32位的md5值(默认值是1，也就是32位，将该参数设置为0,可以生成16位的md5值)
+ * 例如：
+ * def MD5_LOWER_CASE 1;
+ * def MD5_UPPER_CASE 0;
+ * def MD5_32BIT 1;
+ * def MD5_16BIT 0;
+ * print '"admin@123456"的md5值:<br/>';
+ * print bltMd5('admin@123456') + ' [32位小写]<br/>';
+ * print bltMd5('admin@123456', MD5_UPPER_CASE) + ' [32位大写]<br/>';
+ * print bltMd5('admin@123456', MD5_LOWER_CASE, MD5_16BIT) + ' [16位小写]<br/>';
+ * print bltMd5('admin@123456', MD5_UPPER_CASE, MD5_16BIT) + ' [16位大写]<br/><br/>';
+ * 执行结果如下：
+ * "admin@123456"的md5值:
+ * f19b8dc2029cf707939e886e4b164681 [32位小写]
+ * F19B8DC2029CF707939E886E4B164681 [32位大写]
+ * 029cf707939e886e [16位小写]
+ * 029CF707939E886E [16位大写]
+ */
+ZL_EXP_VOID module_builtin_md5(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltMd5(str[, isLowerCase[, is32]])");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR)
+		zenglApi_Exit(VM_ARG,"first argument str of bltMd5 must be string");
+	MD5_CTX md5;
+	MD5Init(&md5);
+	unsigned char * encrypt = (unsigned char *)arg.val.str;
+	unsigned char decrypt[16];
+	MD5Update(&md5,encrypt,strlen((char *)encrypt));
+	MD5Final(&md5,decrypt);
+	int isLowerCase = ZL_EXP_TRUE;
+	int is32 = ZL_EXP_TRUE;
+	if(argcount >= 2) {
+		zenglApi_GetFunArg(VM_ARG,2,&arg);
+		if(arg.type != ZL_EXP_FAT_INT)
+			zenglApi_Exit(VM_ARG,"the second argument isLowerCase of bltMd5 must be integer");
+		isLowerCase = arg.val.integer;
+		if(argcount >= 3) {
+			zenglApi_GetFunArg(VM_ARG,3,&arg);
+			if(arg.type != ZL_EXP_FAT_INT)
+				zenglApi_Exit(VM_ARG,"the third argument is32 of bltMd5 must be integer");
+			is32 = arg.val.integer;
+		}
+	}
+	char buf[33];
+	char * p = buf;
+	int start_idx = is32 ? 0 : 4;
+	int end_idx = is32 ? 16 : 12;
+	const char * format = isLowerCase ? "%02x" : "%02X";
+	for(int i = start_idx; i < end_idx; i++) {
+		sprintf(p, format, decrypt[i]);
+		p += 2;
+	}
+	(*p) = '\0';
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, buf, 0, 0);
+}
+
+/**
+ * bltStr模块函数，返回第一个参数的字符串形式
+ * 如果第一个参数的值为NONE类型，要获取他对应的字符串形式即空字符串，需要将第一个参数的引用传递过来
+ * 例如：
+ * print 'bltStr(test): "' + bltStr(test) + '"<br/>';
+ * print 'bltStr(&amp;test): "' + bltStr(&test) + '"<br/>';
+ * 执行的结果如下：
+ * bltStr(test): "0"
+ * bltStr(&test): ""
+ * 上面test在没有被赋值的情况下，是NONE类型，NONE类型变量在参与运算或者以参数形式传递给函数时，是以整数0的形式进行运算和传递的
+ * 因此，要将NONE转为空字符串返回，需要将test的引用传递进去
+ * 如果将第二个参数设置为非0值，bltStr会同时将转化的结果赋值给第一个参数(需要将第一个参数的引用传递进来)
+ * 例如：
+ * def TRUE 1;
+ * def FALSE 0;
+ * print 'test: "' + test + '"<br/>';
+ * bltStr(&test, TRUE);
+ * print 'test: "' + test + '"<br/><br/>';
+ * 执行结果如下：
+ * test: "0"
+ * test: ""
+ * 在经过bltStr(&test, TRUE);转化后，test就被赋值为了空字符串
+ */
+ZL_EXP_VOID module_builtin_str(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltStr(data|&data[, isSetData=0])");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	int isSetData = ZL_EXP_FALSE;
+	if(argcount >= 2) {
+		ZENGL_EXPORT_MOD_FUN_ARG arg2 = {ZL_EXP_FAT_NONE,{0}};
+		zenglApi_GetFunArg(VM_ARG,2,&arg2);
+		if(arg2.type != ZL_EXP_FAT_INT)
+			zenglApi_Exit(VM_ARG,"the second argument isSetData of bltStr must be integer");
+		isSetData = arg2.val.integer;
+	}
+	char * retstr;
+	char tmpstr[40];
+	switch(arg.type) {
+	case ZL_EXP_FAT_STR:
+		retstr = arg.val.str;
+		break;
+	case ZL_EXP_FAT_INT:
+		snprintf(tmpstr, 40, "%ld", arg.val.integer);
+		retstr = tmpstr;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		snprintf(tmpstr, 40, "%.16g", arg.val.floatnum);
+		retstr = tmpstr;
+		break;
+	case ZL_EXP_FAT_MEMBLOCK:
+		retstr = "[array or class obj type]";
+		break;
+	default:
+		retstr = "";
+		break;
+	}
+	if(isSetData) {
+		if(arg.type != ZL_EXP_FAT_STR) {
+			arg.type = ZL_EXP_FAT_STR;
+			arg.val.str = retstr;
+			zenglApi_SetFunArg(VM_ARG,1,&arg);
+		}
+	}
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, retstr, 0, 0);
+}
+
+/**
+ * bltCount模块函数，获取数组的有效成员数，或者获取字符串的有效长度
+ */
+ZL_EXP_VOID module_builtin_count(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltCount(data)");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	int retcount;
+	switch(arg.type) {
+	case ZL_EXP_FAT_STR:
+		retcount = strlen(arg.val.str);
+		break;
+	case ZL_EXP_FAT_MEMBLOCK:
+		retcount = zenglApi_GetMemBlockNNCount(VM_ARG, &arg.val.memblock);
+		break;
+	default:
+		retcount = 0;
+		break;
+	}
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retcount, 0);
+}
+
+/**
+ * bltGetZenglServerVersion模块函数，获取zenglServer的版本号
+ */
+ZL_EXP_VOID module_builtin_get_zengl_server_version(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	ZENGL_EXPORT_MEMBLOCK memblock;
+	if(zenglApi_CreateMemBlock(VM_ARG,&memblock,0) == -1) {
+		zenglApi_Exit(VM_ARG,zenglApi_GetErrorString(VM_ARG));
+	}
+	arg.type = ZL_EXP_FAT_INT;
+	arg.val.integer = ZLSERVER_MAJOR_VERSION;
+	zenglApi_SetMemBlock(VM_ARG,&memblock,1,&arg);
+	arg.val.integer = ZLSERVER_MINOR_VERSION;
+	zenglApi_SetMemBlock(VM_ARG,&memblock,2,&arg);
+	arg.val.integer = ZLSERVER_REVISION;
+	zenglApi_SetMemBlock(VM_ARG,&memblock,3,&arg);
+	zenglApi_SetRetValAsMemBlock(VM_ARG,&memblock);
+}
+
+/**
+ * bltGetZenglVersion模块函数，获取zengl语言的版本号
+ */
+ZL_EXP_VOID module_builtin_get_zengl_version(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	ZENGL_EXPORT_MEMBLOCK memblock;
+	if(zenglApi_CreateMemBlock(VM_ARG,&memblock,0) == -1) {
+		zenglApi_Exit(VM_ARG,zenglApi_GetErrorString(VM_ARG));
+	}
+	arg.type = ZL_EXP_FAT_INT;
+	arg.val.integer = ZL_EXP_MAJOR_VERSION;
+	zenglApi_SetMemBlock(VM_ARG,&memblock,1,&arg);
+	arg.val.integer = ZL_EXP_MINOR_VERSION;
+	zenglApi_SetMemBlock(VM_ARG,&memblock,2,&arg);
+	arg.val.integer = ZL_EXP_REVISION;
+	zenglApi_SetMemBlock(VM_ARG,&memblock,3,&arg);
+	zenglApi_SetRetValAsMemBlock(VM_ARG,&memblock);
+}
+
+/**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
 ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 {
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltArray",zenglApiBMF_array);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUnset",zenglApiBMF_unset);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltIterArray",module_builtin_iterate_array);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltWriteFile",module_builtin_write_file);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltExit",module_builtin_exit);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltMustacheFileRender",module_builtin_mustache_file_render);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltJsonDecode",module_builtin_json_decode);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltJsonEncode",module_builtin_json_encode);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltMd5",module_builtin_md5);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltStr",module_builtin_str);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltCount",module_builtin_count);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltGetZenglServerVersion",module_builtin_get_zengl_server_version);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltGetZenglVersion",module_builtin_get_zengl_version);
 }

@@ -46,6 +46,30 @@ static void module_mysql_free_result_resource_callback(ZL_EXP_VOID * VM_ARG, voi
 }
 
 /**
+ * 判断指针con对应的连接，是否是有效的mysql连接
+ */
+static ZL_EXP_BOOL is_valid_mysql_connection(RESOURCE_LIST * resource_list, void * con)
+{
+	int ret = resource_list_get_ptr_idx(resource_list, con, module_mysql_free_connection_resource_callback);
+	if(ret >= 0)
+		return ZL_EXP_TRUE;
+	else
+		return ZL_EXP_FALSE;
+}
+
+/**
+ * 判断指针res对应的结果集，是否是有效的mysql结果集
+ */
+static ZL_EXP_BOOL is_valid_mysql_result(RESOURCE_LIST * resource_list, void * res)
+{
+	int ret = resource_list_get_ptr_idx(resource_list, res, module_mysql_free_result_resource_callback);
+	if(ret >= 0)
+		return ZL_EXP_TRUE;
+	else
+		return ZL_EXP_FALSE;
+}
+
+/**
  * mysqlGetClientInfo模块函数对应的C函数
  * 通过mysql_get_client_info的官方库函数，来返回mysql客户端库的版本信息
  */
@@ -69,6 +93,10 @@ ZL_EXP_VOID module_mysql_get_server_version(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argc
 		zenglApi_Exit(VM_ARG,"the first argument [connection] of mysqlGetServerVersion must be integer");
 	}
 	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"mysqlGetServerVersion runtime error: invalid connection");
+	}
 	unsigned long server_version = mysql_get_server_version(con);
 	long major_version = (long)(server_version / 10000);
 	long minor_version = (long)((server_version % 10000) / 100);
@@ -119,6 +147,10 @@ ZL_EXP_VOID module_mysql_real_connect(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the first argument [connection] of mysqlRealConnect must be integer");
 	}
 	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"mysqlRealConnect runtime error: invalid connection");
+	}
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
 		zenglApi_Exit(VM_ARG,"the second argument [host] of mysqlRealConnect must be string");
@@ -169,6 +201,10 @@ ZL_EXP_VOID module_mysql_set_character_set(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argco
 		zenglApi_Exit(VM_ARG,"the first argument [connection] of mysqlSetCharacterSet must be integer");
 	}
 	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"mysqlSetCharacterSet runtime error: invalid connection");
+	}
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
 		zenglApi_Exit(VM_ARG,"the second argument [charset_name] of mysqlSetCharacterSet must be string");
@@ -192,6 +228,10 @@ ZL_EXP_VOID module_mysql_character_set_name(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argc
 		zenglApi_Exit(VM_ARG,"the first argument [connection] of mysqlCharacterSetName must be integer");
 	}
 	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"mysqlCharacterSetName runtime error: invalid connection");
+	}
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, (char *)mysql_character_set_name(con), 0, 0);
 }
 
@@ -209,6 +249,10 @@ ZL_EXP_VOID module_mysql_real_escape_string(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argc
 		zenglApi_Exit(VM_ARG,"the first argument [connection] of mysqlRealEscapeString must be integer");
 	}
 	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"mysqlRealEscapeString runtime error: invalid connection");
+	}
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
 		zenglApi_Exit(VM_ARG,"the second argument [source_string] of mysqlRealEscapeString must be string");
@@ -239,6 +283,10 @@ ZL_EXP_VOID module_mysql_error(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the first argument [connection] of mysqlError must be integer");
 	}
 	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"mysqlError runtime error: invalid connection");
+	}
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, (char *)mysql_error(con), 0, 0);
 }
 
@@ -256,6 +304,10 @@ ZL_EXP_VOID module_mysql_query(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the first argument [connection] of mysqlQuery must be integer");
 	}
 	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"mysqlQuery runtime error: invalid connection");
+	}
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
 		zenglApi_Exit(VM_ARG,"the second argument [statement] of mysqlQuery must be string");
@@ -280,9 +332,12 @@ ZL_EXP_VOID module_mysql_close(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the first argument [connection] of mysqlClose must be integer");
 	}
 	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"mysqlClose runtime error: invalid connection");
+	}
 	mysql_close(con);
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
-	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	int ret_code = resource_list_remove_member(&(my_data->resource_list), con);
 	if(ret_code != 0) {
 		zenglApi_Exit(VM_ARG, "mysqlClose remove resource from resource_list failed, resource_list_remove_member error code:%d", ret_code);
@@ -305,13 +360,16 @@ ZL_EXP_VOID module_mysql_store_result(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the first argument [connection] of mysqlStoreResult must be integer");
 	}
 	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"mysqlStoreResult runtime error: invalid connection");
+	}
 	MYSQL_RES * res = mysql_store_result(con);
 	MODULE_MYSQL_RES * result = zenglApi_AllocMem(VM_ARG, sizeof(MODULE_MYSQL_RES));
 	result->mysql_res = res;
 	result->num_fields = (int)mysql_num_fields(res);
 	result->signer = MODULE_MYSQL_RES_SIGNER;
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)result, 0);
-	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	int ret_code = resource_list_set_member(&(my_data->resource_list), result, module_mysql_free_result_resource_callback);
 	if(ret_code != 0) {
 		zenglApi_Exit(VM_ARG, "mysqlStoreResult add resource to resource_list failed, resource_list_set_member error code:%d", ret_code);
@@ -333,13 +391,16 @@ ZL_EXP_VOID module_mysql_free_result(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the first argument [result] of mysqlFreeResult must be integer");
 	}
 	MODULE_MYSQL_RES * result = (MODULE_MYSQL_RES *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_result(&(my_data->resource_list), result)) {
+		zenglApi_Exit(VM_ARG,"mysqlFreeResult runtime error: invalid result");
+	}
 	if(result->signer != MODULE_MYSQL_RES_SIGNER) {
 		zenglApi_Exit(VM_ARG,"the first argument [result] of mysqlFreeResult is invalid");
 	}
 	mysql_free_result(result->mysql_res);
 	zenglApi_FreeMem(VM_ARG, result);
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
-	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	int ret_code = resource_list_remove_member(&(my_data->resource_list), result);
 	if(ret_code != 0) {
 		zenglApi_Exit(VM_ARG, "mysqlFreeResult remove resource from resource_list failed, resource_list_remove_member error code:%d", ret_code);
@@ -363,6 +424,10 @@ ZL_EXP_VOID module_mysql_fetch_result_row(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 		zenglApi_Exit(VM_ARG,"the first argument [result] of mysqlFetchResultRow must be integer");
 	}
 	MODULE_MYSQL_RES * result = (MODULE_MYSQL_RES *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_result(&(my_data->resource_list), result)) {
+		zenglApi_Exit(VM_ARG,"mysqlFetchResultRow runtime error: invalid result");
+	}
 	if(result->signer != MODULE_MYSQL_RES_SIGNER) {
 		zenglApi_Exit(VM_ARG,"the first argument [result] of mysqlFetchResultRow is invalid");
 	}

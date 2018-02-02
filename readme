@@ -84,7 +84,9 @@ url_path: /
 full_path: my_webroot/index.html
 status: 200, content length: 90
 response header: HTTP/1.1 200 OK
-Cache-Control: max-age=120
+Cache-Control: public, max-age=600
+Content-Type: text/html
+Last-Modified: Sun, 04 Jun 2017 06:28:50 GMT
 Content-Length: 90
 Connection: Closed
 Server: zenglServer
@@ -100,7 +102,9 @@ url_path: /favicon.ico
 full_path: my_webroot/favicon.ico
 status: 200, content length: 67646
 response header: HTTP/1.1 200 OK
-Cache-Control: max-age=120
+Cache-Control: public, max-age=600
+Content-Type: image/x-icon
+Last-Modified: Mon, 21 Nov 2016 05:58:13 GMT
 Content-Length: 67646
 Connection: Closed
 Server: zenglServer
@@ -162,7 +166,7 @@ zengl@zengl-ubuntu:~/zenglServer$
 通过-v可以查看zenglServer的版本号以及所使用的zengl脚本语言的版本号，-c可以指定需要加载的配置文件(配置文件必须使用zengl脚本语法编写)：
 
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
-zenglServer version: v0.8.0
+zenglServer version: v0.8.1
 zengl language version: v1.7.4
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 

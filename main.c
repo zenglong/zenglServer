@@ -1,6 +1,9 @@
 #ifndef _GNU_SOURCE
 	#define _GNU_SOURCE
 #endif
+#ifndef _XOPEN_SOURCE
+	#define _XOPEN_SOURCE
+#endif
 
 #include "main.h"
 #include "dynamic_string.h"
@@ -68,6 +71,15 @@ typedef struct _MY_SIG_PAIR{
     struct sigaction action; // 用于设置处理信号时，需要执行的动作(也就是设置相应的C函数)
 } MY_SIG_PAIR;
 
+/**
+ * 根据文件名后缀检测内容类型的结构体
+ */
+typedef struct _SERVER_CONTENT_TYPE{
+	const char * suffix; // 文件名后缀
+	int suffix_length;   // 后缀长度
+	const char * content_type; // 内容类型
+} SERVER_CONTENT_TYPE;
+
 #define PROCESS_NUM 3 // 如果在配置文件中没有设置process_num时，就使用该宏的值作为需要创建的进程数
 #define THREAD_NUM_PER_PROCESS 1 // (暂不使用，epoll模式下，实际的工作线程数暂时由程序自己确定!)
 #define THREAD_NUM_MAX 3 // (暂不使用，epoll模式下，实际的工作线程数暂时由程序自己确定!)
@@ -106,11 +118,138 @@ static char config_session_dir[120]; // session会话目录
 static long config_session_expire; // session会话默认超时时间(以秒为单位)
 static long config_session_cleaner_interval; // session会话文件清理进程的清理时间间隔(以秒为单位)
 
+// server_content_types数组中存储了文件名后缀与内容类型之间的对应关系
+static SERVER_CONTENT_TYPE server_content_types[] = {
+	{".html", 5, "text/html"},
+	{".css", 4, "text/css"},
+	{".js", 3, "application/javascript"},
+	{".png", 4, "image/png"},
+	{".jpg", 4, "image/jpeg"},
+	{".jpeg", 5, "image/jpeg"},
+	{".gif", 4, "image/gif"},
+	{".ico", 4, "image/x-icon"}
+};
+
+// server_content_types数组的成员个数
+static int server_content_types_number = 8;
+
+/**
+ * 通过检测文件名后缀，在响应头中输出相应的Content-Type内容类型(IE高版本浏览器，css样式文件如果没有Content-Type，会报Mime类型不匹配而被忽略的警告信息，从而导致样式不生效)
+ */
+static int main_output_content_type(char * full_path, CLIENT_SOCKET_LIST * socket_list, int lst_idx)
+{
+	int full_length = strlen(full_path);
+	for(int i=0; i < server_content_types_number; i++) {
+		SERVER_CONTENT_TYPE * sct = &server_content_types[i];
+		if(full_length > sct->suffix_length &&
+			(full_path[full_length -1] == sct->suffix[sct->suffix_length - 1])) {
+			if(strncmp(full_path + (full_length - sct->suffix_length), sct->suffix, sct->suffix_length) == 0) {
+				client_socket_list_append_send_data(socket_list, lst_idx, "Content-Type: ", 14);
+				client_socket_list_append_send_data(socket_list, lst_idx, (char *)sct->content_type, strlen(sct->content_type));
+				client_socket_list_append_send_data(socket_list, lst_idx, "\r\n", 2);
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+/**
+ * 将buffer字符串解析成相应的时间结构
+ */
+static void main_parse_date(const char *buffer, struct tm *date) {
+	int len;
+	char firstElement[20];
+	sscanf(buffer, "%s", firstElement);
+	len = strlen(firstElement);
+
+	switch (len) {
+	/* RFC 822, updated by RFC 1123; firstElement "[wkday]," */
+	case 4:
+		strptime(buffer, "%a, %d %b %Y %T GMT", date);
+		break;
+		/*  ANSI C's asctime() format; firstElement "[wkday]" */
+	case 3:
+		strptime(buffer, "%a %b %d %T %Y", date);
+		break;
+		/* RFC 850, obsoleted by RFC 1036; firstElement "[weekdey],
+		 * " */
+	default:
+		strptime(buffer, "%A, %d-%b-%y %T GMT", date);
+	}
+}
+
+/**
+ * 比较两个时间结构，判断他们是否相等
+ */
+static int main_compare_dates(const struct tm *date1, const struct tm *date2) {
+	time_t sec1;
+	time_t sec2;
+
+	sec1 = mktime((struct tm*) date1);
+	sec2 = mktime((struct tm*) date2);
+
+	return (sec2 - sec1);
+}
+
+/**
+ * 根据静态文件的修改时间，生成Last-Modified响应头
+ */
+static void main_output_last_modified(struct stat * filestatus, CLIENT_SOCKET_LIST * socket_list, int lst_idx)
+{
+	char dateLine[60];
+	struct tm * tempDate;
+	tempDate = gmtime(&filestatus->st_mtim.tv_sec);
+	strftime(dateLine, 60, "Last-Modified: %a, %d %b %Y %T GMT\r\n", tempDate);
+	client_socket_list_append_send_data(socket_list, lst_idx, dateLine, strlen(dateLine));
+}
+
+/**
+ * 如果客户的的请求头中包含了If-Modified-Since字段的话，就将该字段的时间值，与所访问的静态文件的修改时间进行比较
+ * 如果两个时间相同，则返回304状态码
+ */
+static void main_process_if_modified_since(char * request_header, int request_header_count,
+		struct stat * filestatus, CLIENT_SOCKET_LIST * socket_list, int lst_idx, int * status_code)
+{
+	const char * if_modified_since = "If-Modified-Since";
+	int if_modified_since_length = strlen(if_modified_since);
+	char * tmp = request_header;
+	char * end = request_header + request_header_count;
+	do{
+		ZL_EXP_CHAR * field = tmp;
+		ZL_EXP_CHAR * value = field + strlen(field) + 1;
+		if(field >= end || value >= end) {
+			break;
+		}
+		int field_len = strlen(field);
+		if(field_len == if_modified_since_length) {
+			if(!strcasecmp(field, if_modified_since)) {
+				struct tm reqestedDate;
+				main_parse_date(value, &reqestedDate);
+				struct tm * fileModDate = gmtime(&(filestatus->st_mtime));
+				if(!main_compare_dates(&reqestedDate, fileModDate)) {
+					if((*status_code) == 200) {
+						(*status_code) = 304;
+					}
+					return;
+				}
+			}
+		}
+		tmp = value + strlen(value) + 1;
+	} while(1);
+}
+
+/**
+ * 获取webroot网站根目录
+ */
 char * main_get_webroot()
 {
 	return webroot;
 }
 
+/**
+ * 将append_path路径追加到full_path中，如果追加路径后，full_path长度会超出full_path_size时，路径将会被截断
+ */
 int main_full_path_append(char * full_path, int full_path_length, int full_path_size, char * append_path)
 {
 	int append_path_length = strlen(append_path);
@@ -1032,6 +1171,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	int status_code = 200;
 	ZL_EXP_BOOL is_custom_status_code = ZL_EXP_FALSE; // 是否是自定义的请求头
 	int content_length = 0;
+	struct stat filestatus;
 	// 如果是访问根目录，则将webroot根目录中的index.html文件里的内容，作为结果反馈给客户端
 	if(strlen(url_path) == 1 && url_path[0] == '/') {
 		int append_length = main_full_path_append(full_path, 0, FULL_PATH_SIZE, webroot);
@@ -1048,6 +1188,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			doc_fd = open(full_path, O_RDONLY);
 			status_code = 404;
 		}
+		stat(full_path, &filestatus);
 	}
 	else {
 		// 下面会根据webroot根目录，和url_path来构建full_path完整路径
@@ -1057,7 +1198,6 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		full_path[full_length] = '\0';
 		write_to_server_log_pipe(WRITE_TO_PIPE, "full_path: %s\n", full_path);
 
-		struct stat filestatus;
 		// 如果要访问的文件是以.zl结尾的，就将该文件当做zengl脚本来进行编译执行
 		if(full_length > 3 && (stat(full_path, &filestatus) == 0) && (strncmp(full_path + (full_length - 3), ".zl", 3) == 0)) {
 			// my_data是传递给zengl脚本的额外数据，里面包含了客户端套接字等可能需要用到的信息
@@ -1112,8 +1252,13 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				status_code = 500;
 			}
 			else {
-				if(!(my_data.response_header.count > 0 && strncmp(my_data.response_header.str, "HTTP/", 5) == 0))
+				if(!(my_data.response_header.count > 0 && strncmp(my_data.response_header.str, "HTTP/", 5) == 0)) {
 					client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 200 OK\r\n", 17);
+					if(my_data.response_header.count == 0 ||
+					  !strcasestr(my_data.response_header.str, "content-type:")) { // 没有定义过Content-Type响应头，则默认输出text/html
+						client_socket_list_append_send_data(socket_list, lst_idx, "Content-Type: text/html\r\n", 25);
+					}
+				}
 				else
 					is_custom_status_code = ZL_EXP_TRUE; // 用户自定义了http状态码
 			}
@@ -1151,6 +1296,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				full_length = root_length;
 				full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, "/404.html");
 				full_path[full_length] = '\0';
+				stat(full_path, &filestatus);
 				doc_fd = open(full_path, O_RDONLY);
 				status_code = 404;
 			}
@@ -1159,32 +1305,57 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	// 如果doc_fd大于0，则直接输出相关的静态文件的内容
 	if(doc_fd > 0) {
 		client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 ", 9);
+		ZL_EXP_BOOL is_reg_file = ZL_EXP_TRUE;
+		// 非常规文件，直接返回403禁止访问
+		if(!S_ISREG(filestatus.st_mode)) {
+			status_code = 403;
+			is_reg_file = ZL_EXP_FALSE;
+		}
+		else
+			main_process_if_modified_since(parser_data->request_header.str, parser_data->request_header.count, &filestatus, socket_list, lst_idx, &status_code);
 		switch(status_code){
+		case 403:
+			client_socket_list_append_send_data(socket_list, lst_idx, "403 Forbidden\r\n", 15);
+			break;
 		case 404:
 			client_socket_list_append_send_data(socket_list, lst_idx, "404 Not Found\r\n", 15);
 			break;
 		case 200:
 			client_socket_list_append_send_data(socket_list, lst_idx, "200 OK\r\n", 8);
-			client_socket_list_append_send_data(socket_list, lst_idx, "Cache-Control: max-age=120\r\n", 28);
+			client_socket_list_append_send_data(socket_list, lst_idx, "Cache-Control: public, max-age=600\r\n", 36);
+			break;
+		case 304:
+			client_socket_list_append_send_data(socket_list, lst_idx, "304 Not Modified\r\n", 18);
+			client_socket_list_append_send_data(socket_list, lst_idx, "Cache-Control: public, max-age=600\r\n", 36);
 			break;
 		}
-		char doc_fd_content_length[20];
-		content_length = (int)lseek(doc_fd, 0, SEEK_END);
+		char doc_fd_content_length[20] = {0};
+		if(is_reg_file && status_code != 304) { // 获取常规文件的内容长度，并根据文件名后缀，在响应头中输出文件类型
+			content_length = (int)lseek(doc_fd, 0, SEEK_END);
+			lseek(doc_fd, 0, SEEK_SET);
+			if(main_output_content_type(full_path, socket_list, lst_idx) && (status_code == 200)) {
+				main_output_last_modified(&filestatus, socket_list, lst_idx);
+			}
+		}
+		else
+			content_length = 0;
 		sprintf(doc_fd_content_length, "%d", content_length);
-		lseek(doc_fd, 0, SEEK_SET);
 		client_socket_list_append_send_data(socket_list, lst_idx, "Content-Length: ", 16);
 		client_socket_list_append_send_data(socket_list, lst_idx, doc_fd_content_length, strlen(doc_fd_content_length));
 		client_socket_list_append_send_data(socket_list, lst_idx, "\r\nConnection: Closed\r\nServer: zenglServer\r\n\r\n", 45);
-		char buffer[1025];
-		int data_length;
-		while((data_length = read(doc_fd, buffer, sizeof(buffer))) > 0){
-			client_socket_list_append_send_data(socket_list, lst_idx, buffer, data_length);
+		if(is_reg_file && status_code != 304) { // 输出常规文件的内容
+			char buffer[1025];
+			int data_length;
+			while((data_length = read(doc_fd, buffer, sizeof(buffer))) > 0){
+				client_socket_list_append_send_data(socket_list, lst_idx, buffer, data_length);
+			}
 		}
 		close(doc_fd);
 	}
 	// 如果连404.html也不存在的话，则直接反馈404状态信息
 	else if(status_code == 404 && doc_fd == -1) {
 		client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 404 Not Found\r\n", 24);
+		client_socket_list_append_send_data(socket_list, lst_idx, "Content-Length: 0\r\n", 19);
 		client_socket_list_append_send_data(socket_list, lst_idx, "Connection: Closed\r\nServer: zenglServer\r\n\r\n", 43);
 	}
 	// 在日志中输出响应状态码和响应主体数据的长度

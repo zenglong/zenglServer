@@ -12,11 +12,12 @@
 #include "dynamic_string.h"
 #include "resources.h"
 #include "http_parser.h"
+#include "debug.h"
 #include <stdio.h>
 
 #define ZLSERVER_MAJOR_VERSION 0  // zenglServer 主版本号
-#define ZLSERVER_MINOR_VERSION 8  // zenglServer 子版本号
-#define ZLSERVER_REVISION 1       // zenglServer 修正版本号
+#define ZLSERVER_MINOR_VERSION 9  // zenglServer 子版本号
+#define ZLSERVER_REVISION 0       // zenglServer 修正版本号
 
 #define URL_PATH_SIZE 120    // main.c中url_path可以容纳的字符数
 #define FULL_PATH_SIZE 200   // main.c中full_path完整路径可以容纳的字符数
@@ -66,13 +67,19 @@ typedef struct _MAIN_DATA{
 	DYNAMIC_STRING response_body;    // zengl脚本的输出内容会先追加到response_body动态字符串中，最后在脚本结束时，再将该动态字符串作为响应主体反馈给客户端
 	DYNAMIC_STRING response_header;  // zengl脚本中设置的响应头信息
 	RESOURCE_LIST resource_list; // 资源列表中存储了在脚本退出时，需要自动清理的资源，例如mysql数据库连接资源，mysql查询结果相关的资源等等
-	char * full_path;
+	char * full_path; // 当前执行脚本的路径信息
+	DEBUG_INFO * debug_info; // 调试相关的结构体指针，该指针对应的结构体中包含了连接套接字等
 } MAIN_DATA;
 
 char * main_get_webroot();
 int main_full_path_append(char * full_path, int full_path_length, int full_path_size, char * append_path);
 //模块函数中，可以通过main_get_session_config函数来获取配置文件设置过的会话目录，会话超时时间，以及cleaner进程的清理时间间隔
 void main_get_session_config(char ** session_dir, long * session_expire, long * session_cleaner_interval);
+/**
+ * 在进行远程调试时，可以通过此函数来获取配置文件中和远程调试相关的配置信息
+ * 例如 remote_debug_enable：是否开启了远程调试，remote_debugger_ip：远程调试器的ip地址，remote_debugger_port：远程调试器的端口号
+ */
+void main_get_remote_debug_config(long * remote_debug_enable, char ** remote_debugger_ip, long * remote_debugger_port);
 int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...);
 void routine_close_single_socket(int client_socket_fd);
 

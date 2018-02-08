@@ -11,7 +11,7 @@ OBJS = buffer.o crustache.o houdini_html.o stack.o
 libcrustache.a: $(OBJS)
 		$(AR) $(ARFLAGS) libcrustache.a $(OBJS)
 
-$(OBJS): $(SRCS) buffer.h crustache.h houdini.h html_unescape.h stack.h
+$(OBJS): $(SRCS) buffer.h crustache.h houdini.h html_unescape.h stack.h ../module_builtin.h ../common_header.h
 		$(CC) $(STATIC_CFLAGS) -c $(SRCS)
 
 clean:

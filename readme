@@ -13,7 +13,7 @@ make[1]: Entering directory '/home/zengl/zenglServer/crustache'
 gcc -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c buffer.c crustache.c houdini_html.c stack.c
 ar rc libcrustache.a buffer.o crustache.o houdini_html.o stack.o
 make[1]: Leaving directory '/home/zengl/zenglServer/crustache'
-gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm 
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm 
 
 *** notice: mysql module not enabled, you can use 'make USE_MYSQL=yes' to enable it, make sure you have mysql_config and mysql.h in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
@@ -37,7 +37,7 @@ make[1]: Entering directory '/home/zengl/zenglServer/crustache'
 gcc -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c buffer.c crustache.c houdini_html.c stack.c
 ar rc libcrustache.a buffer.o crustache.o houdini_html.o stack.o
 make[1]: Leaving directory '/home/zengl/zenglServer/crustache'
-gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h module_mysql.c module_mysql.h  zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs` 
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h module_mysql.c module_mysql.h  zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs` 
 
 mysql module is enabled!!!
 zengl@zengl-ubuntu:~/zenglServer$ 
@@ -61,6 +61,7 @@ run config.zl complete, config:
 port: 8083 process_num: 1
 webroot: my_webroot
 session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
+remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999
 bind done
 accept sem initialized.
 process_max_open_fd_num: 1024
@@ -166,7 +167,7 @@ zengl@zengl-ubuntu:~/zenglServer$
 通过-v可以查看zenglServer的版本号以及所使用的zengl脚本语言的版本号，-c可以指定需要加载的配置文件(配置文件必须使用zengl脚本语法编写)：
 
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
-zenglServer version: v0.8.1
+zenglServer version: v0.9.0
 zengl language version: v1.7.4
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
@@ -176,6 +177,7 @@ run config.zl complete, config:
 port: 8083 process_num: 1
 webroot: my_webroot
 session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
+remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999
 bind done
 accept sem initialized.
 process_max_open_fd_num: 1024 
@@ -183,6 +185,124 @@ Master: Spawning child(0) [pid 673]
 Master: Spawning cleaner [pid 674] 
 epoll max fd count : 896
 ------------ cleaner sleep begin: 1515237890
+
+从v0.9.0版本开始，zenglServer可以使用python进行远程调试。在根目录中新建了pydebugger目录，在该目录内新增了TCPServer.py的python脚本，需要通过python3来运行本脚本。该脚本在运行时，默认会监听9999端口(可以给脚本传递参数来改变绑定的端口号)，当python脚本接收到zenglServer的调试连接时，就会等待用户输入调试命令，并将这些命令发送给zenglServer，再由zenglServer执行调试命令和返回调试结果，最后python会将结果显示到用户终端上。
+
+要开启远程调试，还需要将zenglServer的config.zl中的remote_debug_enable设置为TRUE：
+
+def TRUE 1;
+def FALSE 0;
+
+.................................
+
+remote_debug_enable = FALSE; // 是否开启远程调试，默认为FALSE即不开启，设置为TRUE可以开启远程调试
+remote_debugger_ip = '127.0.0.1'; // 远程调试器的ip地址
+remote_debugger_port = 9999; // 远程调试器的端口号
+
+在开启远程调试后，就可以运行python脚本，当zenglServer执行zengl脚本时，就会向python脚本发送调试连接，从而进行远程调试：
+
+zengl@zengl-ubuntu:~/zenglServer$ python3 pydebugger/TCPServer.py
+listen connection [port:9999]...
+127.0.0.1 connected:
+file:my_webroot/v0_8_0/test.zl,line:1,breakIndex:0
+1    use builtin;
+
+zl debug >>> h
+ p 调试变量信息 usage:p express
+ b 设置断点 usage:b filename lineNumber[ count] | b lineNumber[ count]
+ B 查看断点列表 usage:B
+ T 查看脚本函数的堆栈调用信息 usage:T
+ d 删除某断点 usage:d breakIndex
+ D 禁用某断点 usage:D breakIndex
+ C 设置条件断点 usage:C breakIndex condition-express
+ L 设置日志断点 usage:L breakIndex log-express
+ N 设置断点次数 usage:N breakIndex count
+ s 单步步入 usage:s
+ S 单步步过 usage:S
+ r 执行到返回 usage:r
+ c 继续执行 usage:c
+ l 显示源码 usage:l filename [lineNumber[ offset]] | l [lineNumber[ offset]]
+ u 执行到指定的行 usage:u filename lineNumber | u lineNumber
+ h 显示帮助信息
+
+zl debug >>> l 9 10
+current run line:1 [my_webroot/v0_8_0/test.zl]
+1    use builtin;    <<<---[ current line] ***
+2
+3    def TRUE 1;
+4    def FALSE 0;
+5    def MD5_LOWER_CASE 1;
+6    def MD5_UPPER_CASE 0;
+7    def MD5_32BIT 1;
+8    def MD5_16BIT 0;
+9
+10    print '<!Doctype html>
+11    <html>
+12    <head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+13    <title>json编解码测试</title>
+14    </head>
+15    <body>';
+16
+17    json = '{"hello": "world!!", "name": "zengl", "val": "programmer", "arr":[1,2,3]}';
+18
+19    json = bltJsonDecode(json);
+
+zl debug >>> u 19
+file:my_webroot/v0_8_0/test.zl,line:19,breakIndex:1
+19    json = bltJsonDecode(json);
+
+zl debug >>> p json
+json :string:{"hello": "world!!", "name": "zengl", "val": "programmer", "arr":[1,2,3]}
+
+zl debug >>> c
+listen connection...
+^Cexcept...
+zengl@zengl-ubuntu:~/zenglServer$
+
+通过给python脚本传递参数，可以改变绑定的端口号：
+
+zengl@zengl-ubuntu:~/zenglServer$ python3 pydebugger/TCPServer.py 8989
+listen connection [port:8989]...
+^Cexcept...
+zengl@zengl-ubuntu:~/zenglServer$ 
+
+在zenglServer的logfile日志中也会记录下用户输入的调试命令：
+
+-----------------------------------
+Thu Mar  1 09:21:33 2018
+recv [client_socket_fd:9] [lst_idx:0] [pid:4664] [tid:4667]:
+
+request header: Host: 127.0.0.1:8083 | User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:55.0) Gecko/20100101 Firefox/55.0 | Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8 | Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3 | Accept-Encoding: gzip, deflate | Cookie: __uvt=; uvts=6l2bv2GQOomwZIup | Connection: keep-alive | Upgrade-Insecure-Requests: 1 | Cache-Control: max-age=0 |
+
+url: /v0_8_0/test.zl
+url_path: /v0_8_0/test.zl
+full_path: my_webroot/v0_8_0/test.zl
+zl debug info: Socket created [12]
+zl debug info: connecting to 127.0.0.1:9999... connected
+zl debug info: debugger command: l test.zl
+zl debug info: debugger command: h
+zl debug info: debugger command: u 19
+zl debug info: debugger command: p json
+zl debug info: debugger command: c
+zl debug info: close socket [12]
+status: 200, content length: 917
+response header: HTTP/1.1 200 OK
+
+Content-Type: text/html
+
+Content-Length: 917
+
+Connection: Closed
+
+Server: zenglServer
+
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:4664 tid:4667
+Termination signal received! Killing children..
+All children reaped, shutting down.
+closed accept_sem
+shutdowned server socket
+closed server socket
+===================================
 
 zenglServer是在Ubuntu 16.04 LTS x86-64(GCC版本号为：5.4.0)，Ubuntu 17.04 x86-64(GCC版本号为：6.3.0)中进行的开发测试，并在CentOS 5.8, 6.x, 7.x中进行了简单的测试。
 

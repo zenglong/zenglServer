@@ -23,16 +23,6 @@
 #include <errno.h>
 #include <sys/stat.h>
 
-#define BUILTIN_INFO_STRING_SIZE 1024 // 动态字符串初始化和动态扩容的大小
-
-// json编码时，需要使用的动态字符串的结构体定义
-typedef struct _BUILTIN_INFO_STRING{
-	char * str;   //字符串指针
-	int size;  //字符串的动态大小
-	int count; //存放的字符数
-	int cur;   //当前游标
-} BUILTIN_INFO_STRING;
-
 static int builtin_crustache__context_get(
 		ZL_EXP_VOID * VM_ARG,
 		builtin_mustache_context * new_context,
@@ -60,7 +50,7 @@ crustache_api builtin_crustache__default_api = {
 /**
  * 根据当前执行脚本的目录路径，加上filename文件名，来生成可以被fopen等C库函数使用的路径
  */
-static void builtin_make_fullpath(char * full_path, char * filename, MAIN_DATA * my_data)
+void builtin_make_fullpath(char * full_path, char * filename, MAIN_DATA * my_data)
 {
 	char * right_slash = strrchr(my_data->full_path, '/');
 	if(right_slash) {
@@ -83,7 +73,7 @@ static void builtin_make_fullpath(char * full_path, char * filename, MAIN_DATA *
 /**
  * 根据full_path文件路径来获取文件的内容
  */
-static char * builtin_get_file_content(ZL_EXP_VOID * VM_ARG, char * full_path, char * api_name, int * arg_file_size)
+char * builtin_get_file_content(ZL_EXP_VOID * VM_ARG, char * full_path, char * api_name, int * arg_file_size)
 {
 	struct stat filestatus;
 	if ( stat(full_path, &filestatus) != 0)
@@ -318,9 +308,18 @@ static int builtin_crustache__partial(ZL_EXP_VOID * VM_ARG, crustache_template *
 }
 
 /**
+ * 重置动态字符串的count字符数和cur当前游标，这样可以重新在该动态字符串中设置新的字符串
+ */
+void builtin_reset_info_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoStringPtr)
+{
+	infoStringPtr->count = 0;
+	infoStringPtr->cur = 0;
+}
+
+/**
  * 将格式化后的字符串追加到infoStringPtr动态字符串的末尾，动态字符串会根据格式化的字符串的大小进行动态扩容
  */
-static void builtin_make_info_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoStringPtr, const char * format, ...)
+void builtin_make_info_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoStringPtr, const char * format, ...)
 {
 	va_list arglist;
 	int retcount = -1;

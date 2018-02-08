@@ -19,6 +19,7 @@
 #include "module_mysql.h"
 #endif
 #include "module_session.h"
+#include "debug.h" // debug.h头文件中包含远程调试相关的结构体和函数的定义
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,10 +89,18 @@ typedef struct _SERVER_CONTENT_TYPE{
 #define SESSION_DIR_DEFAULT "sessions" // 如果配置文件中没有设置session_dir时，就使用该宏对应的目录名作为会话文件的存储目录
 #define SESSION_EXPIRE 1440 // 如果配置文件中没有设置session_expire时，就使用该宏的值作为session会话的超时时间(以秒为单位)
 #define SESSION_CLEANER_INTERVAL 3600 // 如果配置文件中没有设置session_cleaner_interval时，就使用该宏的值作为会话文件清理进程的清理时间间隔(以秒为单位)
+#define REMOTE_DEBUGGER_IP_DEFAULT "127.0.0.1" // 远程调试器默认的IP地址
+#define REMOTE_DEBUGGER_PORT 9999 // 远程调试器默认的端口号
 #define DEFAULT_CONFIG_FILE "config.zl" // 当启动zenglServer时，如果没有使用-c命令行参数来指定配置文件名时，就会使用该宏对应的值来作为默认的配置文件名
 #define SERVER_LOG_PIPE_STR_SIZE 1024 // 写入日志的动态字符串的初始化及动态扩容的大小
 #define WRITE_TO_PIPE 1 // 子进程统一将日志写入管道中，再由主进程从管道中将日志读取出来并写入日志文件
 #define WRITE_TO_LOG 0  // 主进程的日志信息，则可以直接写入日志文件
+
+// 启动过程中，在没有重定向输出之前，如果发生错误或警告，除了写入日志，还会显示在命令行终端，方便启动时不用通过查看日志就可以发现错误等
+#define WRITE_LOG_WITH_PRINTF(format, ...) write_to_server_log_pipe(WRITE_TO_LOG, format, __VA_ARGS__); \
+	printf(format, __VA_ARGS__);
+#define WRITE_LOG_WITH_PRINTF_NOARG(format) write_to_server_log_pipe(WRITE_TO_LOG, format); \
+	printf(format);
 
 char * current_process_name; // 指向当前进程的名称，通过修改该指针指向的内容，就可以修改当前进程的名称(目前名称的最大长度为255个字符)
 int server_log_fd = -1;   // 为守护进程打开的日志文件的文件描述符
@@ -117,6 +126,10 @@ char * zl_debug_log; // 该字符串指针指向最终会使用的zl_debug_log�
 static char config_session_dir[120]; // session会话目录
 static long config_session_expire; // session会话默认超时时间(以秒为单位)
 static long config_session_cleaner_interval; // session会话文件清理进程的清理时间间隔(以秒为单位)
+
+static long config_remote_debug_enable; // 是否开启远程调试
+static char config_remote_debugger_ip[30]; // 远程调试器的ip地址
+static long config_remote_debugger_port; //远程调试器的端口号
 
 // server_content_types数组中存储了文件名后缀与内容类型之间的对应关系
 static SERVER_CONTENT_TYPE server_content_types[] = {
@@ -275,6 +288,20 @@ void main_get_session_config(char ** session_dir, long * session_expire, long * 
 }
 
 /**
+ * 在进行远程调试时，可以通过此函数来获取配置文件中和远程调试相关的配置信息
+ * 例如 remote_debug_enable：是否开启了远程调试，remote_debugger_ip：远程调试器的ip地址，remote_debugger_port：远程调试器的端口号
+ */
+void main_get_remote_debug_config(long * remote_debug_enable, char ** remote_debugger_ip, long * remote_debugger_port)
+{
+	if(remote_debug_enable != NULL)
+		(*remote_debug_enable) = config_remote_debug_enable;
+	if(remote_debugger_ip != NULL)
+		(*remote_debugger_ip) = config_remote_debugger_ip;
+	if(remote_debugger_port != NULL)
+		(*remote_debugger_port) = config_remote_debugger_port;
+}
+
+/**
  * 将logstr写入server_log_fd文件描述符对应的日志文件中
  */
 int write_to_server_log(char * logstr)
@@ -377,38 +404,20 @@ int main(int argc, char * argv[])
 	//通过fork创建master主进程，该进程将在后台以守护进程的形式一直运行，并通过该进程来创建执行具体任务的child子进程
 	pid_t master_pid = fork();
 	if(master_pid < 0) {
-		write_to_server_log_pipe(WRITE_TO_LOG, "failed to create master process [%d] %s \n", errno, strerror(errno));
-		// 创建完master进程后，退出当前进程
+		WRITE_LOG_WITH_PRINTF("failed to create master process [%d] %s \n", errno, strerror(errno));
+		// 创建master进程失败，直接退出
 		exit(-1);
 	}
 	else if(master_pid > 0) {
 		// 记录master主进程的进程ID
 		write_to_server_log_pipe(WRITE_TO_LOG, "create master process for daemon [pid:%d] \n", master_pid);
+		// 创建完master进程后，直接返回以退出当前进程
 		return 0;
-	}
-
-	// 将umask设为0，让子进程给文件设置的读写执行权限不会被屏蔽掉
-	umask(0);
-	int logStdout;
-	if ((logStdout = open("/dev/null", O_WRONLY|O_APPEND|O_CREAT, 0644)) < 0) {
-		write_to_server_log_pipe(WRITE_TO_LOG, "open /dev/null failed [%d] %s \n", errno, strerror(errno));
-		exit(errno);
-	}
-	// 将标准输入和输出重定向到/dev/null
-	dup2(logStdout, STDIN_FILENO);
-	dup2(logStdout, STDOUT_FILENO);
-	dup2(logStdout, STDERR_FILENO);
-	close(logStdout);
-
-	// 设置新的会话，这样主进程和子进程就不会受到控制台信号的影响了
-	if (setsid() < 0) {
-		write_to_server_log_pipe(WRITE_TO_LOG, "setsid() failed [%d] %s \n", errno, strerror(errno));
-		exit(errno);
 	}
 
 	// 创建日志用的管道，子进程中的日志信息会先写入管道，再由主进程统一从管道中读取出来，并写入日志文件中
 	if (pipe(server_log_pipefd) == -1) {
-		write_to_server_log_pipe(WRITE_TO_LOG, "pipe() failed [%d] %s \n", errno, strerror(errno));
+		WRITE_LOG_WITH_PRINTF("pipe() failed [%d] %s \n", errno, strerror(errno));
 		exit(errno);
 	}
 
@@ -429,7 +438,7 @@ int main(int argc, char * argv[])
 	zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_config_run_print); // 设置zengl脚本中print指令会执行的回调函数
 	if(zenglApi_Run(VM, config_file) == -1) //编译执行zengl脚本
 	{
-		write_to_server_log_pipe(WRITE_TO_LOG, "错误：编译执行<%s>失败：%s\n", config_file, zenglApi_GetErrorString(VM));
+		WRITE_LOG_WITH_PRINTF("错误：编译执行<%s>失败：%s\n", config_file, zenglApi_GetErrorString(VM));
 		zenglApi_Close(VM);
 		exit(-1);
 	}
@@ -450,7 +459,7 @@ int main(int argc, char * argv[])
 		thread_num_per_process = THREAD_NUM_PER_PROCESS; // 如果没有设置，则使用THREAD_NUM_PER_PROCESS宏定义的值
 	// 如果thread_num_per_process的值超过THREAD_NUM_MAX允许的最大值，则将其重置为THREAD_NUM_PER_PROCESS对应的值
 	else if(thread_num_per_process > THREAD_NUM_MAX || thread_num_per_process <= 0) {
-		write_to_server_log_pipe(WRITE_TO_LOG, "warning: thread_num_per_process is not use now \n", config_file);
+		WRITE_LOG_WITH_PRINTF_NOARG("warning: thread_num_per_process is not use now \n");
 		thread_num_per_process = THREAD_NUM_PER_PROCESS;
 	}
 
@@ -467,7 +476,7 @@ int main(int argc, char * argv[])
 	}
 	// 否则抛出警告，并使用默认的web根目录名
 	else {
-		write_to_server_log_pipe(WRITE_TO_LOG, "warning: webroot in %s too long, use default webroot\n", config_file);
+		WRITE_LOG_WITH_PRINTF("warning: webroot in %s too long, use default webroot\n", config_file);
 		webroot = WEB_ROOT_DEFAULT;
 	}
 	zl_debug_log = NULL;
@@ -487,7 +496,7 @@ int main(int argc, char * argv[])
 	if((session_dir = zenglApi_GetValueAsString(VM,"session_dir")) == NULL)
 		session_dir = SESSION_DIR_DEFAULT;
 	else if(strlen(session_dir) >= sizeof(config_session_dir)) {
-		write_to_server_log_pipe(WRITE_TO_LOG, "warning: session_dir in %s is too long, use default session_dir\n", config_file);
+		WRITE_LOG_WITH_PRINTF("warning: session_dir in %s is too long, use default session_dir\n", config_file);
 		session_dir = SESSION_DIR_DEFAULT;
 	}
 	strncpy(config_session_dir, session_dir, strlen(session_dir));
@@ -501,15 +510,40 @@ int main(int argc, char * argv[])
 	if(zenglApi_GetValueAsInt(VM,"session_cleaner_interval", &config_session_cleaner_interval) < 0)
 		config_session_cleaner_interval = SESSION_CLEANER_INTERVAL;
 
+	// 获取配置文件中设置的remote_debug_enable即是否开启远程调试
+	if(zenglApi_GetValueAsInt(VM,"remote_debug_enable", &config_remote_debug_enable) < 0)
+		config_remote_debug_enable = ZL_EXP_FALSE;
+
+	char * remote_debugger_ip;
+	// 获取配置文件中设置的remote_debugger_ip即远程调试器的IP地址，如果没有设置过
+	// 或者设置的ip地址的长度超出了config_remote_debugger_ip可以容纳的字符范围，则使用REMOTE_DEBUGGER_IP_DEFAULT宏定义的默认的IP地址
+	if((remote_debugger_ip = zenglApi_GetValueAsString(VM,"remote_debugger_ip")) == NULL)
+		remote_debugger_ip = REMOTE_DEBUGGER_IP_DEFAULT;
+	else if(strlen(remote_debugger_ip) >= sizeof(config_remote_debugger_ip)) {
+		WRITE_LOG_WITH_PRINTF("warning: remote_debugger_ip in %s is too long, use default ip\n", config_file);
+		remote_debugger_ip = REMOTE_DEBUGGER_IP_DEFAULT;
+	}
+	strncpy(config_remote_debugger_ip, remote_debugger_ip, strlen(remote_debugger_ip));
+	config_remote_debugger_ip[strlen(remote_debugger_ip)] = '\0';
+
+	// 获取配置文件中设置的remote_debugger_port即远程调试器的端口号
+	if(zenglApi_GetValueAsInt(VM,"remote_debugger_port", &config_remote_debugger_port) < 0)
+		config_remote_debugger_port = REMOTE_DEBUGGER_PORT;
+
 	// 显示出配置文件中定义的配置信息，如果配置文件没有定义这些值，则显示出默认值
 	write_to_server_log_pipe(WRITE_TO_LOG, "run %s complete, config: \n", config_file);
 	write_to_server_log_pipe(WRITE_TO_LOG, "port: %ld process_num: %ld\n", port, server_process_num);
 	write_to_server_log_pipe(WRITE_TO_LOG, "webroot: %s\n", webroot);
-	if(zl_debug_log != NULL)
+	if(zl_debug_log != NULL) {
 		write_to_server_log_pipe(WRITE_TO_LOG, "zl_debug_log: %s\n", zl_debug_log);
+	}
 	write_to_server_log_pipe(WRITE_TO_LOG, "session_dir: %s session_expire: %ld cleaner_interval: %ld\n", config_session_dir,
 			config_session_expire,
 			config_session_cleaner_interval);
+	write_to_server_log_pipe(WRITE_TO_LOG, "remote_debug_enable: %s remote_debugger_ip: %s remote_debugger_port: %ld\n",
+			config_remote_debug_enable ? "True" : "False",
+			config_remote_debugger_ip,
+			config_remote_debugger_port);
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源
 	zenglApi_Close(VM);
 
@@ -521,7 +555,7 @@ int main(int argc, char * argv[])
 	server_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if(server_socket_fd == -1)
 	{
-		write_to_server_log_pipe(WRITE_TO_LOG, "failed to create server socket [%d] %s \n", errno, strerror(errno));
+		WRITE_LOG_WITH_PRINTF("failed to create server socket [%d] %s \n", errno, strerror(errno));
 		exit(-1);
 	}
 	server_addr.sin_family = AF_INET;
@@ -531,13 +565,13 @@ int main(int argc, char * argv[])
 	// 开启套接字的REUSEADDR选项，这样，当zenglServer关闭后，可以马上启动并重新绑定到该端口(否则，就需要等待一段时间，可能需要等待好几分钟才能再次绑定到同一个端口)
 	if (setsockopt(server_socket_fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
 	{
-		write_to_server_log_pipe(WRITE_TO_LOG, "setsockopt(SO_REUSEADDR) failed [%d] %s \n", errno, strerror(errno));
-	    exit(-1);
+		WRITE_LOG_WITH_PRINTF("setsockopt(SO_REUSEADDR) failed [%d] %s \n", errno, strerror(errno));
+		exit(-1);
 	}
 	// 将服务端套接字绑定到server_addr所指定的IP和端口上
 	if(bind(server_socket_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
 	{
-		write_to_server_log_pipe(WRITE_TO_LOG, "failed to bind server socket [%d] %s \n", errno, strerror(errno));
+		WRITE_LOG_WITH_PRINTF("failed to bind server socket [%d] %s \n", errno, strerror(errno));
 		exit(-1);
 	}
 	write_to_server_log_pipe(WRITE_TO_LOG, "bind done\n");
@@ -551,7 +585,7 @@ int main(int argc, char * argv[])
 	my_thread_lock.accept_sem = sem_open("accept_sem", O_CREAT | O_EXCL, 0644, 1);
 	if(my_thread_lock.accept_sem <= 0)
 	{
-		write_to_server_log_pipe(WRITE_TO_LOG, "accept sem init failed : [%d] %s \n", errno, strerror(errno));
+		WRITE_LOG_WITH_PRINTF("accept sem init failed : [%d] %s \n", errno, strerror(errno));
 		exit(-1);
 	}
 	write_to_server_log_pipe(WRITE_TO_LOG, "accept sem initialized.\n");
@@ -559,11 +593,29 @@ int main(int argc, char * argv[])
 	// 获取当前进程可以打开的文件描述符数量限制，用于控制epoll监听的文件描述符数
 	struct rlimit limit;
 	if (getrlimit(RLIMIT_NOFILE, &limit) != 0) {
-		write_to_server_log_pipe(WRITE_TO_LOG, "getrlimit() failed with errno=%d %s\n", errno, strerror(errno));
+		WRITE_LOG_WITH_PRINTF("getrlimit() failed with errno=%d %s\n", errno, strerror(errno));
 		exit(1);
 	}
 	process_max_open_fd_num = limit.rlim_cur;
 	write_to_server_log_pipe(WRITE_TO_LOG, "process_max_open_fd_num: %d \n", process_max_open_fd_num);
+
+	// 将umask设为0，让子进程给文件设置的读写执行权限不会被屏蔽掉
+	umask(0);
+	int logStdout;
+	if ((logStdout = open("/dev/null", O_WRONLY|O_APPEND|O_CREAT, 0644)) < 0) {
+		WRITE_LOG_WITH_PRINTF("open /dev/null failed [%d] %s \n", errno, strerror(errno));
+		exit(errno);
+	}
+	// 设置新的会话，这样主进程和子进程就不会受到控制台信号的影响了
+	if (setsid() < 0) {
+		WRITE_LOG_WITH_PRINTF("setsid() failed [%d] %s \n", errno, strerror(errno));
+		exit(errno);
+	}
+	// 将标准输入和输出重定向到/dev/null
+	dup2(logStdout, STDIN_FILENO);
+	dup2(logStdout, STDOUT_FILENO);
+	dup2(logStdout, STDERR_FILENO);
+	close(logStdout);
 
 	// 根据process_num的值，创建多个子进程，如果是调试模式，一般就设置一个子进程，方便gdb调试
 	for(int i=0;i < server_process_num;i++)
@@ -1220,6 +1272,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			my_data.response_header.count = my_data.response_header.size = 0;
 			my_data.resource_list.list = PTR_NULL;
 			my_data.resource_list.count = my_data.resource_list.size = 0;
+			my_data.debug_info = PTR_NULL;
 			ZL_EXP_VOID * VM;
 			VM = zenglApi_Open();
 			ZENGL_EXPORT_VM_MAIN_ARG_FLAGS flags = ZL_EXP_CP_AF_IN_DEBUG_MODE;
@@ -1243,6 +1296,15 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			// 设置my_data额外数据
 			zenglApi_SetExtraData(VM, "my_data", &my_data);
 			pthread_mutex_lock(&(my_thread_lock.lock));
+
+			DEBUG_INFO debug_info;
+			// 如果开启了远程调试功能，则初始化远程调试相关的结构体，并通过zenglAPI设置中断回调函数等
+			if(config_remote_debug_enable) {
+				debug_init(&debug_info);
+				my_data.debug_info = &debug_info;
+				zenglApi_DebugSetBreakHandle(VM, debug_break, debug_conditionError,ZL_EXP_TRUE,ZL_EXP_FALSE); //设置调试API
+			}
+
 			if(zenglApi_Run(VM, full_path) == -1) //编译执行zengl脚本
 			{
 				// 如果执行失败，则显示错误信息，并抛出500内部错误给客户端
@@ -1262,6 +1324,11 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				else
 					is_custom_status_code = ZL_EXP_TRUE; // 用户自定义了http状态码
 			}
+
+			// 如果开启了远程调试，则在关闭zengl虚拟机之前，需要通过debug_exit函数来关闭掉打开的调试套接字，以及释放掉分配过的动态字符串资源
+			if(config_remote_debug_enable)
+				debug_exit(VM, &debug_info);
+
 			pthread_mutex_unlock(&(my_thread_lock.lock));
 			resource_list_remove_all_resources(VM, &(my_data.resource_list));
 			// 关闭zengl虚拟机及zl_debug_log日志文件

@@ -20,6 +20,7 @@
 #endif
 #include "module_session.h"
 #include "debug.h" // debug.h头文件中包含远程调试相关的结构体和函数的定义
+#include "md5.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,7 @@
 #include <sys/syscall.h>
 #include <sys/epoll.h>
 #include <sys/resource.h>
+#include <sys/file.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <unistd.h>
@@ -130,6 +132,8 @@ static long config_session_cleaner_interval; // session会话文件清理进程�
 static long config_remote_debug_enable; // 是否开启远程调试
 static char config_remote_debugger_ip[30]; // 远程调试器的ip地址
 static long config_remote_debugger_port; //远程调试器的端口号
+
+static long config_zengl_cache_enable; // 是否开启zengl脚本的编译缓存
 
 // server_content_types数组中存储了文件名后缀与内容类型之间的对应关系
 static SERVER_CONTENT_TYPE server_content_types[] = {
@@ -250,6 +254,164 @@ static void main_process_if_modified_since(char * request_header, int request_he
 		}
 		tmp = value + strlen(value) + 1;
 	} while(1);
+}
+
+/**
+ * 计算str字符串的md5值，并将md5值写入到buf缓存，isLowerCase参数表示是否生成小写，is32表示是否生成32位的md5
+ */
+static void main_compute_md5(char * buf, char * str, ZL_EXP_BOOL isLowerCase, ZL_EXP_BOOL is32)
+{
+	MD5_CTX md5;
+	MD5Init(&md5);
+	unsigned char * encrypt = (unsigned char *)str;
+	unsigned char decrypt[16];
+	MD5Update(&md5,encrypt,strlen((char *)encrypt));
+	MD5Final(&md5,decrypt);
+	char * p = buf;
+	int start_idx = is32 ? 0 : 4;
+	int end_idx = is32 ? 16 : 12;
+	const char * format = isLowerCase ? "%02x" : "%02X";
+	for(int i = start_idx; i < end_idx; i++) {
+		sprintf(p, format, decrypt[i]);
+		p += 2;
+	}
+	(*p) = '\0';
+}
+
+/**
+ * 根据full_path脚本路径，得到最终要生成的缓存文件的路径信息
+ */
+static void main_get_zengl_cache_path(char * cache_path, int cache_path_size, char * full_path)
+{
+	char fullpath_md5[33];
+	char cache_prefix[20] = {0};
+	const char * cache_path_prefix = "zengl/caches/"; // 缓存文件都放在zengl/caches目录中
+	int append_length;
+	main_compute_md5(fullpath_md5, full_path, ZL_EXP_TRUE, ZL_EXP_TRUE); // 将full_path进行md5编码
+	// 在缓存路径前面加上zengl版本号和指针长度，不同的zengl版本生成的缓存有可能会不一样，另外，32位和64位环境下生成的内存缓存数据也是不一样的
+	// 32位系统中生成的缓存数据放到64位中运行，或者反过来，都会报内存相关的错误
+	sprintf(cache_prefix, "%d_%d_%d_%ld_", ZL_EXP_MAJOR_VERSION, ZL_EXP_MINOR_VERSION, ZL_EXP_REVISION, sizeof(char *));
+	append_length = main_full_path_append(cache_path, 0, cache_path_size, (char *)cache_path_prefix);
+	append_length += main_full_path_append(cache_path, append_length, cache_path_size, cache_prefix);
+	append_length += main_full_path_append(cache_path, append_length, cache_path_size, fullpath_md5);
+	cache_path[append_length] = '\0';
+}
+
+/**
+ * 尝试重利用full_path脚本文件对应的缓存数据，cache_path表示缓存数据所在的文件路径
+ * 如果缓存文件不存在，则会重新生成缓存文件，如果full_path脚本文件内容发生了改变或者其加载的脚本文件内容发生了改变，也会重新生成缓存
+ * 外部调用者通过is_reuse_cache变量的值来判断是否需要生成缓存文件，如果is_reuse_cache为ZL_EXP_FALSE，就表示没有重利用缓存，则需要生成缓存文件
+ * 如果is_reuse_cache为ZL_EXP_TRUE，则说明重利用了缓存，不需要再生成缓存文件了
+ */
+static void main_try_to_reuse_zengl_cache(ZL_EXP_VOID * VM, char * cache_path, char * full_path, ZL_EXP_BOOL * is_reuse_cache)
+{
+	FILE * ptr_fp;
+	ZL_EXP_VOID * cachePoint;
+	ZENGL_EXPORT_API_CACHE_TYPE * api_cache;
+	ZL_EXP_LONG offset, cache_mtime, file_mtime;
+	ZL_EXP_BYTE * mempoolPtr;
+	ZL_EXP_CHAR ** filenames, * filename;
+	ZL_EXP_INT cacheSize, i;
+	struct stat stat_result;
+	(* is_reuse_cache) = ZL_EXP_FALSE;
+	if(stat(cache_path, &stat_result)==0) { // 获取缓存文件的修改时间
+		cache_mtime = (ZL_EXP_LONG)stat_result.st_mtime;
+	}
+	else { // 获取文件的状态信息失败，可能缓存文件不存在，需要重新编译生成缓存，直接返回
+		write_to_server_log_pipe(WRITE_TO_PIPE, "can not stat cache file: \"%s\", maybe no such cache file [recompile]\n", cache_path);
+		return ;
+	}
+	if(stat(full_path, &stat_result)==0) { // 获取主执行脚本的修改时间
+		file_mtime = (ZL_EXP_LONG)stat_result.st_mtime;
+		if(file_mtime >= cache_mtime) { // 如果主执行脚本的修改时间大于等于缓存数据的修改时间，则说明主执行脚本的内容发生了改变，需要重新编译生成新的缓存
+			write_to_server_log_pipe(WRITE_TO_PIPE, "\"%s\" mtime:%ld [changed] [recompile]\n", full_path, file_mtime);
+			return;
+		}
+	}
+	else { // 主执行脚本不存在，直接返回
+		write_to_server_log_pipe(WRITE_TO_PIPE, "warning stat script file: \"%s\" failed, maybe no such file! [recompile]\n", full_path);
+		return ;
+	}
+	// 打开缓存文件
+	if((ptr_fp = fopen(cache_path, "rb")) == NULL) {
+		write_to_server_log_pipe(WRITE_TO_PIPE, "no cache file: \"%s\" [recompile]\n", cache_path);
+		return ;
+	}
+	flock(ptr_fp->_fileno, LOCK_SH); // 加文件共享锁，如果有进程在修改缓存内容的话，所有读缓存的进程都会等待写入完成，再执行读操作
+	fseek(ptr_fp,0L,SEEK_END);
+	cacheSize = ftell(ptr_fp); // 得到缓存数据的大小
+	fseek(ptr_fp,0L,SEEK_SET);
+	cachePoint = malloc(cacheSize); // 根据缓存大小分配堆空间，先将缓存数据读取到该堆内存中
+	if(fread(cachePoint, cacheSize, 1, ptr_fp) != 1) { // 读取缓存数据
+		write_to_server_log_pipe(WRITE_TO_PIPE, "read cache file \"%s\" failed [recompile]\n", cache_path);
+		goto end;
+	}
+	api_cache = (ZENGL_EXPORT_API_CACHE_TYPE *)cachePoint;
+	if(api_cache->signer != ZL_EXP_API_CACHE_SIGNER) { // 根据缓存签名判断是否是有效的缓存数据
+		write_to_server_log_pipe(WRITE_TO_PIPE, "invalid cache file \"%s\" [recompile]\n", cache_path);
+		goto end;
+	}
+	mempoolPtr = ((ZL_EXP_BYTE *)cachePoint + api_cache->mempoolOffset);
+	offset = (ZL_EXP_LONG)api_cache->filenames;
+	filenames = (ZL_EXP_CHAR **)(mempoolPtr + offset - 1);
+	if(api_cache->filenames_count > 0) {
+		// 循环判断加载的脚本文件的内容是否发生了改变，如果改变了，则需要重新编译生成新的缓存
+		for(i=0; i < api_cache->filenames_count; i++) {
+			offset = (ZL_EXP_LONG)(filenames[i]);
+			filename = (ZL_EXP_CHAR *)(mempoolPtr + offset - 1);
+			if(stat(filename, &stat_result)==0) {
+				file_mtime = (ZL_EXP_LONG)stat_result.st_mtime;
+				if(file_mtime >= cache_mtime){
+					write_to_server_log_pipe(WRITE_TO_PIPE, "\"%s\" mtime:%ld [changed] [recompile]\n", filename, file_mtime);
+					goto end;
+				}
+			}
+			else {
+				write_to_server_log_pipe(WRITE_TO_PIPE, " stat \"%s\" failed [recompile]\n", filename);
+				goto end;
+			}
+		}
+	}
+	// 通过zenglApi_ReUseCacheMemData接口函数，将编译好的缓存数据加载到编译器和解释器中，这样就可以跳过编译过程，直接运行
+	if(zenglApi_ReUseCacheMemData(VM, cachePoint, cacheSize) == -1) {
+		write_to_server_log_pipe(WRITE_TO_PIPE, "reuse cache file \"%s\" failed: %s [recompile]\n", cache_path, zenglApi_GetErrorString(VM));
+		goto end;
+	}
+	(* is_reuse_cache) = ZL_EXP_TRUE;
+	write_to_server_log_pipe(WRITE_TO_PIPE, "reuse cache file: \"%s\" mtime:%ld\n", cache_path, cache_mtime);
+end:
+	fclose(ptr_fp);
+	flock(ptr_fp->_fileno, LOCK_UN); // 解锁
+	free(cachePoint);
+}
+
+/**
+ * 在编译执行结束后，生成缓存数据并写入缓存文件
+ */
+static void main_write_zengl_cache_to_file(ZL_EXP_VOID * VM, char * cache_path)
+{
+	FILE * ptr_fp;
+	ZL_EXP_VOID * cachePoint;
+	ZL_EXP_INT cacheSize;
+	// 通过zenglApi_CacheMemData接口函数，将编译器和解释器中的主要的内存数据缓存到cachePoint对应的内存中
+	if(zenglApi_CacheMemData(VM, &cachePoint, &cacheSize) == -1) {
+		write_to_server_log_pipe(WRITE_TO_PIPE, "write zengl cache to file \"%s\" failed: %s\n", cache_path,zenglApi_GetErrorString(VM));
+		return;
+	}
+
+	// 打开cache_path对应的缓存文件
+	if((ptr_fp = fopen(cache_path, "wb")) == NULL) {
+		write_to_server_log_pipe(WRITE_TO_PIPE, "write zengl cache to file \"%s\" failed: open failed\n", cache_path);
+		return;
+	}
+	flock(ptr_fp->_fileno, LOCK_EX); // 写入缓存数据之前，先加入互斥锁，让所有读进程等待写入完成
+	// 将缓存数据写入缓存文件
+	if( fwrite(cachePoint, cacheSize, 1, ptr_fp) != 1)
+		write_to_server_log_pipe(WRITE_TO_PIPE, "write zengl cache to file \"%s\" failed: write failed\n", cache_path);
+	else
+		write_to_server_log_pipe(WRITE_TO_PIPE, "write zengl cache to file \"%s\" success \n", cache_path);
+	fclose(ptr_fp);
+	flock(ptr_fp->_fileno, LOCK_UN); // 解锁
 }
 
 /**
@@ -530,6 +692,10 @@ int main(int argc, char * argv[])
 	if(zenglApi_GetValueAsInt(VM,"remote_debugger_port", &config_remote_debugger_port) < 0)
 		config_remote_debugger_port = REMOTE_DEBUGGER_PORT;
 
+	// 获取配置文件中设置的zengl_cache_enable即是否开启zengl脚本的编译缓存
+	if(zenglApi_GetValueAsInt(VM,"zengl_cache_enable", &config_zengl_cache_enable) < 0)
+		config_zengl_cache_enable = ZL_EXP_FALSE;
+
 	// 显示出配置文件中定义的配置信息，如果配置文件没有定义这些值，则显示出默认值
 	write_to_server_log_pipe(WRITE_TO_LOG, "run %s complete, config: \n", config_file);
 	write_to_server_log_pipe(WRITE_TO_LOG, "port: %ld process_num: %ld\n", port, server_process_num);
@@ -540,10 +706,13 @@ int main(int argc, char * argv[])
 	write_to_server_log_pipe(WRITE_TO_LOG, "session_dir: %s session_expire: %ld cleaner_interval: %ld\n", config_session_dir,
 			config_session_expire,
 			config_session_cleaner_interval);
-	write_to_server_log_pipe(WRITE_TO_LOG, "remote_debug_enable: %s remote_debugger_ip: %s remote_debugger_port: %ld\n",
+	// 将远程调试相关的配置，以及是否开启zengl脚本的编译缓存的配置，记录到日志中
+	write_to_server_log_pipe(WRITE_TO_LOG, "remote_debug_enable: %s remote_debugger_ip: %s remote_debugger_port: %ld"
+			" zengl_cache_enable: %s\n",
 			config_remote_debug_enable ? "True" : "False",
 			config_remote_debugger_ip,
-			config_remote_debugger_port);
+			config_remote_debugger_port,
+			config_zengl_cache_enable ? "True" : "False");
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源
 	zenglApi_Close(VM);
 
@@ -1276,19 +1445,19 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			ZL_EXP_VOID * VM;
 			VM = zenglApi_Open();
 			ZENGL_EXPORT_VM_MAIN_ARG_FLAGS flags = ZL_EXP_CP_AF_IN_DEBUG_MODE;
-			/**
-			 * 如果不需要输出调试日志，就不用设置ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO输出调试信息的标志，输出调试信息会占用很多执行时间
-			 * 即便没有设置ZL_EXP_VFLAG_HANDLE_RUN_INFO处理句柄，也就是没有写入zl_debug_log日志文件，也会占用不少执行时间
-			 */
-			if(my_data.zl_debug_log != NULL)
-				flags |= ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO;
-			zenglApi_SetFlags(VM, flags);
 			// 只有在调试模式下，并且在配置文件中，设置了zl_debug_log时，才设置run_info处理函数，该函数会将zengl脚本的虚拟汇编指令写入到指定的日志文件
 			if(config_debug_mode && (zl_debug_log != NULL)) {
 				my_data.zl_debug_log = fopen(zl_debug_log,"w+");
-				if(my_data.zl_debug_log != NULL)
+				if(my_data.zl_debug_log != NULL) {
 					zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_INFO,main_userdef_run_info);
+					/**
+					 * 如果不需要输出调试日志，就不用设置ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO输出调试信息的标志，输出调试信息会占用很多执行时间
+					 * 即便没有设置ZL_EXP_VFLAG_HANDLE_RUN_INFO处理句柄，也就是没有写入zl_debug_log日志文件，也会占用不少执行时间
+					 */
+					flags |= ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO;
+				}
 			}
+			zenglApi_SetFlags(VM, flags);
 			// 设置在zengl脚本中使用print指令时，会执行的回调函数
 			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_userdef_run_print);
 			// 设置zengl脚本的模块初始化函数
@@ -1305,6 +1474,15 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				zenglApi_DebugSetBreakHandle(VM, debug_break, debug_conditionError,ZL_EXP_TRUE,ZL_EXP_FALSE); //设置调试API
 			}
 
+			char cache_path[80];
+			ZL_EXP_BOOL is_reuse_cache;
+			// 如果开启了zengl脚本的编译缓存，则尝试重利用缓存数据
+			if(config_zengl_cache_enable) {
+				// 根据脚本文件名得到缓存文件的路径信息
+				main_get_zengl_cache_path(cache_path, sizeof(cache_path), full_path);
+				// 尝试重利用缓存数据
+				main_try_to_reuse_zengl_cache(VM, cache_path, full_path, &is_reuse_cache);
+			}
 			if(zenglApi_Run(VM, full_path) == -1) //编译执行zengl脚本
 			{
 				// 如果执行失败，则显示错误信息，并抛出500内部错误给客户端
@@ -1314,6 +1492,9 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				status_code = 500;
 			}
 			else {
+				// 如果开启了编译缓存，那么在没有重利用缓存数据时(例如缓存文件不存在，或者原脚本内容发生的改变等)，就生成新的缓存数据，并将其写入缓存文件中
+				if(config_zengl_cache_enable && !is_reuse_cache)
+					main_write_zengl_cache_to_file(VM, cache_path);
 				if(!(my_data.response_header.count > 0 && strncmp(my_data.response_header.str, "HTTP/", 5) == 0)) {
 					client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 200 OK\r\n", 17);
 					if(my_data.response_header.count == 0 ||

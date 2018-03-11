@@ -1,7 +1,12 @@
+## 介绍
+
 zenglServer是一个http server，它除了用于响应静态文件外，最主要的目的在于接受外部http请求，并执行zengl动态脚本，并将脚本执行的结果反馈给浏览器之类的客户端。目前只是实验项目，仅供学习研究为目的。
+
+## 编译
 
 zenglServer只能在linux系统中进行编译和测试。要编译的话，直接在根目录中输入make命令即可：
 
+```
 zengl@zengl-ubuntu:~/zenglServer$ make
 cd zengl/linux && make libzengl.a
 make[1]: Entering directory '/home/zengl/zenglServer/zengl/linux'
@@ -17,6 +22,7 @@ gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.
 
 *** notice: mysql module not enabled, you can use 'make USE_MYSQL=yes' to enable it, make sure you have mysql_config and mysql.h in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
+```
 
 第一次编译时，它会先进入zengl/linux目录，编译生成libzengl.a的静态库文件，该静态库主要用于执行zengl脚本。
 
@@ -26,6 +32,7 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 从v0.3.0版本开始，在编译时，可以添加mysql模块，从而可以进行相关的mysql数据库操作，只要在make命令后面加入USE_MYSQL=yes即可：
 
+```
 zengl@zengl-ubuntu:~/zenglServer$ make USE_MYSQL=yes
 cd zengl/linux && make libzengl.a
 make[1]: Entering directory '/home/zengl/zenglServer/zengl/linux'
@@ -41,13 +48,47 @@ gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.
 
 mysql module is enabled!!!
 zengl@zengl-ubuntu:~/zenglServer$ 
+```
 
-注意：在加入mysql模块前，请确保你的系统中包含了mysql_config程式和mysql.h开发头文件，如果没有的话，如果是ubuntu系统，可以通过sudo apt-get install libmysqlclient-dev来添加开发mysql客户端所需要的文件，如果是centos系统，则可以通过yum install mysql-devel来加入开发所需的文件。
+- 注意：在加入mysql模块前，请确保你的系统中包含了mysql_config程式和mysql.h开发头文件，如果没有的话，如果是ubuntu系统，可以通过sudo apt-get install libmysqlclient-dev来添加开发mysql客户端所需要的文件，如果是centos系统，则可以通过yum install mysql-devel来加入开发所需的文件。
 
-在根目录中，有一个config.zl的默认配置文件(使用zengl脚本语法编写)，该配置文件里定义了zenglServer需要绑定的端口号，需要启动的进程数等。
+## 使用
+
+在根目录中，有一个config.zl的默认配置文件(使用zengl脚本语法编写)，该配置文件里定义了zenglServer需要绑定的端口号，需要启动的进程数等：
+
+```
+def TRUE 1;
+def FALSE 0;
+
+debug_mode = TRUE;
+//debug_mode = FALSE;
+// zl_debug_log = "zl_debug.log"; // zengl脚本的调试日志，可以输出相关的虚拟汇编指令
+
+port = 8083; // 绑定的端口
+
+if(!debug_mode)
+	process_num = 3; // 进程数
+else
+	print '*** config is in debug mode ***';
+	process_num = 1; // 进程数
+endif
+
+webroot = "my_webroot"; // web根目录
+
+session_dir = "my_sessions"; // 会话目录
+session_expire = 1440; // 会话默认超时时间(以秒为单位)
+session_cleaner_interval = 3600; // 会话文件清理进程的清理时间间隔(以秒为单位)
+
+remote_debug_enable = FALSE; // 是否开启远程调试，默认为FALSE即不开启，设置为TRUE可以开启远程调试
+remote_debugger_ip = '127.0.0.1'; // 远程调试器的ip地址
+remote_debugger_port = 9999; // 远程调试器的端口号
+
+zengl_cache_enable = FALSE; // 是否开启zengl脚本的编译缓存，默认为FALSE即不开启，设置为TRUE可以开启编译缓存
+```
 
 在编译成功后，直接运行生成好的zenglServer可执行文件即可(从v0.4.0版本开始，zenglServer默认以守护进程模式启动，并采用epoll方式来处理请求)：
 
+```
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer 
 zengl@zengl-ubuntu:~/zenglServer$ ps -aux | grep zenglServer
 zengl      300  0.0  0.0  26440  2124 ?        Ss   19:08   0:00 zenglServer: master
@@ -61,7 +102,7 @@ run config.zl complete, config:
 port: 8083 process_num: 1
 webroot: my_webroot
 session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
-remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999
+remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999 zengl_cache_enable: False
 bind done
 accept sem initialized.
 process_max_open_fd_num: 1024
@@ -70,9 +111,11 @@ Master: Spawning cleaner [pid 302]
 epoll max fd count : 896
 ------------ cleaner sleep begin: 1515236908
 zengl@zengl-ubuntu:~/zenglServer$ 
+```
 
-默认绑定的端口号为：8083，打开你的浏览器，输入 http://<your ip address>:8083，<your ip address>表示zenglServer所在的linux系统的ip地址，假设为：10.7.20.220，那么输入 http://10.7.20.220:8083 应该可以看到Hello World!静态页面，可以在日志文件logfile中查看到相关信息：
+默认绑定的端口号为：8083，打开你的浏览器，输入 http://[your ip address]:8083，[your ip address]表示zenglServer所在的linux系统的ip地址，假设为：10.7.20.220，那么输入 http://10.7.20.220:8083 应该可以看到Hello World!静态页面，可以在日志文件logfile中查看到相关信息：
 
+```
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
 -----------------------------------
 Sat Jan  6 19:16:33 2018
@@ -110,16 +153,18 @@ Content-Length: 67646
 Connection: Closed
 Server: zenglServer
 free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:301 tid:304
-
+```
 
 可以看到请求头信息，请求的url资源路径，处理该请求的pid(进程ID)等，从v0.5.0版本开始，还可以看到完整的response header(响应头)信息
 
 在浏览器中输入测试用的表单地址：http://10.7.20.220:8083/form.html 在表单中随便填些东西，点击Submit提交按钮，交由test.zl测试脚本去处理，处理后会返回类似如下的测试结果：
 
+```
 a is 20 end
 user agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36
 other_headers, user agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36
 request body: title=hello&description=world&content=zengl+program&sb=Submit
+```
 
 test.zl测试脚本中，获取了当前浏览器的UA信息，以及请求的body(主体数据)。
 
@@ -127,15 +172,18 @@ test.zl测试脚本中，获取了当前浏览器的UA信息，以及请求的bo
 在浏览器中输入：http://10.7.20.220:8083/test.zl?name=zengl&job=programmer
 反馈结果如下：
 
+```
 a is 20 end
 user agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36
 other_headers, user agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.79 Safari/537.36
 query string: name=zengl&job=programmer
 querys['name']: zengl
 querys['job']: programmer
+```
 
 要退出zenglServer，需要kill掉主进程(名称为zenglServer: master的进程)，注意：kill子进程的话，主进程会自动重启子进程：
 
+```
 zengl@zengl-ubuntu:~/zenglServer$ ps aux | grep zenglServer
 zengl      300  0.0  0.0  26440  2124 ?        Ss   19:08   0:00 zenglServer: master
 zengl      301  0.0  0.0 108368   528 ?        Sl   19:08   0:00 zenglServer: child(0)
@@ -152,23 +200,27 @@ closed accept_sem
 shutdowned server socket
 closed server socket
 ===================================
+```
 
 可以在logfile中看到Killing children以及shutting down之类的退出信息。
 
 zenglServer有几个可选的命令行参数，可以使用-h查看帮助信息：
 
+```
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -h
 usage: ./zenglServer [options]
 -v                  show version
 -c <config file>    set config file
 -h                  show this help
 zengl@zengl-ubuntu:~/zenglServer$ 
+```
 
 通过-v可以查看zenglServer的版本号以及所使用的zengl脚本语言的版本号，-c可以指定需要加载的配置文件(配置文件必须使用zengl脚本语法编写)：
 
+```
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
-zenglServer version: v0.9.0
-zengl language version: v1.7.4
+zenglServer version: v0.10.0
+zengl language version: v1.8.0
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
 use config: config.zl
@@ -177,7 +229,7 @@ run config.zl complete, config:
 port: 8083 process_num: 1
 webroot: my_webroot
 session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
-remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999
+remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999 zengl_cache_enable: False
 bind done
 accept sem initialized.
 process_max_open_fd_num: 1024 
@@ -185,11 +237,15 @@ Master: Spawning child(0) [pid 673]
 Master: Spawning cleaner [pid 674] 
 epoll max fd count : 896
 ------------ cleaner sleep begin: 1515237890
+```
+
+## 远程调试
 
 从v0.9.0版本开始，zenglServer可以使用python进行远程调试。在根目录中新建了pydebugger目录，在该目录内新增了TCPServer.py的python脚本，需要通过python3来运行本脚本。该脚本在运行时，默认会监听9999端口(可以给脚本传递参数来改变绑定的端口号)，当python脚本接收到zenglServer的调试连接时，就会等待用户输入调试命令，并将这些命令发送给zenglServer，再由zenglServer执行调试命令和返回调试结果，最后python会将结果显示到用户终端上。
 
 要开启远程调试，还需要将zenglServer的config.zl中的remote_debug_enable设置为TRUE：
 
+```
 def TRUE 1;
 def FALSE 0;
 
@@ -198,9 +254,11 @@ def FALSE 0;
 remote_debug_enable = FALSE; // 是否开启远程调试，默认为FALSE即不开启，设置为TRUE可以开启远程调试
 remote_debugger_ip = '127.0.0.1'; // 远程调试器的ip地址
 remote_debugger_port = 9999; // 远程调试器的端口号
+```
 
-在开启远程调试后，就可以运行python脚本，当zenglServer执行zengl脚本时，就会向python脚本发送调试连接，从而进行远程调试：
+在开启远程调试并重启zenglServer后，就可以运行python脚本。当zenglServer执行zengl脚本时，就会向python脚本发送调试连接，从而进行远程调试：
 
+```
 zengl@zengl-ubuntu:~/zenglServer$ python3 pydebugger/TCPServer.py
 listen connection [port:9999]...
 127.0.0.1 connected:
@@ -258,16 +316,20 @@ zl debug >>> c
 listen connection...
 ^Cexcept...
 zengl@zengl-ubuntu:~/zenglServer$
+```
 
 通过给python脚本传递参数，可以改变绑定的端口号：
 
+```
 zengl@zengl-ubuntu:~/zenglServer$ python3 pydebugger/TCPServer.py 8989
 listen connection [port:8989]...
 ^Cexcept...
 zengl@zengl-ubuntu:~/zenglServer$ 
+```
 
 在zenglServer的logfile日志中也会记录下用户输入的调试命令：
 
+```
 -----------------------------------
 Thu Mar  1 09:21:33 2018
 recv [client_socket_fd:9] [lst_idx:0] [pid:4664] [tid:4667]:
@@ -303,8 +365,68 @@ closed accept_sem
 shutdowned server socket
 closed server socket
 ===================================
+```
 
-zenglServer是在Ubuntu 16.04 LTS x86-64(GCC版本号为：5.4.0)，Ubuntu 17.04 x86-64(GCC版本号为：6.3.0)中进行的开发测试，并在CentOS 5.8, 6.x, 7.x中进行了简单的测试。
+## 开启编译缓存
 
-zenglServer的C源代码中，加入了必要的注释信息，读者可以通过阅读源码的相关注释来理解代码。
+从v0.10.0版本开始，可以开启脚本的编译缓存，需要在配置文件中将zengl_cache_enable设置为TRUE：
+
+```
+def TRUE 1;
+def FALSE 0;
+
+.................................
+
+zengl_cache_enable = FALSE; // 是否开启zengl脚本的编译缓存，默认为FALSE即不开启，设置为TRUE可以开启编译缓存
+```
+
+在将zengl_cache_enable设置为TRUE并重启zenglServer后，第一次执行脚本时，会生成该脚本的编译缓存，之后再次执行相同的脚本时，就会使用编译缓存来跳过编译过程。可以在logfile日志文件中查看到相关信息：
+
+```
+-----------------------------------
+Thu Mar 29 14:33:00 2018
+recv [client_socket_fd:9] [lst_idx:0] [pid:5942] [tid:5945]:
+
+request header: Host: 127.0.0.1:8083 | User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:55.0) Gecko/20100101 Firefox/55.0 | Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8 | Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3 | Accept-Encoding: gzip, deflate | Connection: keep-alive | Upgrade-Insecure-Requests: 1 | 
+
+url: /v0_8_0/test.zl
+url_path: /v0_8_0/test.zl
+full_path: my_webroot/v0_8_0/test.zl
+can not stat cache file: "zengl/caches/1_8_0_8_68bf762f1d8a4e321fe71affb3b681ab", maybe no such cache file [recompile]
+write zengl cache to file "zengl/caches/1_8_0_8_68bf762f1d8a4e321fe71affb3b681ab" success 
+status: 200, content length: 918
+response header: HTTP/1.1 200 OK
+Content-Type: text/html
+Content-Length: 918
+Connection: Closed
+Server: zenglServer
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:5942 tid:5945
+-----------------------------------
+Thu Mar 29 14:33:05 2018
+recv [client_socket_fd:9] [lst_idx:0] [pid:5942] [tid:5945]:
+
+request header: Host: 127.0.0.1:8083 | User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:55.0) Gecko/20100101 Firefox/55.0 | Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8 | Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3 | Accept-Encoding: gzip, deflate | Connection: keep-alive | Upgrade-Insecure-Requests: 1 | Cache-Control: max-age=0 | 
+
+url: /v0_8_0/test.zl
+url_path: /v0_8_0/test.zl
+full_path: my_webroot/v0_8_0/test.zl
+reuse cache file: "zengl/caches/1_8_0_8_68bf762f1d8a4e321fe71affb3b681ab" mtime:1522305180
+status: 200, content length: 918
+response header: HTTP/1.1 200 OK
+Content-Type: text/html
+Content-Length: 918
+Connection: Closed
+Server: zenglServer
+free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:5942 tid:5945
+```
+
+编译缓存文件会生成在zengl/caches目录中
+
+- zenglServer是在Ubuntu 16.04 LTS x86-64(GCC版本号为：5.4.0)，Ubuntu 17.04 x86-64(GCC版本号为：6.3.0)中进行的开发测试，并在CentOS 5.8, 6.x, 7.x中进行了简单的测试。
+
+- zenglServer的C源代码中，加入了必要的注释信息，读者可以通过阅读源码的相关注释来理解代码。
+
+## 官网
+
+更多内容参考官网：http://www.zengl.com
 

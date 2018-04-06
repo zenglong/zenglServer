@@ -17,10 +17,10 @@ zenglServer: $(SRCS) zengl/linux/libzengl.a crustache/libcrustache.a
 		@echo 
 		@echo $(MYSQL_OUTPUT_INFO)
 
-zengl/linux/libzengl.a:
+zengl/linux/libzengl.a: zengl/linux/zengl_exportfuns.h
 	cd zengl/linux && $(MAKE) libzengl.a
 
-crustache/libcrustache.a: module_builtin.h common_header.h
+crustache/libcrustache.a: module_builtin.h common_header.h crustache/crustache.h
 	cd crustache && $(MAKE) libcrustache.a
 
 clean:

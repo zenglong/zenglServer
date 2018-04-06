@@ -541,7 +541,7 @@ static void debug_command_run_to_return(ZL_EXP_VOID * VM_ARG, DEBUG_INFO * debug
 	ret = zenglApi_DebugGetTrace(VM_ARG,&arg,&loc,&pc,&fileName,&line,ZL_EXP_NULL,ZL_EXP_NULL);
 	if(ret == 1)
 	{
-		zenglApi_DebugGetTrace(VM_ARG,&arg,&loc,&pc,&fileName,&line,ZL_EXP_NULL,ZL_EXP_NULL);
+		//zenglApi_DebugGetTrace(VM_ARG,&arg,&loc,&pc,&fileName,&line,ZL_EXP_NULL,ZL_EXP_NULL);
 		pc++;
 		size = zenglApi_DebugGetBreak(VM_ARG,-1,ZL_EXP_NULL,ZL_EXP_NULL,ZL_EXP_NULL,ZL_EXP_NULL,ZL_EXP_NULL,ZL_EXP_NULL,ZL_EXP_NULL);
 		for(i=0;i<size;i++)
@@ -869,6 +869,7 @@ static void debug_command_help(ZL_EXP_VOID * VM_ARG, DEBUG_INFO * debug_info)
 			" S 单步步过 usage:S\n"
 			" r 执行到返回 usage:r\n"
 			" c 继续执行 usage:c\n"
+			" e 退出，停止执行 usage:e\n"
 			" l 显示源码 usage:l filename [lineNumber[ offset]] | l [lineNumber[ offset]]\n"
 			" u 执行到指定的行 usage:u filename lineNumber | u lineNumber\n"
 			" h 显示帮助信息\n");
@@ -1189,6 +1190,11 @@ ZL_EXP_INT debug_break(ZL_EXP_VOID * VM_ARG,ZL_EXP_CHAR * cur_filename,
 			builtin_make_info_string(VM_ARG, &debug_info->format_send_msg, "{\"exit\":%d}", exit);
 			break;
 		case 'c': // 继续执行
+			exit = 1;
+			builtin_make_info_string(VM_ARG, &debug_info->format_send_msg, "{\"exit\":%d}", exit);
+			break;
+		case 'e': // 退出，停止执行
+			zenglApi_Stop(VM_ARG);
 			exit = 1;
 			builtin_make_info_string(VM_ARG, &debug_info->format_send_msg, "{\"exit\":%d}", exit);
 			break;

@@ -20,6 +20,7 @@
 #include "md5.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <sys/stat.h>
 
@@ -448,6 +449,55 @@ static void builtin_write_array_to_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STR
 		}
 		if(escape_str != ZL_EXP_NULL) { // 释放掉转义字符串所分配的内存
 			zenglApi_FreeMem(VM_ARG, escape_str);
+		}
+	}
+	else if(count == 0) { // 如果有效成员数为0，则返回[]也就是空数组
+		builtin_make_info_string(VM_ARG, infoString, "[]");
+	}
+}
+
+/**
+ * 这是一个供其他模块函数调用的辅助函数，用于将str字符串进行html转义
+ * html转义过程中，会将&替换为&amp; 将双引号替换为&quot; 将单引号替换为 &#39; 将左尖括号<替换为&lt;　将右尖括号>替换为&gt;
+ */
+static void builtin_html_escape_str(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoString, char * str)
+{
+	const char * html_escape_table[] = {"", "&amp;", "&quot;", "&#39;", "&lt;", "&gt;"}; // &, ", ', <, >
+	char * start = str;
+	int str_len = strlen(str);
+	int escape_index = 0;
+	int i;
+	for(i = 0; i < str_len;i++) {
+		switch(str[i]) {
+		case '&':
+			escape_index = 1;
+			break;
+		case '"':
+			escape_index = 2;
+			break;
+		case '\'':
+			escape_index = 3;
+			break;
+		case '<':
+			escape_index = 4;
+			break;
+		case '>':
+			escape_index = 5;
+			break;
+		default:
+			continue;
+		}
+		if(escape_index > 0) {
+			char tmp = str[i];
+			str[i] = '\0';
+			builtin_make_info_string(VM_ARG, infoString, "%s%s", start, html_escape_table[escape_index]);
+			str[i] = tmp;
+			start = str + (i + 1);
+		}
+	}
+	if(infoString->str != NULL) {
+		if((start - str) < i) {
+			builtin_make_info_string(VM_ARG, infoString, "%s", start);
 		}
 	}
 }
@@ -1027,6 +1077,129 @@ ZL_EXP_VOID module_builtin_str(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 }
 
 /**
+ * bltInt模块函数，返回第一个参数的整数形式
+ * 例如：
+ * test = "12345abc";
+ * print 'test: ' + test + '<br/>';
+ * print 'bltInt(test): ' + bltInt(test) + '<br/>';
+ * 执行结果如下：
+ * test: 12345abc
+ * bltInt(test): 12345
+ * 如果将第二个参数设置为非0值，bltInt会同时将转化的结果赋值给第一个参数(需要将第一个参数的引用传递过来)
+ * 例如：
+ * def TRUE 1;
+ * def FALSE 0;
+ * test = "12345abc";
+ * print 'test: ' + test + '<br/>';
+ * print 'bltInt(&amp;test, TRUE): ' + bltInt(&test, TRUE) + '<br/>';
+ * print 'test: ' + test + '<br/><br/>';
+ * 执行结果如下：
+ * test: 12345abc
+ * bltInt(&test, TRUE): 12345
+ * test: 12345
+ * 在经过bltInt(&test, TRUE);转化后，test就被转为了整数
+ */
+ZL_EXP_VOID module_builtin_int(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltInt(data|&data[, isSetData=0])");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	int isSetData = ZL_EXP_FALSE;
+	if(argcount >= 2) {
+		ZENGL_EXPORT_MOD_FUN_ARG arg2 = {ZL_EXP_FAT_NONE,{0}};
+		zenglApi_GetFunArg(VM_ARG,2,&arg2);
+		if(arg2.type != ZL_EXP_FAT_INT)
+			zenglApi_Exit(VM_ARG,"the second argument isSetData of bltInt must be integer");
+		isSetData = arg2.val.integer;
+	}
+	ZL_EXP_LONG retval;
+	switch(arg.type) {
+	case ZL_EXP_FAT_STR:
+		retval = atol((const char *)arg.val.str);
+		break;
+	case ZL_EXP_FAT_INT:
+		retval = arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		retval = (ZL_EXP_LONG)arg.val.floatnum;
+		break;
+	default:
+		retval = 0;
+		break;
+	}
+	if(isSetData) {
+		if(arg.type != ZL_EXP_FAT_INT) {
+			arg.type = ZL_EXP_FAT_INT;
+			arg.val.integer = retval;
+			zenglApi_SetFunArg(VM_ARG,1,&arg);
+		}
+	}
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
+}
+
+/**
+ * bltFloat模块函数，返回第一个参数的浮点数形式
+ * 例如：
+ * test2 = "3.14159mdbknf";
+ * print 'test2: ' + test2 + '<br/>';
+ * print 'bltFloat(test2): ' + bltFloat(test2) + '<br/>';
+ * 执行结果如下：
+ * test2: 3.14159mdbknf
+ * bltFloat(test2): 3.14159
+ * 如果将第二个参数设置为非0值，bltFloat会同时将转化的结果赋值给第一个参数(需要将第一个参数的引用传递过来)
+ * def TRUE 1;
+ * def FALSE 0;
+ * test2 = "3.14159mdbknf";
+ * print 'test2: ' + test2 + '<br/>';
+ * print 'bltFloat(&amp;test2, TRUE): ' + bltFloat(&test2, TRUE) + '<br/>';
+ * print 'test2: ' + test2 + '<br/><br/>';
+ * 执行结果如下：
+ * test2: 3.14159mdbknf
+ * bltFloat(&test2, TRUE): 3.14159
+ * test2: 3.14159
+ * 在经过bltFloat(&test2, TRUE);转化后，test2就被转为了浮点数
+ */
+ZL_EXP_VOID module_builtin_float(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltFloat(data|&data[, isSetData=0])");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	int isSetData = ZL_EXP_FALSE;
+	if(argcount >= 2) {
+		ZENGL_EXPORT_MOD_FUN_ARG arg2 = {ZL_EXP_FAT_NONE,{0}};
+		zenglApi_GetFunArg(VM_ARG,2,&arg2);
+		if(arg2.type != ZL_EXP_FAT_INT)
+			zenglApi_Exit(VM_ARG,"the second argument isSetData of bltFloat must be integer");
+		isSetData = arg2.val.integer;
+	}
+	ZL_EXP_DOUBLE retfloat;
+	switch(arg.type) {
+	case ZL_EXP_FAT_STR:
+		retfloat = atof((const char *)arg.val.str);
+		break;
+	case ZL_EXP_FAT_INT:
+		retfloat = (ZL_EXP_DOUBLE)arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		retfloat = arg.val.floatnum;
+		break;
+	default:
+		retfloat = 0;
+		break;
+	}
+	if(isSetData) {
+		if(arg.type != ZL_EXP_FAT_FLOAT) {
+			arg.type = ZL_EXP_FAT_FLOAT;
+			arg.val.floatnum = retfloat;
+			zenglApi_SetFunArg(VM_ARG,1,&arg);
+		}
+	}
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_FLOAT, ZL_EXP_NULL, 0, retfloat);
+}
+
+/**
  * bltCount模块函数，获取数组的有效成员数，或者获取字符串的有效长度
  */
 ZL_EXP_VOID module_builtin_count(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
@@ -1091,6 +1264,71 @@ ZL_EXP_VOID module_builtin_get_zengl_version(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT arg
 }
 
 /**
+ * bltHtmlEscape模块函数，将字符串进行html转义，并将转义的结果返回
+ * html转义过程中，会将&替换为&amp; 将双引号替换为&quot; 将单引号替换为 &#39; 将左尖括号<替换为&lt;　将右尖括号>替换为&gt;
+ * 例如：
+ * test3 = '大家好&"\'<html></html>&&&';
+ * print 'bltHtmlEscape(test3): ' +bltHtmlEscape(test3) + '<br/>';
+ * 执行结果如下：
+ * bltHtmlEscape(test3): 大家好&amp;&quot;&#39;&lt;html&gt;&lt;/html&gt;&amp;&amp;&amp;<br/>
+ * 如果将第二个参数设置为非0值，bltHtmlEscape会同时将转化的结果赋值给第一个参数(需要将第一个参数的引用传递过来)
+ * 例如：
+ * use builtin;
+ * def TRUE 1;
+ * def FALSE 0;
+ * test3 = '大家好&"\'<html></html>&&&';
+ * print 'bltHtmlEscape(&amp;test3, TRUE): ' + bltHtmlEscape(&test3, TRUE) + '<br/>';
+ * print 'test3: ' + test3 + '<br/><br/>';
+ * 执行结果如下：
+ * bltHtmlEscape(&amp;test3, TRUE): 大家好&amp;&quot;&#39;&lt;html&gt;&lt;/html&gt;&amp;&amp;&amp;<br/>
+ * test3: 大家好&amp;&quot;&#39;&lt;html&gt;&lt;/html&gt;&amp;&amp;&amp;<br/><br/>
+ */
+ZL_EXP_VOID module_builtin_html_escape(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltHtmlEscape(str|&str[, isSetData=0])");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	int isSetData = ZL_EXP_FALSE;
+	if(argcount >= 2) {
+		ZENGL_EXPORT_MOD_FUN_ARG arg2 = {ZL_EXP_FAT_NONE,{0}};
+		zenglApi_GetFunArg(VM_ARG,2,&arg2);
+		if(arg2.type != ZL_EXP_FAT_INT)
+			zenglApi_Exit(VM_ARG,"the second argument isSetData of bltHtmlEscape must be integer");
+		isSetData = arg2.val.integer;
+	}
+	BUILTIN_INFO_STRING infoString = { 0 };
+	switch(arg.type) {
+	case ZL_EXP_FAT_STR:
+		builtin_html_escape_str(VM_ARG, &infoString, arg.val.str);
+		break;
+	case ZL_EXP_FAT_INT: // 整数直接返回原值
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, arg.val.integer, 0);
+		return;
+	case ZL_EXP_FAT_FLOAT: // 浮点数直接返回原值
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_FLOAT, ZL_EXP_NULL, 0, arg.val.floatnum);
+		return;
+	case ZL_EXP_FAT_MEMBLOCK: // 数组之类的内存块也直接返回原内存块
+		zenglApi_SetRetValAsMemBlock(VM_ARG,&arg.val.memblock);
+		return;
+	default: // 其他类型统一设置为空字符串
+		builtin_make_info_string(VM_ARG, &infoString, "");
+		break;
+	}
+	if(infoString.str != NULL) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, infoString.str, 0, 0);
+		if(isSetData) {
+			arg.type = ZL_EXP_FAT_STR;
+			arg.val.str = infoString.str;
+			zenglApi_SetFunArg(VM_ARG,1,&arg);
+		}
+		zenglApi_FreeMem(VM_ARG, infoString.str);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, arg.val.str, 0, 0);
+}
+
+/**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
 ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
@@ -1105,7 +1343,10 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltJsonEncode",module_builtin_json_encode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltMd5",module_builtin_md5);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltStr",module_builtin_str);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltInt",module_builtin_int);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltFloat",module_builtin_float);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltCount",module_builtin_count);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltGetZenglServerVersion",module_builtin_get_zengl_server_version);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltGetZenglVersion",module_builtin_get_zengl_version);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltHtmlEscape",module_builtin_html_escape);
 }

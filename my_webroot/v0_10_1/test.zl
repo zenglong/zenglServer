@@ -1,0 +1,49 @@
+use builtin;
+def TRUE 1;
+def FALSE 0;
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>测试bltInt，bltFloat，bltHtmlEscape等</title>
+</head>
+<body>';
+
+fun test()
+	a['test'] = bltArray();
+	a['test', 'name'] = 'zengl';
+	print 'test,name: '+a['test', 'name'] + '<br/>';
+	return a['test']; // 测试返回数组成员
+endfun
+
+b = test();
+b = b; // 测试是否会释放掉自己
+print 'b,name: '+b['name'] + '<br/><br/>';
+
+test = "12345abc";
+print 'test: ' + test + '<br/>';
+print 'bltInt(test): ' + bltInt(test) + '<br/>';
+print 'test: ' + test + '<br/>';
+print 'bltInt(&amp;test, TRUE): ' + bltInt(&test, TRUE) + '<br/>';
+print 'test: ' + test + '<br/><br/>';
+
+test2 = "3.14159mdbknf";
+print 'test2: ' + test2 + '<br/>';
+print 'bltFloat(test2): ' + bltFloat(test2) + '<br/>';
+print 'test2: ' + test2 + '<br/>';
+print 'bltFloat(&amp;test2, TRUE): ' + bltFloat(&test2, TRUE) + '<br/>';
+print 'test2: ' + test2 + '<br/><br/>';
+
+test3 = '大家好&"\'<html></html>&&&';
+print 'bltHtmlEscape(test3): ' +bltHtmlEscape(test3) + '<br/>';
+print 'bltHtmlEscape(&amp;test3, TRUE): ' + bltHtmlEscape(&test3, TRUE) + '<br/>';
+print 'test3: ' + test3 + '<br/><br/>';
+
+print 'empty array to json: ' + bltJsonEncode(bltArray()) + '<br/><br/>';
+
+zls_version = bltGetZenglServerVersion();
+print 'zenglServer版本号：' + zls_version[0] + '.' + zls_version[1] + '.' + zls_version[2] + '<br/>';
+zl_version = bltGetZenglVersion();
+print 'zengl语言版本号：' + zl_version[0] + '.' + zl_version[1] + '.' + zl_version[2];
+
+print '</body></html>';

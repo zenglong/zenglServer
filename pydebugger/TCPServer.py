@@ -37,6 +37,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 	filelist = None # 该成员用于缓存l命令获取到的脚本源码
 	max_recv_bytes = 81920 # 每次从zenglServer客户端接收数据的最大字节数，如果要接收的数据比较大时，可以适当的调整该成员的值，以字节为单位
 	offset = 8 # 使用l命令查看源码时，需要显示的上下偏移行数，例如：当offset为8时，显示第16行的代码，会将第8行到第24行的代码给显示出来
+	command = 'l' # 记录用户上一次输入过的命令，默认为l命令即显示源码
 
 	# 从调试连接中获取zenglServer发送过来的数据
 	def myrecv(self, bytes):
@@ -111,6 +112,17 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 			command_list[idx] = line.strip()
 		return command_list
 
+	# 如果输入的是空命令(例如用户什么也没输，直接敲了回车)，则将上一次输入的命令返回，如果上一次没输入过命令，则将默认的l命令返回
+	def get_empty_command(self):
+		if self.command == '':
+			self.command = 'l'
+		return self.command
+
+	# 将用户输入的命令记录到self.command中，以便下一次用户输入空命令时使用
+	def set_empty_command(self, command = ''):
+		if command != '' and self.command != command:
+			self.command = command
+
 	# handle方法用于处理调试器接收到的zenglServer连接，该方法会将用户输入的调试命令，通过连接发送给zenglServer，并将zenglServer返回的结果显示出来
 	def handle(self):
 		print("{} connected:".format(self.client_address[0]))
@@ -140,21 +152,26 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 				main_normal_path = os.path.normpath(self.main_script_filename)
 				# 将中断发生的脚本文件名(包括目录路径在内)，行号，触发的断点索引，主执行脚本文件路径等打印出来
 				if(cur_normal_path == main_normal_path):
-					format_str = "file:{},line:{},breakIndex:{}" # 如果当前执行脚本就是主执行脚本的话，则不显示main_script和dir_path信息
+					format_str = "file:{},line:{},{}" # 如果当前执行脚本就是主执行脚本的话，则不显示main_script和dir_path信息
 				else:
-					format_str = "file:{},line:{},breakIndex:{}  [main_script:{}, dir_path:{}]"
-				print(format_str.format(self.cur_filename, self.cur_line, recv_msg_decode['breakIndex'], self.main_script_filename, self.dir_path))
+					format_str = "file:{},line:{},{}  [main_script:{}, dir_path:{}]"
+				breakIndex = recv_msg_decode['breakIndex']
+				print(format_str.format(self.cur_filename, self.cur_line, 
+					"breakIndex:{}".format(breakIndex) if breakIndex != -1 else "Single Break", # breakIndex为-1，表示单步执行时发生的中断
+					self.main_script_filename, self.dir_path))
 				if type(self.filelist) is not dict or cur_normal_path not in self.filelist: # 如果没有获取过当前执行脚本的源码，则通过list_command方法从zenglServer获取源码
 					self.list_command(None, self.cur_line, None, False)
 				print("{}    {}\n".format(self.cur_line, self.filelist[cur_normal_path][self.cur_line-1])) # 将当前执行代码所在的行的源码显示出来
 				while(True): # 循环接受用户输入的调试命令
 					input_command = input('zl debug >>> ').strip()
 					command_list = self.get_command_list(input_command)
-					command = " ".join(command_list)
-					if(command == ''):
-						print('command is empty')
-						continue
-					elif(command_list[0] == 'l'): # l查看源码命令进行单独处理
+					if(" ".join(command_list) == ''):
+						# print('command is empty')
+						input_command = self.get_empty_command()
+						command_list = self.get_command_list(input_command)
+					else:
+						self.set_empty_command(input_command)
+					if(command_list[0] == 'l'): # l查看源码命令进行单独处理
 						filename = None # 用户输入的要查看源码的脚本文件名，相对于主执行脚本的文件路径
 						line_no = None # 用户输入的要查看的行号
 						offset = None # 要查看的行偏移

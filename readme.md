@@ -26,7 +26,7 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 第一次编译时，它会先进入zengl/linux目录，编译生成libzengl.a的静态库文件，该静态库主要用于执行zengl脚本。
 
-如果要删除编译生成的文件的话，直接输入make clean即可。
+如果要删除编译生成的文件的话，直接输入make clean即可。每次git pull拉取新的zenglServer版本时，最好都make clean一下，然后再make，这样可以确保修改的代码能够被及时编译，尤其是当zenglServer所依赖的libzengl.a和libcrustache.a的相关源码发生改变时。
 
 从v0.4.0版本开始，zenglServer使用epoll来处理请求，因此，需要先确定linux支持epoll，epoll的API是从linux kernel 2.5.44开始引入的
 
@@ -219,8 +219,8 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 ```
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
-zenglServer version: v0.10.0
-zengl language version: v1.8.0
+zenglServer version: v0.10.1
+zengl language version: v1.8.1
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
 use config: config.zl

@@ -19,6 +19,9 @@
 #include "module_mysql.h"
 #endif
 #include "module_session.h"
+#ifdef USE_MAGICK
+#include "module_magick.h"
+#endif
 #include "debug.h" // debug.h头文件中包含远程调试相关的结构体和函数的定义
 #include "md5.h"
 #include <stdio.h>
@@ -27,7 +30,8 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-//#include <sys/ipc.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/syscall.h>
@@ -95,6 +99,7 @@ typedef struct _SERVER_CONTENT_TYPE{
 #define REMOTE_DEBUGGER_PORT 9999 // 远程调试器默认的端口号
 #define DEFAULT_CONFIG_FILE "config.zl" // 当启动zenglServer时，如果没有使用-c命令行参数来指定配置文件名时，就会使用该宏对应的值来作为默认的配置文件名
 #define SERVER_LOG_PIPE_STR_SIZE 1024 // 写入日志的动态字符串的初始化及动态扩容的大小
+#define SHM_MIN_SIZE (300 * 1024) // 如果配置文件中没有设置shm_min_size时，就使用该宏的值作为需要放进共享内存的缓存的最小大小(以字节为单位)
 #define WRITE_TO_PIPE 1 // 子进程统一将日志写入管道中，再由主进程从管道中将日志读取出来并写入日志文件
 #define WRITE_TO_LOG 0  // 主进程的日志信息，则可以直接写入日志文件
 
@@ -134,6 +139,9 @@ static char config_remote_debugger_ip[30]; // 远程调试器的ip地址
 static long config_remote_debugger_port; //远程调试器的端口号
 
 static long config_zengl_cache_enable; // 是否开启zengl脚本的编译缓存
+
+static long config_shm_enable; // 是否将zengl脚本的编译缓存放入共享内存
+static long config_shm_min_size; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
 
 // server_content_types数组中存储了文件名后缀与内容类型之间的对应关系
 static SERVER_CONTENT_TYPE server_content_types[] = {
@@ -306,7 +314,7 @@ static void main_get_zengl_cache_path(char * cache_path, int cache_path_size, ch
 static void main_try_to_reuse_zengl_cache(ZL_EXP_VOID * VM, char * cache_path, char * full_path, ZL_EXP_BOOL * is_reuse_cache)
 {
 	FILE * ptr_fp;
-	ZL_EXP_VOID * cachePoint;
+	ZL_EXP_VOID * cachePoint = NULL;
 	ZENGL_EXPORT_API_CACHE_TYPE * api_cache;
 	ZL_EXP_LONG offset, cache_mtime, file_mtime;
 	ZL_EXP_BYTE * mempoolPtr;
@@ -338,13 +346,44 @@ static void main_try_to_reuse_zengl_cache(ZL_EXP_VOID * VM, char * cache_path, c
 		return ;
 	}
 	flock(ptr_fp->_fileno, LOCK_SH); // 加文件共享锁，如果有进程在修改缓存内容的话，所有读缓存的进程都会等待写入完成，再执行读操作
-	fseek(ptr_fp,0L,SEEK_END);
-	cacheSize = ftell(ptr_fp); // 得到缓存数据的大小
-	fseek(ptr_fp,0L,SEEK_SET);
-	cachePoint = malloc(cacheSize); // 根据缓存大小分配堆空间，先将缓存数据读取到该堆内存中
-	if(fread(cachePoint, cacheSize, 1, ptr_fp) != 1) { // 读取缓存数据
-		write_to_server_log_pipe(WRITE_TO_PIPE, "read cache file \"%s\" failed [recompile]\n", cache_path);
-		goto end;
+	fstat(ptr_fp->_fileno, &stat_result);
+	cacheSize = stat_result.st_size;
+	ZL_EXP_BYTE is_create = ZL_EXP_FALSE; // 判断是否是新创建的共享内存，如果是新建的，则需要将缓存数据读取到共享内存中，如果共享内存已经存在，则无需再读取
+	// is_use_shm用于判断是否使用共享内存，如果配置中启用了共享内存，同时编译缓存的大小超过了配置文件中shm_min_size的值，则表示当前编译缓存需要放到共享内存中
+	ZL_EXP_BYTE is_use_shm = config_shm_enable ? ((cacheSize > config_shm_min_size) ? ZL_EXP_TRUE : ZL_EXP_FALSE) : ZL_EXP_FALSE;
+	int shm_id = -1;
+	key_t share_mem_key;
+	if(is_use_shm) { // 如果使用共享内存，则先将缓存路径转为共享内存key，再通过该key来获取已存在的共享内存，如果共享内存不存在时，则新建一个共享内存
+		share_mem_key = ftok(cache_path, 1);
+		shm_id = shmget(share_mem_key, cacheSize, 0666);
+		if(shm_id == -1) {
+			if(errno == ENOENT) { // 不存在，则新建一个共享内存
+				shm_id = shmget(share_mem_key, cacheSize, IPC_CREAT | 0666);
+				is_create = ZL_EXP_TRUE;
+			}
+			else { // 获取共享内存失败，则将is_use_shm设为FALSE，表示使用普通的文件缓存方式
+				write_to_server_log_pipe(WRITE_TO_PIPE, "shmget <key: 0x%x size: %d cache_path: %s> failed [%d] %s [read from cache file]\n",
+						share_mem_key, cacheSize, cache_path, errno, strerror(errno));
+				is_use_shm = ZL_EXP_FALSE;
+			}
+		}
+	}
+	if(is_use_shm) { // 如果使用共享内存，则通过shmat库函数，将共享内存映射到当前进程的线性地址空间，从而得到当前进程可以访问的内存地址
+		cachePoint = shmat(shm_id, NULL, 0);
+		if(cachePoint == ((ZL_EXP_VOID *)-1)) { // 映射失败，记录错误，并使用原始的文件缓存方式
+			write_to_server_log_pipe(WRITE_TO_PIPE, "shmat <id: %d cache_path: %s> failed [%d] %s [read from cache file]\n",
+						shm_id, cache_path, errno, strerror(errno));
+			is_use_shm = ZL_EXP_FALSE;
+		}
+	}
+	if(!is_use_shm || is_create) {
+		if(!is_use_shm) { // 如果不使用共享内存，则在根据缓存大小，新建一个堆内存空间，编译缓存会读取到该堆内存中
+			cachePoint = malloc(cacheSize);
+		}
+		if(fread(cachePoint, cacheSize, 1, ptr_fp) != 1) { // 读取编译缓存数据到堆内存(普通文件缓存方式)，或者读取到新创建的共享内存中
+			write_to_server_log_pipe(WRITE_TO_PIPE, "read cache file \"%s\" failed [recompile]\n", cache_path);
+			goto end;
+		}
 	}
 	api_cache = (ZENGL_EXPORT_API_CACHE_TYPE *)cachePoint;
 	if(api_cache->signer != ZL_EXP_API_CACHE_SIGNER) { // 根据缓存签名判断是否是有效的缓存数据
@@ -374,15 +413,26 @@ static void main_try_to_reuse_zengl_cache(ZL_EXP_VOID * VM, char * cache_path, c
 	}
 	// 通过zenglApi_ReUseCacheMemData接口函数，将编译好的缓存数据加载到编译器和解释器中，这样就可以跳过编译过程，直接运行
 	if(zenglApi_ReUseCacheMemData(VM, cachePoint, cacheSize) == -1) {
-		write_to_server_log_pipe(WRITE_TO_PIPE, "reuse cache file \"%s\" failed: %s [recompile]\n", cache_path, zenglApi_GetErrorString(VM));
+		if(is_use_shm)
+			write_to_server_log_pipe(WRITE_TO_PIPE, "[shm:0x%x] reuse cache file \"%s\" failed: %s [recompile]\n", share_mem_key, cache_path, zenglApi_GetErrorString(VM));
+		else
+			write_to_server_log_pipe(WRITE_TO_PIPE, "reuse cache file \"%s\" failed: %s [recompile]\n", cache_path, zenglApi_GetErrorString(VM));
 		goto end;
 	}
 	(* is_reuse_cache) = ZL_EXP_TRUE;
-	write_to_server_log_pipe(WRITE_TO_PIPE, "reuse cache file: \"%s\" mtime:%ld\n", cache_path, cache_mtime);
+	if(is_use_shm)
+		write_to_server_log_pipe(WRITE_TO_PIPE, "[shm:0x%x] reuse cache file: \"%s\" mtime:%ld\n", share_mem_key, cache_path, cache_mtime);
+	else
+		write_to_server_log_pipe(WRITE_TO_PIPE, "reuse cache file: \"%s\" mtime:%ld\n", cache_path, cache_mtime);
 end:
 	fclose(ptr_fp);
 	flock(ptr_fp->_fileno, LOCK_UN); // 解锁
-	free(cachePoint);
+	if(cachePoint != NULL) {
+		if(is_use_shm) // 如果使用了共享内存，则通过shmdt来解除映射
+			shmdt(cachePoint);
+		else // 如果是普通的文件缓存方式，则将之前创建的堆内存释放掉
+			free(cachePoint);
+	}
 }
 
 /**
@@ -405,6 +455,15 @@ static void main_write_zengl_cache_to_file(ZL_EXP_VOID * VM, char * cache_path)
 		return;
 	}
 	flock(ptr_fp->_fileno, LOCK_EX); // 写入缓存数据之前，先加入互斥锁，让所有读进程等待写入完成
+	struct stat stat_result;
+	fstat(ptr_fp->_fileno, &stat_result);
+	ZL_EXP_INT cachefileSize = stat_result.st_size;
+	key_t share_mem_key = ftok(cache_path, 1);
+	int shm_id = shmget(share_mem_key, cachefileSize, 0666);
+	if(shm_id != -1) { // 由于生成了新的编译缓存数据，因此，如果存在对应的共享内存，则将共享内存移除掉，下次读缓存时，就会创建一个新的共享内存，并将新的缓存数据写入共享内存
+		shmctl(shm_id, IPC_RMID, NULL);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "remove shm key: 0x%x, shm id: %d, ", share_mem_key, shm_id);
+	}
 	// 将缓存数据写入缓存文件
 	if( fwrite(cachePoint, cacheSize, 1, ptr_fp) != 1)
 		write_to_server_log_pipe(WRITE_TO_PIPE, "write zengl cache to file \"%s\" failed: write failed\n", cache_path);
@@ -508,6 +567,17 @@ int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...
 		retcount = vsnprintf(server_log_pipe_string.str, server_log_pipe_string.size, format, arglist);
 		va_end(arglist);
 		if(retcount >=0 && retcount < server_log_pipe_string.size) {
+			server_log_pipe_string.str[retcount] = STR_NULL;
+			if(write_to_pipe) {
+				write(server_log_pipefd[1], server_log_pipe_string.str, retcount);
+			}
+			else {
+				write_to_server_log(server_log_pipe_string.str);
+			}
+			break;
+		}
+		else if(retcount < 0 && errno !=0) { // 记录写入日志时，可能会发生的错误
+			retcount = snprintf(server_log_pipe_string.str, server_log_pipe_string.size, "write log errno:%d, errstr:%s \n", errno, strerror(errno));
 			server_log_pipe_string.str[retcount] = STR_NULL;
 			if(write_to_pipe) {
 				write(server_log_pipefd[1], server_log_pipe_string.str, retcount);
@@ -696,6 +766,14 @@ int main(int argc, char * argv[])
 	if(zenglApi_GetValueAsInt(VM,"zengl_cache_enable", &config_zengl_cache_enable) < 0)
 		config_zengl_cache_enable = ZL_EXP_FALSE;
 
+	// 获取配置文件中设置的shm_enable即是否开启共享内存来存储编译缓存
+	if(zenglApi_GetValueAsInt(VM,"shm_enable", &config_shm_enable) < 0)
+		config_shm_enable = ZL_EXP_FALSE;
+
+	// 获取配置文件中设置的shm_min_size的值，也就是开启共享内存的情况下，需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
+	if(zenglApi_GetValueAsInt(VM,"shm_min_size", &config_shm_min_size) < 0)
+		config_shm_min_size = SHM_MIN_SIZE;
+
 	// 显示出配置文件中定义的配置信息，如果配置文件没有定义这些值，则显示出默认值
 	write_to_server_log_pipe(WRITE_TO_LOG, "run %s complete, config: \n", config_file);
 	write_to_server_log_pipe(WRITE_TO_LOG, "port: %ld process_num: %ld\n", port, server_process_num);
@@ -708,11 +786,13 @@ int main(int argc, char * argv[])
 			config_session_cleaner_interval);
 	// 将远程调试相关的配置，以及是否开启zengl脚本的编译缓存的配置，记录到日志中
 	write_to_server_log_pipe(WRITE_TO_LOG, "remote_debug_enable: %s remote_debugger_ip: %s remote_debugger_port: %ld"
-			" zengl_cache_enable: %s\n",
+			" zengl_cache_enable: %s shm_enable: %s shm_min_size: %ld\n",
 			config_remote_debug_enable ? "True" : "False",
 			config_remote_debugger_ip,
 			config_remote_debugger_port,
-			config_zengl_cache_enable ? "True" : "False");
+			config_zengl_cache_enable ? "True" : "False",
+			config_shm_enable ? "True" : "False",
+			config_shm_min_size);
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源
 	zenglApi_Close(VM);
 
@@ -1013,32 +1093,81 @@ void sig_child_callback()
  */
 void sig_terminate_master_callback()
 {
-    int     i, status;
-    pid_t   pid;
+	int     i, status;
+	pid_t   pid;
 
-    write_to_server_log_pipe(WRITE_TO_LOG, "Termination signal received! Killing children");
+	write_to_server_log_pipe(WRITE_TO_LOG, "Termination signal received! Killing children");
 
-    /*
-     * 在kill杀死子进程之前，需要先重置所有的信号处理函数，否则，当子进程被kill结束时，会给主进程发送SIGCHLD信号，并自动触发上面的sig_child_callback，
-     * sig_child_callback又会通过fork_child_process重启子进程，就没办法结束掉子进程。因此需要先重置信号处理函数，
-     * 通过将trap_signals的参数设置为ZL_EXP_FALSE(也就是整数0)，就可以进行重置
-     */
-    trap_signals(ZL_EXP_FALSE);
+	/*
+	 * 在kill杀死子进程之前，需要先重置所有的信号处理函数，否则，当子进程被kill结束时，会给主进程发送SIGCHLD信号，并自动触发上面的sig_child_callback，
+	 * sig_child_callback又会通过fork_child_process重启子进程，就没办法结束掉子进程。因此需要先重置信号处理函数，
+	 * 通过将trap_signals的参数设置为ZL_EXP_FALSE(也就是整数0)，就可以进行重置
+	 */
+	trap_signals(ZL_EXP_FALSE);
 
-    // 循环向子进程发送SIGTERM(终止信号)，从而结束掉子进程
-    for (i = 0; i < server_process_num; ++i)
-        kill(server_child_process[i], SIGTERM);
+	// 循环向子进程发送SIGTERM(终止信号)，从而结束掉子进程
+	for (i = 0; i < server_process_num; ++i)
+		kill(server_child_process[i], SIGTERM);
 
-    // 向清理进程发送终止信号
-    kill(server_cleaner_process, SIGTERM);
+	// 向清理进程发送终止信号
+	kill(server_cleaner_process, SIGTERM);
 
-    /* 循环等待所有子进程结束 */
-    while ((pid = wait(&status)) != -1)
-    	write_to_server_log_pipe(WRITE_TO_LOG, ".");
+	/* 循环等待所有子进程结束 */
+	while ((pid = wait(&status)) != -1)
+		write_to_server_log_pipe(WRITE_TO_LOG, ".");
 
-    write_to_server_log_pipe(WRITE_TO_LOG, "\nAll children reaped, shutting down.\n");
+	write_to_server_log_pipe(WRITE_TO_LOG, "\nAll children reaped, shutting down.\n");
 
-    // 如果所有子进程都退出了，就释放相关资源，并退出主进程，子进程和主进程都退出后，整个程序也就退出了
+	// 删除共享内存
+	DIR * dp;
+	struct dirent * ep;
+	char * path = "zengl/caches";
+	char filename[SESSION_FILEPATH_MAX_LEN];
+	int path_dir_len = strlen(path);
+	int ep_name_len, left_len, del_shm_num = 0;
+	key_t share_mem_key;
+	struct stat ep_stat;
+	strncpy(filename, path, path_dir_len);
+	filename[path_dir_len] = '/';
+	left_len = SESSION_FILEPATH_MAX_LEN - path_dir_len - 2;
+
+	dp = opendir(path);
+	if (dp != NULL) // 循环根据编译缓存的文件名，得到相应的共享内存key，并根据key将已存在的共享内存移除掉
+	{
+		int cpy_len;
+		while((ep = readdir(dp)))
+		{
+			ep_name_len = strlen(ep->d_name);
+			if(ep_name_len > 20) {
+				cpy_len = (ep_name_len <= left_len) ?  ep_name_len : left_len;
+				strncpy(filename + path_dir_len + 1, ep->d_name, cpy_len);
+				filename[path_dir_len + 1 + cpy_len] = '\0';
+				if(stat(filename, &ep_stat) == 0) {
+					if(ep_stat.st_size > config_shm_min_size) {
+						share_mem_key = ftok(filename, 1);
+						int shm_id = shmget(share_mem_key, ep_stat.st_size, 0666);
+						if(shm_id != -1) {
+							shmctl(shm_id, IPC_RMID, NULL);
+							write_to_server_log_pipe(WRITE_TO_LOG, "************ remove shm key: 0x%x [cache_file: %s]\n", share_mem_key, ep->d_name);
+							del_shm_num++;
+						}
+						else if(errno != ENOENT) {
+							write_to_server_log_pipe(WRITE_TO_LOG, "!!!******!!! remove shm key: 0x%x failed [%d] %s\n", share_mem_key, errno, strerror(errno));
+						}
+					}
+				}
+				else
+					write_to_server_log_pipe(WRITE_TO_LOG, "!!!******!!! remove shm cache_path: \"%s\" failed [%d] %s\n", filename, errno, strerror(errno));
+			}
+		}
+		closedir(dp);
+	}
+	else {
+		write_to_server_log_pipe(WRITE_TO_LOG, "!!!******!!! opendir \"%s\" failed [%d] %s\n", path, errno, strerror(errno));
+	}
+	write_to_server_log_pipe(WRITE_TO_LOG, "------------ remove shm number: %d\n", del_shm_num);
+
+	// 如果所有子进程都退出了，就释放相关资源，并退出主进程，子进程和主进程都退出后，整个程序也就退出了
 	sem_unlink("accept_sem");
 	sem_close(my_thread_lock.accept_sem);
 	write_to_server_log_pipe(WRITE_TO_LOG, "closed accept_sem\n");
@@ -1047,7 +1176,7 @@ void sig_terminate_master_callback()
 	close(server_socket_fd);
 	write_to_server_log_pipe(WRITE_TO_LOG, "closed server socket\n===================================\n\n");
 	free(server_log_pipe_string.str);
-    exit(0);
+	exit(0);
 }
 
 /**
@@ -1146,6 +1275,10 @@ ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
 #endif
 	// 设置session模块的初始化函数，和session会话相关的C函数代码位于module_session.c文件里
 	zenglApi_SetModInitHandle(VM_ARG,"session", module_session_init);
+#ifdef USE_MAGICK
+	// 设置magick模块的初始化函数，和magick模块相关的C函数代码位于module_magick.c文件里
+	zenglApi_SetModInitHandle(VM_ARG,"magick", module_magick_init);
+#endif
 }
 
 /**
@@ -1512,6 +1645,10 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 
 			pthread_mutex_unlock(&(my_thread_lock.lock));
 			resource_list_remove_all_resources(VM, &(my_data.resource_list));
+#ifdef USE_MAGICK
+			// 如果开启了magick模块，则通过export_magick_terminus将相关的资源释放掉
+			export_magick_terminus();
+#endif
 			// 关闭zengl虚拟机及zl_debug_log日志文件
 			zenglApi_Close(VM);
 			if(my_data.zl_debug_log != NULL) {

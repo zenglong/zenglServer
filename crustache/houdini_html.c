@@ -50,9 +50,7 @@ houdini_escape_html(struct buf *ob, const char *src, size_t size)
 
 	while (i < size) {
 		org = i;
-		while (i < size &&
-			(esc = HTML_ESCAPE_TABLE[src[i] & 0x7F]) == 0 &&
-			(src[i] & ~0x7F) == 0)
+		while (i < size && ((src[i] & ~0x7F) != 0 || (esc = HTML_ESCAPE_TABLE[src[i] & 0x7F]) == 0))
 			i++;
 
 		if (i > org)

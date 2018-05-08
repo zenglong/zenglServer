@@ -3,7 +3,7 @@ use builtin;
 data['title'] = 'mustache模板测试';
 
 data["val"] = "my world!";
-data["zl"] = "<b>welcome to zengl!</b>";
+data["zl"] = "<b>welcome to zengl!&lt;span style=&quot;color:green&quot;&gt;大家好&lt;&#47;span&gt;</b>";
 data["score"] = 552;
 data['money'] = 2200000.88;
 

@@ -1,5 +1,6 @@
 def TRUE 1;
 def FALSE 0;
+def KBYTE 1024;
 
 debug_mode = TRUE;
 //debug_mode = FALSE;
@@ -25,3 +26,6 @@ remote_debugger_ip = '127.0.0.1'; // 远程调试器的ip地址
 remote_debugger_port = 9999; // 远程调试器的端口号
 
 zengl_cache_enable = FALSE; // 是否开启zengl脚本的编译缓存，默认为FALSE即不开启，设置为TRUE可以开启编译缓存
+
+shm_enable = FALSE; // 是否将zengl脚本的编译缓存放入共享内存
+shm_min_size = 300 * KBYTE; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位

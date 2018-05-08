@@ -1,0 +1,45 @@
+use builtin, magick;
+
+fun exit(err)
+	print err;
+	print '</body></html>';
+	bltExit();
+endfun
+
+print '<!Doctype html>
+	<html>
+	<head>
+		<meta http-equiv="content-type" content="text/html;charset=utf-8" />
+		<title>测试magick模块</title>
+	</head>
+	<body>';
+
+// magickWandGenesis();
+wand = magickNewWand();
+if(!magickReadImage(wand, 'king.png'))
+	exit('read king.png failed');
+endif
+print '<img src="king.png"><br/>';
+print 'format: ' + magickGetImageFormat(wand) + '<br/>';
+print 'width: ' + magickGetImageWidth(wand) + '<br/>';
+print 'height: ' + magickGetImageHeight(wand) + '<br/>';
+if(!magickResizeImage(wand, 200, 150, "LanczosFilter"))
+	exit('resize king.png failed');
+endif
+if(!magickWriteImage(wand, 'thumb.jpg'))
+	exit('write to thumb.jpg failed');
+endif
+wand = magickNewWand();
+if(!magickReadImage(wand, 'thumb.jpg'))
+	exit('read thumb.jpg failed');
+endif
+print '===============<br/>the thumb.jpg:<br/><img src="thumb.jpg"><br/>';
+print 'format: ' + magickGetImageFormat(wand) + '<br/>';
+print 'width: ' + magickGetImageWidth(wand) + '<br/>';
+print 'height: ' + magickGetImageHeight(wand) + '<br/>';
+print 'end';
+// magickDestroyWand(wand);
+// magickWandTerminus();
+
+print '</body></html>';
+

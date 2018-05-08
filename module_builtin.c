@@ -22,7 +22,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <time.h>
+#include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 static int builtin_crustache__context_get(
 		ZL_EXP_VOID * VM_ARG,
@@ -458,11 +461,11 @@ static void builtin_write_array_to_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STR
 
 /**
  * 这是一个供其他模块函数调用的辅助函数，用于将str字符串进行html转义
- * html转义过程中，会将&替换为&amp; 将双引号替换为&quot; 将单引号替换为 &#39; 将左尖括号<替换为&lt;　将右尖括号>替换为&gt;
+ * html转义过程中，会将&替换为&amp; 将双引号替换为&quot; 将单引号替换为 &#39; 将左尖括号<替换为&lt;　将右尖括号>替换为&gt; 将斜杠替换为&#47;
  */
 static void builtin_html_escape_str(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoString, char * str)
 {
-	const char * html_escape_table[] = {"", "&amp;", "&quot;", "&#39;", "&lt;", "&gt;"}; // &, ", ', <, >
+	const char * html_escape_table[] = {"", "&amp;", "&quot;", "&#39;", "&lt;", "&gt;", "&#47;"}; // &, ", ', <, >, /
 	char * start = str;
 	int str_len = strlen(str);
 	int escape_index = 0;
@@ -483,6 +486,9 @@ static void builtin_html_escape_str(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * 
 			break;
 		case '>':
 			escape_index = 5;
+			break;
+		case '/':
+			escape_index = 6;
 			break;
 		default:
 			continue;
@@ -694,8 +700,14 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	builtin_make_fullpath(full_path, filename, my_data);
 	FILE * fp = fopen(full_path, "wb");
-	fwrite(ptr, 1, length, fp);
-	fclose(fp);
+	if(fp != NULL) {
+		size_t retval = fwrite(ptr, 1, length, fp);
+		fclose(fp);
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)retval, 0);
+	}
+	else { // 如果打开文件失败，则将错误记录到日志中
+		zenglApi_Exit(VM_ARG,"bltWriteFile <%s> failed [%d] %s", full_path, errno, strerror(errno));
+	}
 }
 
 /*bltExit模块函数，直接退出zengl脚本*/
@@ -1329,6 +1341,177 @@ ZL_EXP_VOID module_builtin_html_escape(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 }
 
 /**
+ * bltDate模块函数，将时间戳转为字符串格式返回
+ * 第一个参数format表示需要生成的字符串格式，第二个可选参数timestamp表示需要进行转换的时间戳，如果没有提供第二个参数，则默认使用当前时间对应的时间戳
+ * 例如：
+ * print bltDate('%Y-%m-%d %H:%M:%S') + '<br/>';
+ * print bltDate('%Y-%m-%d %H:%M:%S', 574210255)+ '<br/>';
+ * 执行结果如下：
+ * 2018-06-18 10:53:28
+ * 1988-03-13 06:50:55
+ * 上面第一个语句中，没有提供第二个参数，则使用当前时间戳。第二个语句中第二个参数574210255时间戳对应的日期时间是：1988-03-13 06:50:55
+ * 由于该模块函数底层是使用strftime来生成格式化字符串的，因此，具体的格式是由strftime来决定的，例如：%Y表示年，%m表示月等
+ * 可以使用man strftime来查看具体有哪些格式
+ */
+ZL_EXP_VOID module_builtin_date(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltDate(format[, timestamp])");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [format] of bltDate must be string");
+	}
+	char * format = arg.val.str;
+	time_t rawtime;
+	if(argcount > 1) {
+		zenglApi_GetFunArg(VM_ARG,2,&arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the second argument [timestamp] of bltDate must be integer");
+		}
+		rawtime = (time_t)arg.val.integer;
+	}
+	else {
+		time(&rawtime);
+	}
+	struct tm * timeinfo;
+	char buffer[128];
+	timeinfo = localtime(&rawtime);
+	size_t ret = strftime (buffer,sizeof(buffer), format,timeinfo);
+	if(ret == 0) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "", 0, 0);
+	}
+	else {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, buffer, 0, 0);
+	}
+}
+
+/**
+ * bltMkdir模块函数，根据指定的路径，创建目录
+ * 第一个参数path表示相对于当前执行脚本的路径，该模块函数将根据该路径来创建目录，第二个可选参数file_mode表示创建目录的读写执行权限
+ * 例如：
+ * use builtin;
+ * def TRUE 1;
+ * def FALSE 0;
+ * path = 'tmpdir';
+ * if(bltMkdir(path, 0e777) == TRUE)
+ *	print 'mkdir ' + path + ' success!' + '<br/>';
+ * else
+ *	print 'the ' + path + ' exists, no need real mkdir' + '<br/>';
+ * endif
+ * 上面这段脚本在执行后，将在当前执行脚本的目录中创建一个名为tmpdir的子目录，如果tmpdir已经存在，则bltMkdir模块函数会返回0
+ * 上面脚本中bltMkdir的第二个参数0e777是一个八进制值，表示需要创建的目录的读写执行权限是rwxrwxrwx，也就是所有用户都可以操作该目录
+ */
+ZL_EXP_VOID module_builtin_mkdir(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltMkdir(path[, file_mode])");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [path] of bltMkdir must be string");
+	}
+	char full_path[FULL_PATH_SIZE];
+	char * filename = arg.val.str;
+	mode_t file_mode;
+	if(argcount > 1) {
+		zenglApi_GetFunArg(VM_ARG,2,&arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the second argument [file_mode] of bltMkdir must be integer");
+		}
+		file_mode = (mode_t)arg.val.integer;
+	}
+	else {
+		file_mode = 0755;
+	}
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	builtin_make_fullpath(full_path, filename, my_data);
+	struct stat st = {0};
+	if (stat(full_path, &st) == -1) {
+		if(mkdir(full_path, file_mode) != 0) {
+			zenglApi_Exit(VM_ARG,"bltMkdir <%s> failed [%d] %s", full_path, errno, strerror(errno));
+		}
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+}
+
+/**
+ * bltUnlink模块函数，删除指定路径对应的文件
+ * 该模块函数的第一个参数path表示相对于当前执行脚本的路径，如果path对应的文件存在，且具有权限，则模块函数会将该文件给删除掉
+ * 例如：
+ * bltUnlink('thumb.jpg');
+ * 上面脚本中，如果thumb.jpg存在，则将其删除，如果文件不存在则直接返回0
+ * 该模块函数只能用于删除常规文件，不可以删除目录
+ */
+ZL_EXP_VOID module_builtin_unlink(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltUnlink(path)");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [path] of bltUnlink must be string");
+	}
+	char full_path[FULL_PATH_SIZE];
+	char * filename = arg.val.str;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	builtin_make_fullpath(full_path, filename, my_data);
+	struct stat st = {0};
+	if (stat(full_path, &st) == -1)
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+	else {
+		if(unlink(full_path) != 0) {
+			zenglApi_Exit(VM_ARG,"bltUnlink <%s> failed [%d] %s", full_path, errno, strerror(errno));
+		}
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+	}
+}
+
+/**
+ * bltFileExists模块函数，检测指定路径的文件是否存在
+ * 该模块函数的第一个参数path表示相对于当前执行脚本的路径，如果path对应的文件存在，则返回1，否则返回0
+ * 例如：
+ * file = 'thumb.jpg';
+ * if(bltFileExists(file))
+ *	bltUnlink(file);
+ *	print 'unlink ' + file + ' success!' + '<br/>';
+ * else
+ *	print file + ' not exists, no need real unlink' + '<br/>';
+ * endif
+ * 上面脚本在执行时，如果bltFileExists模块函数检测到thumb.jpg文件存在，则会将该文件删除，并提示unlink thumb.jpg success!
+ * 如果文件不存在，则bltFileExists模块函数会返回0，并提示thumb.jpg not exists, no need real unlink
+ * bltFileExists模块函数还可以检测目录是否存在
+ */
+ZL_EXP_VOID module_builtin_file_exists(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltFileExists(path)");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [path] of bltFileExists must be string");
+	}
+	char full_path[FULL_PATH_SIZE];
+	char * filename = arg.val.str;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	builtin_make_fullpath(full_path, filename, my_data);
+	struct stat st = {0};
+	int retval = stat(full_path, &st);
+	if (retval == -1) {
+		if(errno == ENOENT)
+			zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+		else
+			zenglApi_Exit(VM_ARG,"bltFileExists <%s> failed [%d] %s", full_path, errno, strerror(errno));
+	}
+	else if(retval == 0)
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+	else
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+}
+
+/**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
 ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
@@ -1349,4 +1532,8 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltGetZenglServerVersion",module_builtin_get_zengl_server_version);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltGetZenglVersion",module_builtin_get_zengl_version);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltHtmlEscape",module_builtin_html_escape);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltDate",module_builtin_date);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltMkdir",module_builtin_mkdir);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUnlink",module_builtin_unlink);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltFileExists",module_builtin_file_exists);
 }

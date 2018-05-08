@@ -1,0 +1,37 @@
+use builtin;
+def TRUE 1;
+def FALSE 0;
+
+print '<!Doctype html>
+	<html>
+	<head>
+		<meta http-equiv="content-type" content="text/html;charset=utf-8" />
+		<title>测试bltDate, bltMkdir, bltFileExists, bltUnlink模块函数</title>
+	</head>
+	<body>';
+
+print bltDate('%Y-%m-%d %H:%M:%S') + '<br/>';
+print bltDate('%Y-%m-%d %H:%M:%S', 574210255)+ '<br/>';
+path = 'tmpdir';
+
+if(bltFileExists(path)) // bltFileExists还可以检测目录是否存在
+	print path + ' dir exists<br/>';
+else
+	print path + ' dir not exists<br/>';
+endif
+
+if(bltMkdir(path, 0e777) == TRUE)
+	print 'mkdir ' + path + ' success!' + '<br/>';
+else
+	print 'the ' + path + ' exists, no need real mkdir' + '<br/>';
+endif
+
+file = 'thumb.jpg';
+if(bltFileExists(file))
+	bltUnlink(file);
+	print 'unlink ' + file + ' success!' + '<br/>';
+else
+	print file + ' not exists, no need real unlink' + '<br/>';
+endif
+
+print '</body></html>';

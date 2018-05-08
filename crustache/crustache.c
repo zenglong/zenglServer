@@ -829,13 +829,13 @@ render_node_tag(
 	case CRUSTACHE_VAR_STR:
 		switch (node->print_mode) {
 		case CRUSTACHE_TAG_ESCAPE:
-			//houdini_escape_html(ob, tag_value.data, tag_value.size); // 取消转义
-			//break;
+			houdini_escape_html(ob, tag_value.data, tag_value.size); // {{ val }} 默认进行html转义
+			break;
 		case CRUSTACHE_TAG_UNESCAPE:
-			//houdini_unescape_html(ob, tag_value.data, tag_value.size);
-			//break;
+			houdini_unescape_html(ob, tag_value.data, tag_value.size); // {{& val }} 反转义，将转义后的字符串恢复为原始的html
+			break;
 		case CRUSTACHE_TAG_RAW:
-			bufput(ob, tag_value.data, tag_value.size);
+			bufput(ob, tag_value.data, tag_value.size); // {{{ val }}} 字符串不做任何处理，直接原样输出
 			break;
 		}
 		break;

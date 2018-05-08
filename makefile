@@ -10,12 +10,27 @@ ifeq ($(USE_MYSQL),yes)
 else
 	MYSQL_OUTPUT_INFO = "*** notice: mysql module not enabled, you can use 'make USE_MYSQL=yes' to enable it, make sure you have mysql_config and mysql.h in your system! ***"
 endif
+
+ifdef USE_MAGICK
+	SRCS += module_magick.c module_magick.h
+	ifeq ($(USE_MAGICK), 6)
+		MAGICK_FLAG = -D USE_MAGICK=6 `pkg-config --cflags --libs Wand`
+	else
+		ERR = $(error invalid magick value!)
+	endif
+	MAGICK_OUTPUT_INFO = "magick module is enabled!!!"
+else
+	MAGICK_OUTPUT_INFO = "*** notice: magick module not enabled, you can use 'make USE_MAGICK=6' to enable it, make sure you have pkg-config and 'wand/MagickWand.h' in your system! ***"
+endif
+
 SRCS += zengl/linux/zengl_exportfuns.h 
 
 zenglServer: $(SRCS) zengl/linux/libzengl.a crustache/libcrustache.a
-		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a $(LIB_FLAG) $(MYSQL_FLAG)
+		$(ERR)
+		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a $(LIB_FLAG) $(MYSQL_FLAG) $(MAGICK_FLAG)
 		@echo 
 		@echo $(MYSQL_OUTPUT_INFO)
+		@echo $(MAGICK_OUTPUT_INFO)
 
 zengl/linux/libzengl.a: zengl/linux/zengl_exportfuns.h
 	cd zengl/linux && $(MAKE) libzengl.a

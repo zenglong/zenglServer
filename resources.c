@@ -57,6 +57,21 @@ int resource_list_get_ptr_idx(RESOURCE_LIST * resource_list, void * ptr, Resourc
 }
 
 /**
+ * 根据callback查找某个类型的资源指针在资源列表中的数量
+ */
+int resource_list_get_count_by_callback(RESOURCE_LIST * resource_list, ResourceDestroyCallBack callback)
+{
+	int count = 0;
+	if(!callback || !resource_list || !resource_list->list)
+		return count;
+	for(int i = 0; i < resource_list->size;i++) {
+		if(resource_list->list[i].destroy_callback == callback)
+			count++;
+	}
+	return count;
+}
+
+/**
  * 向资源列表中添加成员
  * ptr参数表示资源相关的指针，如果ptr资源没有在脚本中被手动清理的话，
  * 那么在脚本退出时，就会自动调用destroy_callback回调函数去清理ptr指针所对应的资源

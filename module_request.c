@@ -474,7 +474,9 @@ static int on_multipart_data_end(multipart_parser * p)
 	if(data->part.content_type)
 		write_to_server_log_pipe(WRITE_TO_PIPE, "content_type:%.*s\n", data->part.content_type_length, data->part.content_type);
 	if(data->part.content) {
-		write_to_server_log_pipe(WRITE_TO_PIPE, "content:%.*s\n\n\n", data->part.content_length, data->part.content);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "content:");
+		// 如果传的是图片或者文件之类的包含二进制的数据，则写入日志时，可能会在日志中报无效的字符
+		write_to_server_log_pipe(WRITE_TO_PIPE, "%.*s\n\n\n", data->part.content_length, data->part.content);
 	}
 
 	if(data->part.filename) {

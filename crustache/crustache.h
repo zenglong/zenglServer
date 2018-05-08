@@ -4,6 +4,8 @@
 #include "buffer.h"
 #include "stack.h"
 
+#define CRUSTACHE_COMPILE_VERSION 1 // 版本号，当crustache相关源码改动时，修改此版本号，可以迫使外层的zenglServer重新编译，以使用新的改动
+
 typedef enum {
 	CRUSTACHE_OK = 0,
 

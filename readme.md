@@ -30,6 +30,8 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 从v0.4.0版本开始，zenglServer使用epoll来处理请求，因此，需要先确定linux支持epoll，epoll的API是从linux kernel 2.5.44开始引入的
 
+### 开启mysql模块
+
 从v0.3.0版本开始，在编译时，可以添加mysql模块，从而可以进行相关的mysql数据库操作，只要在make命令后面加入USE_MYSQL=yes即可：
 
 ```
@@ -52,6 +54,37 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 - 注意：在加入mysql模块前，请确保你的系统中包含了mysql_config程式和mysql.h开发头文件，如果没有的话，如果是ubuntu系统，可以通过sudo apt-get install libmysqlclient-dev来添加开发mysql客户端所需要的文件，如果是centos系统，则可以通过yum install mysql-devel来加入开发所需的文件。
 
+### 开启magick模块
+
+从v0.11.0版本开始，在编译时，还可以添加magick模块，从而可以进行图像相关的操作，例如：缩放图像等。只要在make命令后面加入USE_MAGICK=6即可，由于操作图像使用的是ImageMagick，而ImageMagick有6.x和7.x的版本，目前只支持6.x的版本，因此USE_MAGICK后面跟随的是数字6，如果以后支持7.x的话，还可以跟随7。
+
+当然，要使用ImageMagick，前提是系统中安装了底层的开发库。
+
+如果是ubuntu系统，可以通过sudo apt-get install imagemagick libmagickcore-dev libmagickwand-dev来安装ImageMagick相关的库和开发头文件。
+
+如果是centos系统，则可以通过yum install ImageMagick ImageMagick-devel来安装相关的底层库。可以通过convert --version命令来查看系统安装的是哪个版本的ImageMagick
+
+要同时使用mysql和magick模块，可以使用make USE_MYSQL=yes USE_MAGICK=6命令：
+
+```
+zengl@zengl-ubuntu:~/zenglServer$ make USE_MYSQL=yes USE_MAGICK=6
+cd zengl/linux && make libzengl.a
+make[1]: Entering directory `/home/zengl/zenglServer/zengl/linux'
+gcc -D ZL_LANG_EN_WITH_CH -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c zengl_main.c zengl_parser.c zengl_symbol.c zengl_locals.c zengl_assemble.c zengl_ld.c zenglrun_main.c zenglrun_func.c zenglrun_hash_array.c zenglApi.c zenglApi_BltModFuns.c zenglDebug.c
+ar rc libzengl.a zengl_main.o zengl_parser.o zengl_symbol.o zengl_locals.o zengl_assemble.o zengl_ld.o zenglrun_main.o zenglrun_func.o zenglrun_hash_array.o zenglApi.o zenglApi_BltModFuns.o zenglDebug.o
+make[1]: Leaving directory `/home/zengl/zenglServer/zengl/linux'
+cd crustache && make libcrustache.a
+make[1]: Entering directory `/home/zengl/zenglServer/crustache'
+gcc -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c buffer.c crustache.c houdini_html.c stack.c
+ar rc libcrustache.a buffer.o crustache.o houdini_html.o stack.o
+make[1]: Leaving directory `/home/zengl/zenglServer/crustache'
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h module_mysql.c module_mysql.h  module_magick.c module_magick.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand`
+
+mysql module is enabled!!!
+magick module is enabled!!!
+zengl@zengl-ubuntu:~/zenglServer$ 
+```
+
 ## 使用
 
 在根目录中，有一个config.zl的默认配置文件(使用zengl脚本语法编写)，该配置文件里定义了zenglServer需要绑定的端口号，需要启动的进程数等：
@@ -59,6 +92,7 @@ zengl@zengl-ubuntu:~/zenglServer$
 ```
 def TRUE 1;
 def FALSE 0;
+def KBYTE 1024;
 
 debug_mode = TRUE;
 //debug_mode = FALSE;
@@ -84,6 +118,9 @@ remote_debugger_ip = '127.0.0.1'; // 远程调试器的ip地址
 remote_debugger_port = 9999; // 远程调试器的端口号
 
 zengl_cache_enable = FALSE; // 是否开启zengl脚本的编译缓存，默认为FALSE即不开启，设置为TRUE可以开启编译缓存
+
+shm_enable = FALSE; // 是否将zengl脚本的编译缓存放入共享内存
+shm_min_size = 300 * KBYTE; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
 ```
 
 在编译成功后，直接运行生成好的zenglServer可执行文件即可(从v0.4.0版本开始，zenglServer默认以守护进程模式启动，并采用epoll方式来处理请求)：
@@ -102,7 +139,7 @@ run config.zl complete, config:
 port: 8083 process_num: 1
 webroot: my_webroot
 session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
-remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999 zengl_cache_enable: False
+remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999 zengl_cache_enable: False shm_enable: False shm_min_size: 307200
 bind done
 accept sem initialized.
 process_max_open_fd_num: 1024
@@ -219,7 +256,7 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 ```
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
-zenglServer version: v0.10.1
+zenglServer version: v0.11.0
 zengl language version: v1.8.1
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
@@ -229,7 +266,7 @@ run config.zl complete, config:
 port: 8083 process_num: 1
 webroot: my_webroot
 session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
-remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999 zengl_cache_enable: False
+remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999 zengl_cache_enable: False shm_enable: False shm_min_size: 307200
 bind done
 accept sem initialized.
 process_max_open_fd_num: 1024 
@@ -421,6 +458,40 @@ free socket_list[0]/list_cnt:0 epoll_fd_add_count:0 pid:5942 tid:5945
 ```
 
 编译缓存文件会生成在zengl/caches目录中
+
+从v0.11.0版本开始，可以将编译缓存写入共享内存，需要在配置文件中将shm_enable设置为TRUE(前提是zengl_cache_enable也设置为了TRUE)：
+
+```
+def TRUE 1;
+def FALSE 0;
+def KBYTE 1024;
+
+.................................
+
+shm_enable = FALSE; // 是否将zengl脚本的编译缓存放入共享内存
+shm_min_size = 300 * KBYTE; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
+```
+
+上面还有个配置shm_min_size是需要放入共享内存的缓存的最小大小，默认是300K字节，也就是当编译缓存的大小超过300K时，才会放入共享内存，小于300K的还是使用文件缓存的方式。如果某个缓存使用了共享内存，那么在日志中可以看到和共享内存相关的信息：
+
+```
+...................................
+[shm:0x1004b2c] reuse cache file: "zengl/caches/1_8_1_8_b8e97748cc5c6b580238f0ee59ad7843" mtime:1529307908
+...................................
+```
+
+上面的shm:0x1004b2c表示当前缓存所使用的共享内存的key是0x1004b2c，可以通过ipcs -m命令看到系统中有哪些共享内存，并通过这个key找到对应的编译缓存所使用的共享内存。当zenglServer执行结束时，会根据缓存的key自动移除共享内存，在日志中可以看到进程结束时清理的共享内存信息：
+
+```
+Termination signal received! Killing children
+All children reaped, shutting down.
+************ remove shm key: 0x1004b2c [cache_file: 1_8_1_8_b8e97748cc5c6b580238f0ee59ad7843]
+------------ remove shm number: 1
+closed accept_sem
+shutdowned server socket
+closed server socket
+===================================
+```
 
 - zenglServer是在Ubuntu 16.04 LTS x86-64(GCC版本号为：5.4.0)，Ubuntu 17.04 x86-64(GCC版本号为：6.3.0)中进行的开发测试，并在CentOS 5.8, 6.x, 7.x中进行了简单的测试。
 

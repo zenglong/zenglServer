@@ -8,6 +8,8 @@
 #include "main.h"
 #include "module_magick.h"
 #include <string.h>
+#include <sys/stat.h>
+
 /**
  * zenglServer使用ImageMagick来操作jpg,png,gif之类的图像
  * ImageMagick的官方网站：www.imagemagick.org
@@ -50,9 +52,52 @@ static ZL_EXP_BOOL st_magick_wand_genesis()
  */
 static void st_magick_destroy_wand_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 {
-	MagickWand * magick_wand = (MagickWand *)ptr;
-	DestroyMagickWand(magick_wand);
-	write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] DestroyMagickWand: %x\n", magick_wand); // debug
+	if(ptr != NULL) {
+		MagickWand * magick_wand = (MagickWand *)ptr;
+		ClearMagickWand(magick_wand);
+		DestroyMagickWand(magick_wand);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] DestroyMagickWand: %x\n", magick_wand); // debug
+	}
+}
+
+/**
+ * DrawingWand相关的资源释放回调函数，当执行图像矢量操作时，例如绘制文字时，需要先分配一个DrawingWand实例，然后使用该实例去执行各种矢量操作。
+ * 这些DrawingWand实例会在脚本执行结束时，由zenglServer自动通过下面这个回调函数释放掉
+ */
+static void st_magick_destroy_drawing_wand_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
+{
+	if(ptr != NULL) {
+		DrawingWand * d_wand = (DrawingWand *)ptr;
+		ClearDrawingWand(d_wand);
+		DestroyDrawingWand(d_wand);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] DestroyDrawingWand: %x\n", d_wand); // debug
+	}
+}
+
+/**
+ * PixelWand相关的资源释放回调函数，当执行像素操作时，例如设置颜色时，需要先分配一个PixelWand实例
+ * 这些PixelWand实例会在脚本执行结束时，由zenglServer自动通过下面这个函数释放掉
+ */
+static void st_magick_destroy_pixel_wand_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
+{
+	if(ptr != NULL) {
+		PixelWand * p_wand = (PixelWand *)ptr;
+		ClearPixelWand(p_wand);
+		DestroyPixelWand(p_wand);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] DestroyPixelWand: %x\n", p_wand); // debug
+	}
+}
+
+/**
+ * 当使用MagickGetImageBlob这个API获取了图像的二进制数据后，这些二进制数据需要通过MagickRelinquishMemory的API进行清理，
+ * 当脚本结束后，zenglServer会自动调用下面这个回调函数对这些二进制资源进行清理
+ */
+static void st_magick_destroy_image_blob_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
+{
+	if(ptr != NULL) {
+		MagickRelinquishMemory(ptr);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] DestroyImageBlob: %x\n", ptr); // debug
+	}
 }
 
 /**
@@ -69,6 +114,32 @@ static ZL_EXP_BOOL st_is_valid_magick_wand(RESOURCE_LIST * resource_list, void *
 }
 
 /**
+ * 在使用DrawingWand实例指针进行矢量操作前，会先通过下面这个函数来检测指针是否是一个有效的DrawingWand实例指针
+ * 如果在资源列表中找到了该指针(同时释放回调函数是st_magick_destroy_drawing_wand_callback时)，则说明是一个有效的DrawingWand实例指针
+ */
+static ZL_EXP_BOOL st_is_valid_drawing_wand(RESOURCE_LIST * resource_list, void * d_wand)
+{
+	int ret = resource_list_get_ptr_idx(resource_list, d_wand, st_magick_destroy_drawing_wand_callback);
+	if(ret >= 0)
+		return ZL_EXP_TRUE;
+	else
+		return ZL_EXP_FALSE;
+}
+
+/**
+ * 在使用PixelWand实例指针进行像素操作前，会先通过下面这个函数来检测该指针是否是一个有效的PixelWand实例指针
+ * 如果在资源列表中找到了该指针(同时释放回调函数是st_magick_destroy_pixel_wand_callback时)，则说明是一个有效的PixelWand实例指针
+ */
+static ZL_EXP_BOOL st_is_valid_pixel_wand(RESOURCE_LIST * resource_list, void * p_wand)
+{
+	int ret = resource_list_get_ptr_idx(resource_list, p_wand, st_magick_destroy_pixel_wand_callback);
+	if(ret >= 0)
+		return ZL_EXP_TRUE;
+	else
+		return ZL_EXP_FALSE;
+}
+
+/**
  * 模块函数会通过下面这个函数来检查提供的指针参数是否是有效的实例指针，如果不是有效的实例指针，则抛出错误
  * 该函数又会通过st_is_valid_magick_wand来进行基础的检测，如果st_is_valid_magick_wand返回0，则抛出错误
  */
@@ -77,6 +148,32 @@ static MAIN_DATA * st_assert_magick_wand(ZL_EXP_VOID * VM_ARG, void * magick_wan
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	if(!st_is_valid_magick_wand(&(my_data->resource_list), magick_wand)) {
 		zenglApi_Exit(VM_ARG,"%s runtime error: invalid magick_wand", module_fun_name);
+	}
+	return my_data;
+}
+
+/**
+ * 模块函数会通过下面这个函数来检查提供的指针参数是否是有效的DrawingWand实例指针，如果不是有效的实例指针，则抛出错误
+ * 该函数又会通过st_is_valid_drawing_wand来进行基础的检测，如果st_is_valid_drawing_wand返回0，则抛出错误
+ */
+static MAIN_DATA * st_assert_drawing_wand(ZL_EXP_VOID * VM_ARG, void * d_wand, const char * module_fun_name)
+{
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!st_is_valid_drawing_wand(&(my_data->resource_list), d_wand)) {
+		zenglApi_Exit(VM_ARG,"%s runtime error: invalid drawing wand", module_fun_name);
+	}
+	return my_data;
+}
+
+/**
+ * 模块函数会通过下面这个函数来检查提供的指针参数是否是有效的PixelWand实例指针，如果不是有效的实例指针，则抛出错误
+ * 该函数又会通过st_is_valid_pixel_wand来进行基础的检测，如果st_is_valid_pixel_wand返回0，则抛出错误
+ */
+static MAIN_DATA * st_assert_pixel_wand(ZL_EXP_VOID * VM_ARG, void * p_wand, const char * module_fun_name)
+{
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!st_is_valid_pixel_wand(&(my_data->resource_list), p_wand)) {
+		zenglApi_Exit(VM_ARG,"%s runtime error: invalid pixel wand", module_fun_name);
 	}
 	return my_data;
 }
@@ -127,6 +224,612 @@ ZL_EXP_VOID module_magick_new_wand(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	if(ret_code != 0) {
 		zenglApi_Exit(VM_ARG, "magickNewWand add resource to resource_list failed, resource_list_set_member error code:%d", ret_code);
 	}
+}
+
+/**
+ * magickNewDrawingWand模块函数，新建一个DrawingWand实例，并将该实例的指针返回
+ * 在执行具体的图像矢量操作之前，需要先新建一个DrawingWand实例，因为，大部分图像矢量操作接口都需要接受一个DrawingWand实例指针作为参数
+ * 该模块函数在创建了一个DrawingWand实例指针后，还会将该指针存储到资源列表中，最后将创建好的实例指针以整数的形式作为结果返回
+ */
+ZL_EXP_VOID module_magick_new_drawing_wand(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	st_magick_wand_genesis();
+	DrawingWand * d_wand = NewDrawingWand();
+	write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] NewDrawingWand: %x\n", d_wand); // debug
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)d_wand, 0);
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	int ret_code = resource_list_set_member(&(my_data->resource_list), d_wand, st_magick_destroy_drawing_wand_callback);
+	if(ret_code != 0) {
+		zenglApi_Exit(VM_ARG, "magickNewDrawingWand add resource to resource_list failed, resource_list_set_member error code:%d", ret_code);
+	}
+}
+
+/**
+ * magickNewPixelWand模块函数，新建一个PixelWand实例，并将该实例的指针返回
+ * 在执行具体的像素操作之前，需要先新建一个PixelWand实例，因为，大部分像素操作接口都需要接受一个PixelWand实例指针作为参数
+ * 该模块函数在创建了一个PixelWand实例指针后，还会将该指针存储到资源列表中，最后将创建好的实例指针以整数的形式作为结果返回
+ */
+ZL_EXP_VOID module_magick_new_pixel_wand(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	st_magick_wand_genesis();
+	PixelWand * p_wand = NewPixelWand();
+	write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] NewPixelWand: %x\n", p_wand); // debug
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)p_wand, 0);
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	int ret_code = resource_list_set_member(&(my_data->resource_list), p_wand, st_magick_destroy_pixel_wand_callback);
+	if(ret_code != 0) {
+		zenglApi_Exit(VM_ARG, "magickNewPixelWand add resource to resource_list failed, resource_list_set_member error code:%d", ret_code);
+	}
+}
+
+/**
+ * magickPixelSetColor模块，为PixelWand实例设置颜色，PixelWand实例在设置了颜色后，就可以作为其他接口的参数，用作绘图的色彩
+ * 该模块函数的第一个参数p_wand必须是一个有效的PixelWand实例指针，第二个参数color是需要设置的颜色的字符串，例如：blue", "#0000ff"等
+ * 例如：
+ * use magick;
+ * wand = magickNewWand();
+ * p_wand = magickNewPixelWand();
+ * magickPixelSetColor(p_wand, "white");
+ * magickNewImage(wand, 85, 30, p_wand);
+ * 上面脚本创建了一个宽85像素，高30像素，白色背景的图像
+ * 该模块函数最终会通过PixelSetColor的API接口去执行具体的像素操作
+ * 该接口的官方文档：https://www.imagemagick.org/api/pixel-wand.php#PixelSetColor
+ */
+ZL_EXP_VOID module_magick_pixel_set_color(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: magickPixelSetColor(p_wand, color): integer");
+	MagickBooleanType retval;
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [p_wand] of magickPixelSetColor must be integer");
+	}
+	PixelWand * p_wand = (PixelWand *)arg.val.integer;
+	st_assert_pixel_wand(VM_ARG, p_wand, "magickPixelSetColor");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the second argument [color] of magickPixelSetColor must be string");
+	}
+	char * color = arg.val.str;
+	retval = PixelSetColor(p_wand, (const char *)color);
+	if(retval == MagickFalse) {
+		ExceptionType severity;
+		char * description = PixelGetException(p_wand, &severity);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "PixelSetColor failed: %s\n", description);
+		description=(char *) MagickRelinquishMemory(description);
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+}
+
+/**
+ * magickNewImage模块函数，在MagickWand实例中使用指定的尺寸和背景色，创建一个空白的图像画布
+ * 该模块函数的第一个参数magick_wand必须是一个有效的MagickWand实例指针，第二个参数width表示创建画布的宽，
+ * 第三个参数height表示画布的高，最后一个参数background必须是一个有效的PixelWand实例指针，表示需要创建的画布的背景色
+ * 示例代码，参考magickPixelSetColor模块函数的示例代码
+ * 该模块函数最终会通过MagickNewImage这个API接口去执行具体的操作
+ * 该接口的官方文档：https://www.imagemagick.org/api/magick-image.php#MagickNewImage
+ */
+ZL_EXP_VOID module_magick_new_image(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 4)
+		zenglApi_Exit(VM_ARG,"usage: magickNewImage(magick_wand, width, height, background): integer");
+	MagickBooleanType retval;
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [magick_wand] of magickNewImage must be integer");
+	}
+	MagickWand * magick_wand = (MagickWand *)arg.val.integer;
+	MAIN_DATA * my_data = st_assert_magick_wand(VM_ARG, magick_wand, "magickNewImage");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the second argument [width] of magickNewImage must be integer");
+	}
+	int width = arg.val.integer;
+	if(width < 0) {
+		width = 0;
+	}
+	zenglApi_GetFunArg(VM_ARG,3,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the third argument [height] of magickNewImage must be integer");
+	}
+	int height = arg.val.integer;
+	if(height < 0) {
+		height = 0;
+	}
+	zenglApi_GetFunArg(VM_ARG,4,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"The fourth argument [background] of magickNewImage must be integer");
+	}
+	PixelWand * p_wand = (PixelWand *)arg.val.integer;
+	if(!st_is_valid_pixel_wand(&(my_data->resource_list), p_wand)) {
+		zenglApi_Exit(VM_ARG,"magickNewImage runtime error: invalid pixel wand");
+	}
+	retval = MagickNewImage(magick_wand,width,height,p_wand);
+	if(retval == MagickFalse) {
+		ExceptionType severity;
+		char * description=MagickGetException(magick_wand, &severity);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "MagickNewImage failed: %s\n", description);
+		description=(char *) MagickRelinquishMemory(description);
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+}
+
+/**
+ * magickSetImageFormat模块函数，设置MagickWand中图像的格式
+ * 该模块函数的第一个参数magick_wand必须是一个有效的MagickWand实例指针，第二个参数format表示需要设置的图像格式，例如：png，jpg等
+ * 例如：
+ * use builtin, magick, request;
+ * wand = magickNewWand();
+ * p_wand = magickNewPixelWand();
+ * magickPixelSetColor(p_wand, "white");
+ * magickNewImage(wand, 85, 30, p_wand);
+ * magickSetImageFormat(wand, "jpg");
+ * output = magickGetImageBlob(wand, &length); // 获取图像的二进制数据
+ * rqtSetResponseHeader("Content-Type: image/" + magickGetImageFormat(wand));
+ * bltOutputBlob(output, length); // 输出二进制数据
+ * 上面代码中，创建了一个白色背景的图像，并将该图像设置为了jpg格式，
+ * 最后，获取该图像的jpg格式的二进制数据，并将这些二进制数据输出给浏览器，从而可以在浏览器中看到jpg格式的图片
+ * 该模块函数最终会通过MagickSetImageFormat这个接口去执行具体的操作
+ * 该接口的官方文档：https://www.imagemagick.org/api/magick-image.php#MagickSetImageFormat
+ */
+ZL_EXP_VOID module_magick_set_image_format(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: magickSetImageFormat(magick_wand, format): integer");
+	MagickBooleanType retval;
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [magick_wand] of magickSetImageFormat must be integer");
+	}
+	MagickWand * magick_wand = (MagickWand *)arg.val.integer;
+	st_assert_magick_wand(VM_ARG, magick_wand, "magickSetImageFormat");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the second argument [format] of magickSetImageFormat must be string");
+	}
+	char * format = arg.val.str;
+	retval = MagickSetImageFormat(magick_wand, (const char *)format);
+	if(retval == MagickFalse) {
+		ExceptionType severity;
+		char * description=MagickGetException(magick_wand, &severity);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "MagickSetImageFormat failed: %s\n", description);
+		description=(char *) MagickRelinquishMemory(description);
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+}
+
+/**
+ * magickGetImageBlob模块函数，获取图像在指定格式下(jpg, png等格式)的二进制数据
+ * 该模块函数的第一个参数magick_wand必须是一个有效的MagickWand实例指针，第二个参数length表示返回的二进制数据的字节大小，必须是引用类型
+ * 示例代码，参考magickSetImageFormat模块函数
+ * 该模块函数最终会通过MagickGetImageBlob这个接口去执行底层的操作
+ * 该接口的官方文档：https://www.imagemagick.org/api/magick-image.php#MagickGetImageBlob
+ */
+ZL_EXP_VOID module_magick_get_image_blob(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: magickGetImageBlob(magick_wand, &length): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [magick_wand] of magickGetImageBlob must be integer");
+	}
+	MagickWand * magick_wand = (MagickWand *)arg.val.integer;
+	MAIN_DATA * my_data = st_assert_magick_wand(VM_ARG, magick_wand, "magickGetImageBlob");
+	zenglApi_GetFunArgInfo(VM_ARG,2,&arg);
+	switch(arg.type){
+	case ZL_EXP_FAT_ADDR:
+	case ZL_EXP_FAT_ADDR_LOC:
+	case ZL_EXP_FAT_ADDR_MEMBLK:
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the second argument [length] of magickGetImageBlob must be address type");
+		break;
+	}
+	size_t length;
+	unsigned char * output = MagickGetImageBlob(magick_wand,&length);
+	arg.type = ZL_EXP_FAT_INT;
+	arg.val.integer = (ZL_EXP_LONG)length;
+	zenglApi_SetFunArg(VM_ARG,2,&arg);
+	if(output == NULL) {
+		ExceptionType severity;
+		char * description=MagickGetException(magick_wand, &severity);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "MagickGetImageBlob failed: %s\n", description);
+		description=(char *) MagickRelinquishMemory(description);
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+	}
+	else {
+		write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] MagickGetImageBlob: %x\n", output); // debug
+		int ret_code = resource_list_set_member(&(my_data->resource_list), output, st_magick_destroy_image_blob_callback);
+		if(ret_code != 0) {
+			zenglApi_Exit(VM_ARG, "magickGetImageBlob add resource to resource_list failed, resource_list_set_member error code:%d", ret_code);
+		}
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)output, 0);
+	}
+}
+
+/**
+ * magickDrawSetFont模块函数，设置绘制文字所使用的字体
+ * 该模块函数的第一个参数d_wand必须是有效的DrawingWand实例指针，
+ * 第二个参数font_name表示需要设置的字体，可以是字体名，例如："Helvetica Regular"，也可以是某个字体文件的相对路径(相对于当前执行脚本的路径)，例如：xerox_serif_narrow.ttf
+ * 示例：
+ * use magick;
+ * def TRUE 1;
+ * def FALSE 0;
+ * wand = magickNewWand();
+ * p_wand = magickNewPixelWand();
+ * magickPixelSetColor(p_wand, "white");
+ * magickNewImage(wand, 85, 30, p_wand); // 创建一个白色背景的画布
+ * d_wand = magickNewDrawingWand();      // 新建一个DrawingWand实例
+ * magickDrawSetFont(d_wand, "xerox_serif_narrow.ttf"); // 设置字体
+ * magickDrawSetFontSize(d_wand, 24);    // 设置字体大小
+ * magickDrawSetTextAntialias(d_wand, TRUE); // 开启抗锯齿(默认情况下就是开启)
+ * magickDrawAnnotation(d_wand, 4, 20, "Hello"); // 使用xerox_serif_narrow.ttf对应的字体绘制Hello
+ * magickDrawImage(wand, d_wand);        // 将文字信息渲染到画布上
+ *
+ * 该模块函数最终会通过DrawSetFont这个接口去执行具体的操作
+ * 该接口的官方文档：https://www.imagemagick.org/api/drawing-wand.php#DrawSetFont
+ */
+ZL_EXP_VOID module_magick_draw_set_font(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: magickDrawSetFont(d_wand, font_name): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [d_wand] of magickDrawSetFont must be integer");
+	}
+	DrawingWand * d_wand = (DrawingWand *)arg.val.integer;
+	MAIN_DATA * my_data = st_assert_drawing_wand(VM_ARG, d_wand, "magickDrawSetFont");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the second argument [font_name] of magickDrawSetFont must be string");
+	}
+	char full_path[FULL_PATH_SIZE];
+	char * font_name = arg.val.str;
+	builtin_make_fullpath(full_path, font_name, my_data);
+	struct stat filestatus;
+	if ( stat(full_path, &filestatus) == 0) { // 如果存在字体文件，则使用指定的字体文件
+		font_name = full_path;
+	}
+	MagickBooleanType retval;
+	retval = DrawSetFont (d_wand, (const char *)font_name);
+	if(retval == MagickFalse) {
+		ExceptionType severity;
+		char * description = DrawGetException(d_wand, &severity);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "DrawSetFont failed: %s\n", description);
+		description=(char *) MagickRelinquishMemory(description);
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+}
+
+/**
+ * magickDrawSetFontSize模块函数，设置绘制文字时所使用的字体大小
+ * 该模块函数的第一个参数d_wand必须是有效的DrawingWand实例指针，第二个参数pointsize表示需要设置的字体大小
+ * 示例代码参考magickDrawSetFont模块函数
+ * 该模块函数最终会通过DrawSetFontSize接口去执行具体的操作
+ * 该接口的官方文档：https://www.imagemagick.org/api/drawing-wand.php#DrawSetFontSize
+ */
+ZL_EXP_VOID module_magick_draw_set_font_size(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: magickDrawSetFontSize(d_wand, pointsize): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [d_wand] of magickDrawSetFontSize must be integer");
+	}
+	DrawingWand * d_wand = (DrawingWand *)arg.val.integer;
+	st_assert_drawing_wand(VM_ARG, d_wand, "magickDrawSetFontSize");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	double pointsize = 0;
+	switch(arg.type)
+	{
+	case ZL_EXP_FAT_INT:
+		pointsize = (double)arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		pointsize = arg.val.floatnum;
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the second argument [pointsize] of magickDrawSetFontSize must be integer or float");
+		break;
+	}
+	DrawSetFontSize(d_wand, (const double)pointsize);
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+}
+
+/**
+ * magickDrawSetTextAntialias模块函数，控制绘制的文本是否是抗锯齿的，默认情况下(没有使用该模块函数的情况下)，文本是抗锯齿的。
+ * 该模块函数的第一个参数d_wand必须是有效的DrawingWand实例指针，第二个参数text_antialias是整数类型用于判断是否开启抗锯齿，如果text_antialias不等于0就开启抗锯齿，
+ * 如果text_antialias等于0，则关闭抗锯齿。
+ * 示例代码参考magickDrawSetFont模块函数
+ *
+ * magickDrawSetTextAntialias模块函数最终会通过DrawSetTextAntialias接口去执行具体的操作
+ * 该接口的官方文档：https://www.imagemagick.org/api/drawing-wand.php#DrawSetTextAntialias
+ */
+ZL_EXP_VOID module_magick_draw_set_text_antialias(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: magickDrawSetTextAntialias(d_wand, text_antialias): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [d_wand] of magickDrawSetTextAntialias must be integer");
+	}
+	DrawingWand * d_wand = (DrawingWand *)arg.val.integer;
+	st_assert_drawing_wand(VM_ARG, d_wand, "magickDrawSetTextAntialias");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the second argument [text_antialias] of magickDrawSetTextAntialias must be integer");
+	}
+	int text_antialias = arg.val.integer;
+	if(text_antialias != 0) {
+		DrawSetTextAntialias(d_wand,MagickTrue);
+	}
+	else
+		DrawSetTextAntialias(d_wand,MagickFalse);
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+}
+
+/**
+ * magickDrawAnnotation模块函数，绘制文本信息
+ * 该模块函数的第一个参数d_wand必须是有效的DrawingWand实例指针，第二个参数x表示要绘制文本的横坐标，第三个参数y表示要绘制的纵坐标，最后一个参数text表示要绘制的文本
+ * 例如：magickDrawAnnotation(d_wand, 4, 20, "Hello"); 表示在横坐标为4像素，纵坐标为20像素的位置处绘制文本Hello
+ * 该模块函数最终会通过DrawAnnotation这个API接口去执行具体的操作，该接口的官方文档：https://www.imagemagick.org/api/drawing-wand.php#DrawAnnotation
+ */
+ZL_EXP_VOID module_magick_draw_annotation(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 4)
+		zenglApi_Exit(VM_ARG,"usage: magickDrawAnnotation(d_wand, x, y, text): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [d_wand] of magickDrawAnnotation must be integer");
+	}
+	DrawingWand * d_wand = (DrawingWand *)arg.val.integer;
+	st_assert_drawing_wand(VM_ARG, d_wand, "magickDrawAnnotation");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	double x = 0;
+	switch(arg.type)
+	{
+	case ZL_EXP_FAT_INT:
+		x = (double)arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		x = arg.val.floatnum;
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the second argument [x] of magickDrawAnnotation must be integer or float");
+		break;
+	}
+	zenglApi_GetFunArg(VM_ARG,3,&arg);
+	double y = 0;
+	switch(arg.type)
+	{
+	case ZL_EXP_FAT_INT:
+		y = (double)arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		y = arg.val.floatnum;
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the third argument [y] of magickDrawAnnotation must be integer or float");
+		break;
+	}
+	zenglApi_GetFunArg(VM_ARG,4,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the fourth argument [text] of magickDrawAnnotation must be string");
+	}
+	char * text = arg.val.str;
+	DrawAnnotation(d_wand, (const double)x, (const double)y, (const unsigned char *)text);
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+}
+
+/**
+ * magickDrawImage模块函数，将DrawingWand实例中包含的矢量图像信息(例如文本信息等)渲染到MagickWand实例所对应的画布上
+ * 该模块函数的第一个参数magick_wand必须是有效的MagickWand实例指针，第二个参数d_wand必须是有效的DrawingWand实例指针
+ * 例如：
+ * magickDrawAnnotation(d_wand, 4, 20, "Hello"); // 在d_wand中绘制矢量文本
+ * magickDrawImage(wand, d_wand);                // 将d_wand包含的矢量文本渲染到wand对应的画布上
+ *
+ * 该模块函数最终会通过MagickDrawImage这个底层API接口去执行具体的操作，该接口的官方文档：https://www.imagemagick.org/api/magick-image.php#MagickDrawImage
+ */
+ZL_EXP_VOID module_magick_draw_image(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: magickDrawImage(magick_wand, d_wand): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [magick_wand] of magickDrawImage must be integer");
+	}
+	MagickWand * magick_wand = (MagickWand *)arg.val.integer;
+	MAIN_DATA * my_data = st_assert_magick_wand(VM_ARG, magick_wand, "magickDrawImage");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the second argument [d_wand] of magickDrawImage must be integer");
+	}
+	DrawingWand * d_wand = (DrawingWand *)arg.val.integer;
+	if(!st_is_valid_drawing_wand(&(my_data->resource_list), d_wand)) {
+		zenglApi_Exit(VM_ARG,"magickDrawImage runtime error: invalid drawing wand");
+	}
+	MagickBooleanType retval;
+	retval = MagickDrawImage(magick_wand,d_wand);
+	if(retval == MagickFalse) {
+		ExceptionType severity;
+		char * description=MagickGetException(magick_wand, &severity);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "MagickDrawImage failed: %s\n", description);
+		description=(char *) MagickRelinquishMemory(description);
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+}
+
+/**
+ * magickSwirlImage模块函数，围绕图像中心旋转像素
+ * 该模块函数的第一个参数magick_wand必须是有效的MagickWand实例指针，第二个参数degrees表示旋转的度数，度数越大，旋转效果越明显。
+ * 例如：
+ * magickSwirlImage(wand, 20); // 将wand对应的画布，围绕中心旋转20度
+ *
+ * 该模块函数最终会通过底层的API接口MagickSwirlImage去执行具体的操作
+ * 该接口的官方文档：https://www.imagemagick.org/api/magick-image.php#MagickSwirlImage
+ * 官方文档中的MagickSwirlImage函数原型是ImageMagick 7.x中的版本，在ImageMagick 6.x中，是没有最后一个method参数的
+ */
+ZL_EXP_VOID module_magick_swirl_image(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: magickSwirlImage(magick_wand, degrees): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [magick_wand] of magickSwirlImage must be integer");
+	}
+	MagickWand * magick_wand = (MagickWand *)arg.val.integer;
+	st_assert_magick_wand(VM_ARG, magick_wand, "magickSwirlImage");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	double degrees = 0;
+	switch(arg.type)
+	{
+	case ZL_EXP_FAT_INT:
+		degrees = (double)arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		degrees = arg.val.floatnum;
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the second argument [degrees] of magickSwirlImage must be integer or float");
+		break;
+	}
+	MagickBooleanType retval;
+	retval = MagickSwirlImage(magick_wand, (const double)degrees);
+	if(retval == MagickFalse) {
+		ExceptionType severity;
+		char * description=MagickGetException(magick_wand, &severity);
+		write_to_server_log_pipe(WRITE_TO_PIPE, "MagickSwirlImage failed: %s\n", description);
+		description=(char *) MagickRelinquishMemory(description);
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+}
+
+/**
+ * magickClearDrawingWand模块函数，清理与DrawingWand实例相关的资源
+ * 该模块函数的第一个参数d_wand必须是有效的DrawingWand实例指针
+ * 例如：
+ * magickDrawAnnotation(d_wand, 4, 20, "Hello"); // 在d_wand中绘制文本Hello
+ * magickDrawImage(wand, d_wand);                // 将文本渲染到wand画布上
+ * magickSwirlImage(wand, 20);                   // 将画布中心旋转20度像素，让文本产生扭曲效果
+ * magickClearDrawingWand(d_wand);               // 清理d_wand中包含的文本信息
+ * magickDrawLine(d_wand, 10, 10, 65, 25);       // 在d_wand中绘制线条
+ * magickDrawImage(wand, d_wand);                // 将d_wand中包含的线条渲染到画布上
+ * 上面脚本中先使用magickClearDrawingWand模块函数清理掉d_wand中包含的资源(包括之前绘制的文本)，这样，绘制线条时，就不会残留之前绘制的文本信息了
+ * 该模块函数最终会通过底层的API接口ClearDrawingWand去执行具体的操作，接口官方文档：https://www.imagemagick.org/api/drawing-wand.php#ClearDrawingWand
+ */
+ZL_EXP_VOID module_magick_clear_drawing_wand(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: magickClearDrawingWand(d_wand): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [d_wand] of magickClearDrawingWand must be integer");
+	}
+	DrawingWand * d_wand = (DrawingWand *)arg.val.integer;
+	st_assert_drawing_wand(VM_ARG, d_wand, "magickClearDrawingWand");
+	ClearDrawingWand(d_wand);
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+}
+
+/**
+ * magickDrawLine模块函数，根据指定的起始和结束位置，绘制一条直线
+ * 该模块函数的第一个参数d_wand必须是有效的DrawingWand实例指针，第二个参数sx表示起始位置的横坐标，第三个参数sy表示起始位置的纵坐标，
+ * 第四个参数ex表示结束位置的横坐标，最后一个参数ey表示结束位置的纵坐标
+ * 例如：magickDrawLine(d_wand, 10, 10, 65, 25); 表示在(10,10)到(65,25)之间绘制一条直线
+ * 该模块函数最终会通过底层API接口DrawLine去执行具体的操作，接口官方文档：https://www.imagemagick.org/api/drawing-wand.php#DrawLine
+ */
+ZL_EXP_VOID module_magick_draw_line(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 5)
+		zenglApi_Exit(VM_ARG,"usage: magickDrawLine(d_wand, sx, sy, ex, ey): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [d_wand] of magickDrawLine must be integer");
+	}
+	DrawingWand * d_wand = (DrawingWand *)arg.val.integer;
+	st_assert_drawing_wand(VM_ARG, d_wand, "magickDrawLine");
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	double sx = 0;
+	switch(arg.type)
+	{
+	case ZL_EXP_FAT_INT:
+		sx = (double)arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		sx = arg.val.floatnum;
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the second argument [sx] of magickDrawLine must be integer or float");
+		break;
+	}
+	zenglApi_GetFunArg(VM_ARG,3,&arg);
+	double sy = 0;
+	switch(arg.type)
+	{
+	case ZL_EXP_FAT_INT:
+		sy = (double)arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		sy = arg.val.floatnum;
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the third argument [sy] of magickDrawLine must be integer or float");
+		break;
+	}
+	zenglApi_GetFunArg(VM_ARG,4,&arg);
+	double ex = 0;
+	switch(arg.type)
+	{
+	case ZL_EXP_FAT_INT:
+		ex = (double)arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		ex = arg.val.floatnum;
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the fourth argument [ex] of magickDrawLine must be integer or float");
+		break;
+	}
+	zenglApi_GetFunArg(VM_ARG,5,&arg);
+	double ey = 0;
+	switch(arg.type)
+	{
+	case ZL_EXP_FAT_INT:
+		ey = (double)arg.val.integer;
+		break;
+	case ZL_EXP_FAT_FLOAT:
+		ey = arg.val.floatnum;
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the fifth argument [ey] of magickDrawLine must be integer or float");
+		break;
+	}
+	DrawLine(d_wand, sx, sy, ex, ey);
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
 /**
@@ -474,6 +1177,20 @@ ZL_EXP_VOID module_magick_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 {
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickWandGenesis",module_magick_wand_genesis);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickNewWand",module_magick_new_wand);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickNewDrawingWand",module_magick_new_drawing_wand);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickNewPixelWand",module_magick_new_pixel_wand);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickPixelSetColor",module_magick_pixel_set_color);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickNewImage",module_magick_new_image);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickSetImageFormat",module_magick_set_image_format);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickGetImageBlob",module_magick_get_image_blob);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickDrawSetFont",module_magick_draw_set_font);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickDrawSetFontSize",module_magick_draw_set_font_size);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickDrawSetTextAntialias",module_magick_draw_set_text_antialias);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickDrawAnnotation",module_magick_draw_annotation);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickDrawImage",module_magick_draw_image);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickSwirlImage",module_magick_swirl_image);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickClearDrawingWand",module_magick_clear_drawing_wand);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickDrawLine",module_magick_draw_line);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickReadImage",module_magick_read_image);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickGetImageFormat",module_magick_get_image_format);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"magickGetImageWidth",module_magick_get_image_width);

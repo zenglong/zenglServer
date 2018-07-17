@@ -42,7 +42,8 @@ void my_json_mem_free(void * ptr, ZL_EXP_VOID * VM_ARG)
 }
 
 /**
- * 由于json中的字符串是用双引号包起来的，因此，字符串内部的双引号和反斜杠需要进行转义
+ * 由于json中的字符串是用双引号包起来的，因此，字符串内部的双引号，反斜杠和换行符等需要进行转义
+ * http://json.org/
  */
 void session_escape_str(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR ** e_str, ZL_EXP_CHAR * s_str)
 {
@@ -59,13 +60,40 @@ void session_escape_str(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR ** e_str, ZL_EXP_CHAR 
 		switch((*s_str_cur)) {
 		case '"':
 		case '\\':
+		case '/':
+		case '\b':
+		case '\f':
+		case '\n':
+		case '\r':
+		case '\t':
 			count = s_str_cur - s_str_start;
 			if(count > 0) {
 				strncpy(escape_str_cur, s_str_start, count);
 				escape_str_cur += count;
 			}
 			*escape_str_cur++ = '\\';
-			*escape_str_cur++ = (*s_str_cur);
+			switch((*s_str_cur)) {
+				case '"':
+				case '\\':
+				case '/':
+					*escape_str_cur++ = (*s_str_cur);
+					break;
+				case '\b':
+					*escape_str_cur++ = 'b';
+					break;
+				case '\f':
+					*escape_str_cur++ = 'f';
+					break;
+				case '\n':
+					*escape_str_cur++ = 'n';
+					break;
+				case '\r':
+					*escape_str_cur++ = 'r';
+					break;
+				case '\t':
+					*escape_str_cur++ = 't';
+					break;
+			}
 			s_str_start = s_str_cur + 1;
 			break;
 		}
@@ -146,8 +174,8 @@ static void session_write_array_to_file(ZL_EXP_VOID * VM_ARG, FILE * session_fil
 					fprintf(session_file, "%.16g",mblk_val.val.floatnum);
 				break;
 			case ZL_EXP_FAT_STR: // 对数组中的字符串进行处理
-				// 通过strchr库函数来检测字符串中是否包含双引号或者反斜杠，如果都不包含可以无需进行转义
-				if(strchr(mblk_val.val.str, '"') == NULL &&  strchr(mblk_val.val.str, '\\') == NULL) {
+				// 通过strpbrk库函数来检测字符串中是否包含双引号、反斜杠、\n等需要转义的字符，如果都不包含则无需进行转义
+				if(strpbrk(mblk_val.val.str, "\"\\/\b\f\n\r\t") == NULL) {
 					mblk_str = mblk_val.val.str;
 				}
 				else {

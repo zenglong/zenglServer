@@ -1,0 +1,36 @@
+use builtin, request, session;
+
+def TRUE 1;
+def FALSE 0;
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>图形验证码</title>
+</head>
+<body>';
+
+posts = rqtGetBodyAsArray();
+if(posts['submit'])
+	bltStr(&posts['captcha'], TRUE);
+	cookies = rqtGetCookie();
+	sess_id = cookies['SESSION'];
+	data = sessGetData(sess_id);
+	bltStr(&data['captcha'], TRUE);
+	if(data['captcha'] && data['captcha'] == posts['captcha'])
+		print '校验通过!';
+	else
+		print '校验失败，输入的图形验证码无效!';
+	endif
+	sessDelete(sess_id);
+	print '<br/><p><a href="test.zl">再试一次</a></p>';
+else
+	random = bltRandomStr('0123456789', 10);
+	print '<form action="test.zl" method="post" enctype="multipart/form-data">
+		<p>验证码：<input name="captcha" value="" type="text"><img src="captcha.zl?' + random + '" /></p>
+		<input type="hidden" name="submit" value="yes">
+		<input value="校验" type="submit" style="width:180px;height:25px"></form>';
+endif
+
+print '</body></html>';
+

@@ -39,6 +39,9 @@ static int builtin_crustache__list_get(
 
 static int builtin_crustache__partial(ZL_EXP_VOID * VM_ARG, crustache_template **partial, char * partial_name, size_t name_size);
 
+// 判断是否初始化过随机种子，如果没有初始化过，则进行初始化
+static __thread ZL_EXP_BOOL st_is_init_rand_seed = ZL_EXP_FALSE;
+
 /**
  * crustache第三方库在解析mustache模板时，会调用的回调函数(回调函数定义在builtin模块中)
  */
@@ -50,6 +53,17 @@ crustache_api builtin_crustache__default_api = {
 	builtin_crustache__partial,     // 解析partial模板语法时，会调用的回调函数
 	ZL_EXP_TRUE
 };
+
+// 当使用随机数相关的模块函数时，如果没有初始化过随机种子，则使用当前的时间戳作为随机种子进行初始化，这样能让生成的伪随机数更具有随机性
+static void builtin_init_rand_seed()
+{
+	if(!st_is_init_rand_seed) {
+		time_t rawtime;
+		time(&rawtime);
+		srand((unsigned int)rawtime);
+		st_is_init_rand_seed = ZL_EXP_TRUE;
+	}
+}
 
 /**
  * 根据当前执行脚本的目录路径，加上filename文件名，来生成可以被fopen等C库函数使用的路径
@@ -417,12 +431,12 @@ static void builtin_write_array_to_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STR
 					builtin_make_info_string(VM_ARG, infoString, "%.16g",mblk_val.val.floatnum);
 				break;
 			case ZL_EXP_FAT_STR: // 对数组中的字符串进行处理
-				// 通过strchr库函数来检测字符串中是否包含双引号或者反斜杠，如果都不包含可以无需进行转义
-				if(strchr(mblk_val.val.str, '"') == NULL &&  strchr(mblk_val.val.str, '\\') == NULL) {
+				// 通过strpbrk库函数来检测字符串中是否包含双引号、反斜杠、\n等需要转义的字符，如果都不包含则无需进行转义
+				if(strpbrk(mblk_val.val.str, "\"\\/\b\f\n\r\t") == NULL) {
 					mblk_str = mblk_val.val.str;
 				}
 				else {
-					// 如果字符串中包含双引号或者反斜杠，就需要先将双引号和反斜杠进行转义
+					// 如果字符串中包含双引号等需要转义的字符，就需要先将这些字符进行转义
 					session_escape_str(VM_ARG, &escape_str, mblk_val.val.str);
 					mblk_str = escape_str;
 				}
@@ -1512,6 +1526,265 @@ ZL_EXP_VOID module_builtin_file_exists(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 }
 
 /**
+ * bltOutputBlob模块函数，直接将二进制数据输出到客户端
+ * 该模块函数的第一个参数blob为字节指针，指向需要输出的二进制数据。第二个参数length表示二进制数据的字节大小
+ * 例如：
+ * output = magickGetImageBlob(wand, &length); // 获取图像的二进制数据
+ * rqtSetResponseHeader("Content-Type: image/" + magickGetImageFormat(wand));
+ * bltOutputBlob(output, length); // 输出二进制数据
+ * 上面代码片段中，先通过magickGetImageBlob获取图像的二进制数据和二进制数据的长度(以字节为单位的大小)，
+ * 接着就可以通过bltOutputBlob模块函数将图像的二进制数据输出到客户端
+ */
+ZL_EXP_VOID module_builtin_output_blob(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: bltOutputBlob(blob, length)");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [blob] of bltOutputBlob must be integer");
+	}
+	char * blob = (char *)arg.val.integer;
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the second argument [length] of bltOutputBlob must be integer");
+	}
+	int length = arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	dynamic_string_append(&my_data->response_body, blob, length, RESPONSE_BODY_STR_SIZE);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, length, 0);
+}
+
+/**
+ * bltRandomStr模块函数，根据指定的字符序列和长度，生成随机的字符串
+ * 第一个参数str表示用于生成随机字符串的字符序列，第二个参数length表示需要生成的随机字符串的长度
+ * 例如：
+ * captcha = bltRandomStr("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 6);
+ * 上面代码执行后可以得到一个包含字母和数字的长度为6的随机字符串
+ */
+ZL_EXP_VOID module_builtin_random_str(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: bltRandomStr(str, length): string");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [str] of bltRandomStr must be string");
+	}
+	char * charset = arg.val.str;
+	int str_len = strlen(charset);
+	if(str_len <= 0) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "", 0, 0);
+	}
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the second argument [length] of bltRandomStr must be integer");
+	}
+	int length = arg.val.integer;
+	if(length <= 0) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "", 0, 0);
+	}
+	char * dest = (char *)zenglApi_AllocMem(VM_ARG, (length + 1));
+	builtin_init_rand_seed();
+	int next_seed = 0;
+	for(int i = 0; i < length;i++) {
+		next_seed = rand();
+		int index = (double) next_seed / RAND_MAX * (str_len - 1);
+		dest[i] = charset[index];
+	}
+	srand((unsigned int)next_seed);
+	dest[length] = '\0';
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, dest, 0, 0);
+	zenglApi_FreeMem(VM_ARG, dest);
+}
+
+/**
+ * bltRand模块函数，根据指定的最小值和最大值，得到这两个值之间的随机整数
+ * 该模块函数的第一个参数min表示可能生成的随机数的最小值，第二个参数max表示可能生成的最大值
+ * 例如：bltRand( 0, 30 ) 将返回0到30之间的随机数
+ */
+ZL_EXP_VOID module_builtin_rand(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: bltRand(min, max): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [min] of bltRand must be integer");
+	}
+	int min = arg.val.integer;
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the second argument [max] of bltRand must be integer");
+	}
+	int max = arg.val.integer;
+	builtin_init_rand_seed();
+	int next_seed = rand();
+	int retval = ((double) next_seed / RAND_MAX * (max - min)) + min;
+	srand((unsigned int)next_seed);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
+}
+
+/**
+ * bltUtfStrLen模块函数，计算utf8字符串的长度，主要用于计算有多少个utf8编码的汉字
+ * 第一个参数str是需要计算长度的字符串
+ * 例如：
+ * len = bltUtfStrLen('世界s你好！abcd');
+ * 上面代码返回的结果会是10，其中有5个汉字和5个英文字母
+ * 具体的计算方法来源于下面这个链接
+ * https://stackoverflow.com/questions/32936646/getting-the-string-length-on-utf-8-in-c
+ */
+ZL_EXP_VOID module_builtin_utf_str_len(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltUtfStrLen(str): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [str] of bltUtfStrLen must be string");
+	}
+	char * s = arg.val.str;
+	int count = 0;
+	while (*s) {
+		count += (*s++ & 0xC0) != 0x80;
+	}
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, count, 0);
+}
+
+/**
+ * bltStrLen模块函数，以字节为单位计算字符串的长度，第一个参数str是要计算长度的字符串
+ * 例如：len = bltStrLen('世界s你好！abcd'); 返回的结果会是20，由于一个utf8编码的汉字包含3个字节，5个汉字就是15个字节，再加上5个英文字母，返回的长度就是20
+ * 该模块函数是直接调用底层的strlen的C库函数来计算长度的
+ */
+ZL_EXP_VOID module_builtin_str_len(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltStrLen(str): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [str] of bltStrLen must be string");
+	}
+	char * s = arg.val.str;
+	int count = strlen(s);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, count, 0);
+}
+
+/**
+ * bltStrReplace模块函数，可以用于执行字符串的替换操作
+ * 第一个参数str表示源字符串，第二个参数search是要搜索的子字符串，第三个参数replace表示要进行替换的字符串，最后一个可选参数isSetData表示是否将替换后的结果设置到第一个参数
+ * 默认情况下isSetData是0，也就是只返回替换的结果，不会设置第一个参数，如果isSetData是不为0的整数值，则会将替换的结果设置到第一个参数(第一个参数需要是引用类型，才能设置成功)
+ * 例如：
+ * use builtin;
+ * def TRUE 1;
+ * str = '世界s你好！abcd';
+ * print bltStrReplace(&str, 'abcd', 'hello world!', TRUE) + '<br/>';
+ * print str + '<br/>';
+ * 上面脚本执行的结果会是：
+ * 世界s你好！hello world!
+ * 世界s你好！hello world!
+ * 上面将str中的abcd替换为了hello world!，同时由于bltStrReplace模块函数的最后一个参数设置为了TRUE(也就是1)，
+ * 因此，源字符串str也被设置为了替换后的字符串：世界s你好！hello world!
+ */
+ZL_EXP_VOID module_builtin_str_replace(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 3)
+		zenglApi_Exit(VM_ARG,"usage: bltStrReplace(str|&str, search, replace[, isSetData=0]): string");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [str] of bltStrReplace must be string");
+	}
+	char * str = arg.val.str;
+	if(strlen(str) == 0) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "", 0, 0);
+	}
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the second argument [search] of bltStrReplace must be string");
+	}
+	char * search = arg.val.str;
+	if(strlen(search) == 0) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, str, 0, 0);
+	}
+	zenglApi_GetFunArg(VM_ARG,3,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the third argument [replace] of bltStrReplace must be string");
+	}
+	char * replace = arg.val.str;
+	char * point = NULL;
+	char * start = str;
+	int replace_len = strlen(replace);
+	int search_len = strlen(search);
+	int isSetData = ZL_EXP_FALSE;
+	if(argcount >= 4) {
+		zenglApi_GetFunArg(VM_ARG,4,&arg);
+		if(arg.type != ZL_EXP_FAT_INT)
+			zenglApi_Exit(VM_ARG,"the fourth argument isSetData of bltStrReplace must be integer");
+		isSetData = arg.val.integer;
+	}
+	BUILTIN_INFO_STRING infoString = { 0 };
+	while((point = strstr(start, search)) != NULL) {
+		char old_char = point[0];
+		point[0] = '\0';
+		builtin_make_info_string(VM_ARG, &infoString, "%s",start);
+		if(replace_len > 0) {
+			builtin_make_info_string(VM_ARG, &infoString, "%s", replace);
+		}
+		point[0] = old_char;
+		start = point + search_len;
+	}
+	if(infoString.str != NULL) {
+		if((*start) != '\0') { // 拷贝剩余的字符
+			builtin_make_info_string(VM_ARG, &infoString, "%s",start);
+		}
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, infoString.str, 0, 0);
+		if(isSetData) {
+			arg.type = ZL_EXP_FAT_STR;
+			arg.val.str = infoString.str;
+			zenglApi_SetFunArg(VM_ARG,1,&arg);
+		}
+		zenglApi_FreeMem(VM_ARG, infoString.str);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, str, 0, 0);
+}
+
+/**
+ * bltIsNone模块函数，检测某个变量是否是NONE类型(未初始化时的类型)，需要将变量的引用作为第一个参数传递进来
+ * 如果变量被初始化过了，则返回0，如果没有被初始化过，也就是没有被设置过具体的类型(例如整数，浮点数，字符串等)，则返回1
+ * 例如：
+ * str = '世界s你好！abcd';
+ * print 'bltIsNone(&str): ' + (bltIsNone(&str) ? 'TRUE' : 'FALSE')  + '<br/>';
+ * print 'bltIsNone(&test): ' + (bltIsNone(&test) ? 'TRUE' : 'FALSE');
+ * 上面脚本执行的结果会是：
+ * bltIsNone(&str): FALSE
+ * bltIsNone(&test): TRUE
+ * 由于str被初始化为了字符串，因此，str变量不是NONE类型，test变量没有被初始化过，所以是NONE类型
+ */
+ZL_EXP_VOID module_builtin_is_none(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltIsNone(&data): integer");
+	zenglApi_GetFunArgInfo(VM_ARG,1,&arg);
+	switch(arg.type){
+	case ZL_EXP_FAT_ADDR:
+	case ZL_EXP_FAT_ADDR_LOC:
+	case ZL_EXP_FAT_ADDR_MEMBLK:
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the first argument [data] of bltIsNone must be address type");
+		break;
+	}
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type == ZL_EXP_FAT_NONE)
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+	else
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
+}
+
+/**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
 ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
@@ -1536,4 +1809,11 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltMkdir",module_builtin_mkdir);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUnlink",module_builtin_unlink);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltFileExists",module_builtin_file_exists);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltOutputBlob",module_builtin_output_blob);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltRandomStr",module_builtin_random_str);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltRand",module_builtin_rand);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUtfStrLen",module_builtin_utf_str_len);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltStrLen",module_builtin_str_len);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltStrReplace",module_builtin_str_replace);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltIsNone",module_builtin_is_none);
 }

@@ -1,0 +1,23 @@
+use builtin;
+
+def TRUE 1;
+def FALSE 0;
+
+print '<!Doctype html>
+<html>
+<head><meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<title>utf8字符串长度检测</title>
+</head>
+<body>';
+
+str = '世界s你好！abcd';
+print '"' + str + '" str len:' + bltStrLen(str) + "<br/>";
+print '"' + str + '" utf str len:' + bltUtfStrLen(str) + '<br/>';
+print bltStrReplace(&str, 'abcd', 'hello world!', TRUE) + '<br/>';
+print str + '<br/>';
+print bltStrReplace(&str, str, '', TRUE) + 'end' + '<br/>';
+print str + 'end<br/>';
+print 'bltIsNone(&str): ' + (bltIsNone(&str) ? 'TRUE' : 'FALSE')  + '<br/>';
+print 'bltIsNone(&test): ' + (bltIsNone(&test) ? 'TRUE' : 'FALSE');
+print '</body></html>';
+

@@ -59,6 +59,9 @@ ZL_VOID zengl_exit(ZL_VOID * VM_ARG,ZENGL_ERRORNO errorno, ...)
 		compile->isDestroyed = ZL_TRUE;
 	}
 	compile->isinCompiling = ZL_FALSE;
+	if(compile->source.file != ZL_NULL) {
+		ZENGL_SYS_FILE_CLOSE(compile->source.file);
+	}
 	if(VM->errorno == ZL_NO_ERR_SUCCESS)
 		ZENGL_SYS_JMP_LONGJMP_TO(compile->jumpBuffer, 1);
 	else

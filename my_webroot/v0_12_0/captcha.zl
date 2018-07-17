@@ -1,0 +1,44 @@
+use builtin, magick, request, session;
+def TRUE 1;
+def FALSE 0;
+
+wand = magickNewWand();
+p_wand = magickNewPixelWand();
+
+magickPixelSetColor(p_wand, "white");
+magickNewImage(wand, 85, 30, p_wand);
+d_wand = magickNewDrawingWand();
+// magickDrawSetFont(d_wand, "Helvetica Regular");
+magickDrawSetFont(d_wand, "xerox_serif_narrow.ttf");
+magickDrawSetFontSize(d_wand, 24);
+magickDrawSetTextAntialias(d_wand, TRUE);
+// magickDrawSetTextAntialias(d_wand, FALSE);
+captcha = bltRandomStr("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 6);
+magickDrawAnnotation(d_wand, 4, 20, captcha);
+magickDrawImage(wand, d_wand);
+magickSwirlImage(wand, 20);
+
+magickClearDrawingWand(d_wand);
+magickDrawLine(d_wand, bltRand( 0, 70 ), bltRand( 0, 30 ), bltRand( 0, 70 ), bltRand( 0, 30 ));
+magickDrawLine(d_wand, bltRand( 0, 70 ), bltRand( 0, 30 ), bltRand( 0, 70 ), bltRand( 0, 30 ));
+magickDrawLine(d_wand, bltRand( 0, 70 ), bltRand( 0, 30 ), bltRand( 0, 70 ), bltRand( 0, 30 ));
+magickDrawLine(d_wand, bltRand( 0, 70 ), bltRand( 0, 30 ), bltRand( 0, 70 ), bltRand( 0, 30 ));
+magickDrawLine(d_wand, bltRand( 0, 70 ), bltRand( 0, 30 ), bltRand( 0, 70 ), bltRand( 0, 30 ));
+
+magickDrawImage(wand, d_wand);
+
+magickSetImageFormat(wand, "jpg");
+output = magickGetImageBlob(wand, &length);
+rqtSetResponseHeader("Content-Type: image/" + magickGetImageFormat(wand));
+cookies = rqtGetCookie();
+sess_id = cookies['SESSION'];
+if(!sess_id)
+	sess_id = sessMakeId();
+	rqtSetResponseHeader("Set-Cookie: SESSION="+sess_id+"; path=/");
+else
+	data = sessGetData(sess_id);
+endif
+data['captcha'] = captcha;
+sessSetData(sess_id, data);
+bltOutputBlob(output, length);
+

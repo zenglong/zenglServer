@@ -88,6 +88,19 @@ void builtin_make_fullpath(char * full_path, char * filename, MAIN_DATA * my_dat
 	}
 }
 
+static void builtin_template_get_fullpath(char * full_path, char * filename, MAIN_DATA * my_data)
+{
+	if(filename[0] == '/') {
+		char * webroot = main_get_webroot();
+		int append_length = 0;
+		append_length += main_full_path_append(full_path, append_length, FULL_PATH_SIZE, webroot);
+		append_length += main_full_path_append(full_path, append_length, FULL_PATH_SIZE, filename);
+		full_path[append_length] = '\0';
+	}
+	else
+		builtin_make_fullpath(full_path, filename, my_data);
+}
+
 /**
  * 根据full_path文件路径来获取文件的内容
  */
@@ -317,7 +330,7 @@ static int builtin_crustache__partial(ZL_EXP_VOID * VM_ARG, crustache_template *
 	int file_size;
 	partial_name[name_size] = '\0';
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
-	builtin_make_fullpath(full_path, partial_name, my_data);
+	builtin_template_get_fullpath(full_path, partial_name, my_data);
 	partial_name[name_size] = tmp;
 	char * file_contents = builtin_get_file_content(VM_ARG, full_path, api_name, &file_size);
 	(*partial) = builtin_crustache_new_template(VM_ARG, file_contents, api_name, file_size, full_path);
@@ -780,7 +793,7 @@ ZL_EXP_VOID module_builtin_mustache_file_render(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT 
 	char * filename = arg.val.str;
 	char full_path[FULL_PATH_SIZE];
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
-	builtin_make_fullpath(full_path, filename, my_data);
+	builtin_template_get_fullpath(full_path, filename, my_data);
 	int file_size;
 	char * api_name = "bltMustacheFileRender";
 	char * file_contents = builtin_get_file_content(VM_ARG, full_path, api_name, &file_size);

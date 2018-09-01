@@ -490,9 +490,13 @@ int main_full_path_append(char * full_path, int full_path_length, int full_path_
 	int max_length = full_path_size - full_path_length - 1;
 	if(append_path_length > max_length)
 		append_path_length = max_length;
-	if(append_path_length > 0)
+	if(append_path_length > 0) {
 		strncpy((full_path + full_path_length), append_path, append_path_length);
-	return append_path_length;
+		return append_path_length;
+	}
+	else {
+		return 0;
+	}
 }
 
 /**
@@ -1526,34 +1530,30 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	ZL_EXP_BOOL is_custom_status_code = ZL_EXP_FALSE; // 是否是自定义的请求头
 	int content_length = 0;
 	struct stat filestatus;
-	// 如果是访问根目录，则将webroot根目录中的index.html文件里的内容，作为结果反馈给客户端
-	if(strlen(url_path) == 1 && url_path[0] == '/') {
-		int append_length = main_full_path_append(full_path, 0, FULL_PATH_SIZE, webroot);
-		int root_length = append_length;
-		append_length += main_full_path_append(full_path, append_length, FULL_PATH_SIZE, "/index.html");
-		full_path[append_length] = '\0';
+	// 下面会根据webroot根目录，和url_path来构建full_path完整路径
+	int full_length = main_full_path_append(full_path, 0, FULL_PATH_SIZE, webroot);
+	int root_length = full_length;
+	full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, url_path);
+	full_path[full_length] = '\0';
+	stat(full_path, &filestatus);
+	// 如果是访问目录，则将该目录中的index.html文件里的内容，作为结果反馈给客户端
+	if(S_ISDIR(filestatus.st_mode)) {
+		if(full_path[full_length - 1] == '/')
+			full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, "index.html");
+		else
+			full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, "/index.html");
+		full_path[full_length] = '\0';
 		write_to_server_log_pipe(WRITE_TO_PIPE, "full_path: %s\n", full_path);
 		// 以只读方式打开文件
 		doc_fd = open(full_path, O_RDONLY);
-		if(doc_fd == -1) {
-			append_length = root_length;
-			append_length += main_full_path_append(full_path, append_length, FULL_PATH_SIZE, "/404.html");
-			full_path[append_length] = '\0';
-			doc_fd = open(full_path, O_RDONLY);
-			status_code = 404;
+		if(doc_fd > 0) {
+			stat(full_path, &filestatus);
 		}
-		stat(full_path, &filestatus);
 	}
 	else {
-		// 下面会根据webroot根目录，和url_path来构建full_path完整路径
-		int full_length = main_full_path_append(full_path, 0, FULL_PATH_SIZE, webroot);
-		int root_length = full_length;
-		full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, url_path);
-		full_path[full_length] = '\0';
 		write_to_server_log_pipe(WRITE_TO_PIPE, "full_path: %s\n", full_path);
-
 		// 如果要访问的文件是以.zl结尾的，就将该文件当做zengl脚本来进行编译执行
-		if(full_length > 3 && (stat(full_path, &filestatus) == 0) && (strncmp(full_path + (full_length - 3), ".zl", 3) == 0)) {
+		if(full_length > 3 && S_ISREG(filestatus.st_mode) && (strncmp(full_path + (full_length - 3), ".zl", 3) == 0)) {
 			// my_data是传递给zengl脚本的额外数据，里面包含了客户端套接字等可能需要用到的信息
 			MAIN_DATA my_data;
 			my_data.full_path = full_path;
@@ -1688,7 +1688,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		}
 	}
 	// 如果doc_fd大于0，则直接输出相关的静态文件的内容
-	if(doc_fd > 0) {
+	if(doc_fd > 0 || S_ISDIR(filestatus.st_mode)) {
 		client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 ", 9);
 		ZL_EXP_BOOL is_reg_file = ZL_EXP_TRUE;
 		// 非常规文件，直接返回403禁止访问
@@ -1735,7 +1735,9 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				client_socket_list_append_send_data(socket_list, lst_idx, buffer, data_length);
 			}
 		}
-		close(doc_fd);
+		if(doc_fd > 0) {
+			close(doc_fd);
+		}
 	}
 	// 如果连404.html也不存在的话，则直接反馈404状态信息
 	else if(status_code == 404 && doc_fd == -1) {

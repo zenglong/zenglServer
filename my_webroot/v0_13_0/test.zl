@@ -1,0 +1,5 @@
+use builtin;
+
+print bltMustacheFileRender("header.tpl");
+print bltMustacheFileRender("/v0_13_0/footer.tpl");
+

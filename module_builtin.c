@@ -88,6 +88,9 @@ void builtin_make_fullpath(char * full_path, char * filename, MAIN_DATA * my_dat
 	}
 }
 
+/**
+ * 根据filename构建完整的模板路径，如果filename是以斜杠开头，就表示相对于webroot网站根目录的路径，否则就是相对于当前主执行脚本的路径
+ */
 static void builtin_template_get_fullpath(char * full_path, char * filename, MAIN_DATA * my_data)
 {
 	if(filename[0] == '/') {

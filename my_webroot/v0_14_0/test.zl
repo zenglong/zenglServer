@@ -1,0 +1,12 @@
+use builtin, request, pcre;
+
+rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
+
+ret = pcreMatch('^(\d+)\s+<Title>(.*?)</Title>$', 'hello\n\n112 <title>世界你好吗\n！</title>', &results, 'ism');
+if(!ret)
+	print 'no match';
+else
+	for(i=0;bltIterArray(results,&i,&k, &v);)
+		print k + '):' + v;
+	endfor
+endif

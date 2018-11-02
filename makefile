@@ -23,14 +23,23 @@ else
 	MAGICK_OUTPUT_INFO = "*** notice: magick module not enabled, you can use 'make USE_MAGICK=6' to enable it, make sure you have pkg-config and 'wand/MagickWand.h' in your system! ***"
 endif
 
+ifeq ($(USE_PCRE),yes)
+	SRCS += module_pcre.c module_pcre.h
+	PCRE_FLAG = -DUSE_PCRE `pcre-config --cflags --libs`
+	PCRE_OUTPUT_INFO = "pcre module is enabled!!!"
+else
+	PCRE_OUTPUT_INFO = "*** notice: pcre module not enabled, you can use 'make USE_PCRE=yes' to enable it, make sure you have pcre-config and pcre.h in your system! ***"
+endif
+
 SRCS += zengl/linux/zengl_exportfuns.h 
 
 zenglServer: $(SRCS) zengl/linux/libzengl.a crustache/libcrustache.a
 		$(ERR)
-		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a $(LIB_FLAG) $(MYSQL_FLAG) $(MAGICK_FLAG)
+		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a $(LIB_FLAG) $(MYSQL_FLAG) $(MAGICK_FLAG) $(PCRE_FLAG)
 		@echo 
 		@echo $(MYSQL_OUTPUT_INFO)
 		@echo $(MAGICK_OUTPUT_INFO)
+		@echo $(PCRE_OUTPUT_INFO)
 
 zengl/linux/libzengl.a: zengl/linux/zengl_exportfuns.h
 	cd zengl/linux && $(MAKE) libzengl.a

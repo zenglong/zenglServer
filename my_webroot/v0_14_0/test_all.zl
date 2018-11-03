@@ -1,0 +1,20 @@
+use builtin, request, pcre;
+
+rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
+
+ret = pcreMatchAll('^(\d+)\s+<Title>(.*?)</Title>$', 'hello\n\n112 <title>世界你好吗\n！！</title>\n3223 <TItle>～～hello world哈哈～～</TItle>', &results, 'ism');
+if(!ret)
+	print 'no match';
+else
+	for(i=0;bltIterArray(results,&i,&k, &v);)
+		// print k + '):' + v;
+		print k + '):';
+		for(j=0;bltIterArray(v, &j, &kk, &vv);)
+			print '['+ kk + ']:' + vv;
+		endfor
+	endfor
+	print '';
+	for(j=0;bltIterArray(results[2], &j, &kk, &vv);)
+		print '['+ kk + ']:' + vv;
+	endfor
+endif

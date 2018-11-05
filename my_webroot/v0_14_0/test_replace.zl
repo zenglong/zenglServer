@@ -1,0 +1,7 @@
+use builtin, request, pcre;
+
+rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
+
+ret = pcreReplace('^(\d+)\s+<Title>(.*?)</Title>$', '[title]^^^{1}{2}[/title]', 
+			'hello\n\n112 <title>世界你好吗\n！！</title>\n3223 <TItle>～～hello world哈哈～～</TItle>', 'ism');
+print ret;

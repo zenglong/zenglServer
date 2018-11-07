@@ -1,7 +1,17 @@
 use builtin, request, pcre;
+def TRUE 1;
+def FALSE 0;
 
 rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
 
 ret = pcreReplace('^(\d+)\s+<Title>(.*?)</Title>$', '[title]^^^{1}{2}[/title]', 
 			'hello\n\n112 <title>世界你好吗\n！！</title>\n3223 <TItle>～～hello world哈哈～～</TItle>', 'ism');
+print ret;
+print '';
+ret = pcreReplace('^(\d+)\s+<Title>(.*?)</Title>$', '[title]^^^{1}{2}[/title]', 
+			'hello\n\n112 <title>世界你好吗\n！！</title>\n3223 <TItle>～～hello world哈哈～～</TItle>', 'ism', FALSE);
+print ret;
+print '';
+ret = pcreReplace('^(\d+)\s+<Title>(.*?)</Title>$', '[title]^^{1}{2}[/title]', 
+			'hello\n\n112 <title>世界你好吗\n！！</title>\n3223 <TItle>～～hello world哈哈～～</TItle>', 'ism', TRUE, 1);
 print ret;

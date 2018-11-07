@@ -359,7 +359,7 @@ ZL_EXP_VOID module_pcre_replace(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 3)
-		zenglApi_Exit(VM_ARG,"usage: pcreReplace(pattern, replace, subject[, modifier])");
+		zenglApi_Exit(VM_ARG,"usage: pcreReplace(pattern, replace, subject[, modifier[, use_capture[, replace_num]]])");
 	zenglApi_GetFunArg(VM_ARG,1, &arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
 		zenglApi_Exit(VM_ARG,"the first argument [pattern] of pcreReplace must be string");
@@ -378,6 +378,22 @@ ZL_EXP_VOID module_pcre_replace(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	int options = 0;
 	if(argcount > 3) {
 		options = st_pcre_get_options(VM_ARG, 4, &arg, "pcreReplace");
+	}
+	int use_capture = ZL_EXP_TRUE;
+	if(argcount > 4) {
+		zenglApi_GetFunArg(VM_ARG, 5, &arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the fifth argument [use_capture] of pcreReplace must be integer");
+		}
+		use_capture = arg.val.integer;
+	}
+	int replace_num = -1;
+	if(argcount > 5) {
+		zenglApi_GetFunArg(VM_ARG, 6, &arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the sixth argument [replace_num] of pcreReplace must be integer");
+		}
+		replace_num = arg.val.integer;
 	}
 	pcre * re;
 	const char * error;
@@ -410,15 +426,21 @@ ZL_EXP_VOID module_pcre_replace(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 			}
 		}
 		match_count++;
+		if(replace_num >= 0 && match_count > replace_num) {
+			break;
+		}
 		int len = ovector[0] - offset;
 		if(len > 0) {
 			builtin_make_info_string(VM_ARG, &infoString, "%.*s", len, (subject + offset));
 		}
-		if(index_manage.is_init == ZL_EXP_FALSE) {
-			st_pcre_replace_init(VM_ARG, replace, &index_manage);
+		if(use_capture) {
+			if(index_manage.is_init == ZL_EXP_FALSE) {
+				st_pcre_replace_init(VM_ARG, replace, &index_manage);
+			}
+			st_pcre_replace_do(VM_ARG, &infoString, &index_manage, rc, subject, ovector);
 		}
-		st_pcre_replace_do(VM_ARG, &infoString, &index_manage, rc, subject, ovector);
-		// builtin_make_info_string(VM_ARG, &infoString, "%s", replace);
+		else
+			builtin_make_info_string(VM_ARG, &infoString, "%s", replace);
 		offset = ovector[1];
 	}
 	if(offset > 0 && offset < subject_length) {

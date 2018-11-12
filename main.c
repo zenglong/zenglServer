@@ -1287,6 +1287,7 @@ ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
 	zenglApi_SetModInitHandle(VM_ARG,"magick", module_magick_init);
 #endif
 #ifdef USE_PCRE
+	// 设置pcre模块的初始化函数，和pcre模块相关的C函数代码位于module_pcre.c文件里
 	zenglApi_SetModInitHandle(VM_ARG,"pcre", module_pcre_init);
 #endif
 }

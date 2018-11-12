@@ -16,23 +16,23 @@
 #define REPLACE_INDEX_SIZE 10
 
 /**
- * 正则表达式替换操作时，第二个需要替换的字符串参数中，如果有{1}，{2}之类的替换元组信息，
- * 就将替换元组信息解析出来，每个替换元组信息对应一个pcre_replace_index结构体，
- * 前提是正则替换函数开启了使用元组进行替换的功能
+ * 正则表达式替换操作时，第二个需要替换的字符串参数中，如果有{1}，{2}之类的替换分组信息，
+ * 就将替换分组信息解析出来，每个替换分组信息对应一个pcre_replace_index结构体，
+ * 前提是正则替换函数开启了使用分组进行替换的功能
  */
 typedef struct _pcre_replace_index {
 	int escape_start;
 	int escape_end;
-	int capture_index; // 元组索引值，{1}对应的索引值为1，{2}对应的索引值为2，以此类推，{0}表示匹配到的完整字符串
+	int capture_index; // 分组索引值，{1}对应的索引值为1，{2}对应的索引值为2，以此类推，{0}表示匹配到的完整字符串
 } pcre_replace_index;
 
 /**
- * 解析元组得到的pcre_replace_index结构会存储在动态数组中，
+ * 解析分组得到的pcre_replace_index结构会存储在动态数组中，
  * 下面的pcre_replace_index_manage是该动态数组的管理器，
  * 利用该管理器可以对数组进行动态的扩容
  */
 typedef struct _pcre_replace_index_manage{
-	ZL_EXP_BOOL is_init; // 判断替换字符串中的元组信息是否都解析到了动态数组中
+	ZL_EXP_BOOL is_init; // 判断替换字符串中的分组信息是否都解析到了动态数组中
 	int count; // 动态数组的有效成员数
 	int size;  // 动态数组可以容纳的成员数，当有效成员数会超过可容纳的数量时，就会对数组进行动态扩容
 	pcre_replace_index * indexes; // 指向存储pcre_replace_index结构体的动态数组
@@ -78,7 +78,7 @@ static int st_pcre_get_options(ZL_EXP_VOID * VM_ARG, int arg_index,
  * pattern表示需要匹配的正则表达式，subject表示需要匹配的主体内容
  * 匹配的结果会存储在result_array数组中，可选的modifier表示额外的匹配选项
  * 在解析出参数后，会使用pcre_compile的库函数来编译正则表达式，
- * 并通过pcre_fullinfo库函数获取正则表达式中包含的元组数量信息
+ * 并通过pcre_fullinfo库函数获取正则表达式中包含的分组数量信息
  * pcre库的官方网站：http://www.pcre.org
  */
 static void st_pcre_match_common(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, ZENGL_EXPORT_MOD_FUN_ARG * arg,
@@ -128,8 +128,8 @@ static void st_pcre_match_common(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, ZENG
 }
 
 /**
- * 将替换字符串中解析得到的capture_index需要进行替换的元组索引值，
- * 以及该元组索引之前的转义字符串的起始和结束位置记录到pcre_replace_index结构体中，
+ * 将替换字符串中解析得到的capture_index(需要进行替换的分组索引值)，
+ * 以及该分组索引之前的转义字符串的起始和结束位置记录到pcre_replace_index结构体中，
  * 并将该结构体追加到pcre_replace_index_manage管理的动态数组的末尾
  */
 static void st_pcre_replace_manage_add(ZL_EXP_VOID * VM_ARG, pcre_replace_index_manage * index_manage,
@@ -154,9 +154,9 @@ static void st_pcre_replace_manage_add(ZL_EXP_VOID * VM_ARG, pcre_replace_index_
 
 /**
  * 根据替换字符串得到转义后的实际需要替换的字符串，
- * 在pcreReplace正则表达式替换模块函数中，第二个replace参数里面可以包含{1}，{2}之类的需要替换的元组信息，
- * {1}表示这个位置由索引值为1的正则表达式元组来替换，{2}表示由索引值为2的元组来替换等，
- * 那么如果不希望{1}表示替换元组信息，而是表示普通的'{1}'字符串，那么就需要使用'^'对'{'进行转义，让'{'成为普通的字符，
+ * 在pcreReplace正则表达式替换模块函数中，第二个replace参数里面可以包含{1}，{2}之类的需要替换的分组信息，
+ * {1}表示这个位置由索引值为1的正则表达式分组来替换，{2}表示由索引值为2的分组来替换等，
+ * 那么如果不希望{1}表示替换分组信息，而是表示普通的'{1}'字符串，那么就需要使用'^'对'{'进行转义，让'{'成为普通的字符，
  * 同时，'^'对自己也可以进行转义，两个'^'表示一个普通的'^'字符，
  * 之所以没用'\'来转义，是因为'\'在zengl脚本解析字符串时已经被转义过一次了，所以就换了一个转义字符
  */
@@ -191,8 +191,8 @@ static void st_pcre_replace_add_index(ZL_EXP_VOID * VM_ARG, char * replace, int 
 
 /**
  * 在pcreReplace模块函数执行实际的替换操作之前，需要先对第二个replace参数进行初始化解析(前提是，use_capture是不为0的值)
- * 在解析时，replace参数中的{1}，{2}，{3}等会被转为需要替换的元组信息(主要是元组索引值)，并存储到pcre_replace_index_manage管理的动态数组中，
- * 同时replace中的'^'字符会对'{'进行转义，让'{'变为普通的字符，从而让{1}变为普通的字符串，例如^{1}得到的结果就是{1}，而不会被元组替换掉
+ * 在解析时，replace参数中的{1}，{2}，{3}等会被转为需要替换的分组信息(主要是分组索引值)，并存储到pcre_replace_index_manage管理的动态数组中，
+ * 同时replace中的'^'字符会对'{'进行转义，让'{'变为普通的字符，从而让{1}变为普通的字符串，例如^{1}得到的结果就是{1}，而不会被分组替换掉
  */
 static void st_pcre_replace_init(ZL_EXP_VOID * VM_ARG, char * replace, pcre_replace_index_manage * index_manage)
 {
@@ -248,7 +248,7 @@ static void st_pcre_replace_init(ZL_EXP_VOID * VM_ARG, char * replace, pcre_repl
 /**
  * 利用pcre_replace_index_manage管理的动态数组执行实际的替换操作，
  * 该函数会先将数组中pcre_replace_index里的escape_start到escape_end的转义字符串拷贝到infoString结果字符串中，
- * 再根据pcre_replace_index里的capture_index元组索引值，将需要替换的元组字符串拷贝到infoString结果字符串，
+ * 再根据pcre_replace_index里的capture_index分组索引值，将需要替换的分组字符串拷贝到infoString结果字符串，
  * 循环处理完每一项后，完成一次正则匹配替换操作
  */
 static void st_pcre_replace_do(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoString,
@@ -306,8 +306,8 @@ static void st_pcre_replace_free_all(ZL_EXP_VOID * VM_ARG, pcre * re, int * ovec
 /**
  * pcreMatch模块函数，通过正则表达式进行匹配，只匹配一次，返回值为0表示没匹配到，返回值大于0表示匹配到了，
  * 该模块函数的第一个参数pattern表示需要匹配的正则表达式，第二个参数subject表示需要匹配的主体内容，
- * 第三个参数result_array以数组的形式存储匹配的结果，匹配结果中，第一个成员表示匹配到的包括各元组在内的完整字符串，
- * result_array第二个成员表示匹配到的索引值为1的第一个元组，第三个成员表示匹配到的索引值为2的第二个元组，以此类推。
+ * 第三个参数result_array以数组的形式存储匹配的结果，匹配结果中，第一个成员表示匹配到的包括各分组在内的完整字符串，
+ * result_array第二个成员表示匹配到的索引值为1的第一个分组，第三个成员表示匹配到的索引值为2的第二个分组，以此类推。
  * 由于result_array要存储匹配的结果，因此，必须是引用类型，
  * 第四个参数modifier是可选的，表示额外的匹配选项，例如，当modifier中包含字符'i'时，表示忽略大小写等，
  * 例如：
@@ -375,8 +375,8 @@ ZL_EXP_VOID module_pcre_match(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * pcreMatchAll匹配的结果和pcreMatch一样存储在result_array数组中，
  * 只不过该模块函数的result_array是一个二维数组，也就是说，result_array的每个成员都是一个数组，
  * 索引值为0的第一个成员对应的数组中，都存储的是匹配到的完整的字符串，
- * 索引值为1的第二个成员对应的数组中，都存储的是第一个元组的字符串，
- * 索引值为2的第三个成员对应的数组中，都存储的是第二个元组的字符串，以此类推
+ * 索引值为1的第二个成员对应的数组中，都存储的是第一个分组的字符串，
+ * 索引值为2的第三个成员对应的数组中，都存储的是第二个分组的字符串，以此类推
  * 例如：
 	use builtin, request, pcre;
 	rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
@@ -485,11 +485,11 @@ ZL_EXP_VOID module_pcre_match_all(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * pcreReplace模块函数，通过正则表达式执行替换操作
  * 该模块函数的第一个参数pattern表示需要匹配的正则表达式，第二个参数replace表示需要进行替换的字符串，
  * 第三个参数subject表示需要进行匹配和替换的主体字符串，第四个参数modifier是可选的，表示额外的匹配选项，
- * 第五个参数use_capture也是可选的，表示replace参数中的{1}，{2}等是否需要被替换为对应的元组，默认是1，表示需要替换，
+ * 第五个参数use_capture也是可选的，表示replace参数中的{1}，{2}等是否需要被替换为对应的分组，默认是1，表示需要替换，
  * 第六个参数replace_num也是可选的，表示需要替换多少个字符串，默认为-1，表示全部替换，如果为1表示替换1个，为2表示替换前2个，以此类推。
- * 当use_capture是不为0的值时，replace中的{0}表示替换为匹配的完整字符串，{1}表示替换为匹配到的第一个元组，{2}表示替换为匹配到的第二个元组等
+ * 当use_capture是不为0的值时，replace中的{0}表示替换为匹配的完整字符串，{1}表示替换为匹配到的第一个分组，{2}表示替换为匹配到的第二个分组等
  * replace中的'^'字符可以转义'{'，从而让{1}等变为普通的字符串，例如：'^{1}'就表示'{1}'的普通字符串，'^'还会将自己转义，'^^'表示一个'^'，
- * 转义操作也发生在use_capture不为0的时候，如果use_capture为0，则不会有元组替换操作，也不会有replace的转义操作，
+ * 转义操作也发生在use_capture不为0的时候，如果use_capture为0，则不会有分组替换操作，也不会有replace的转义操作，
  *
  * 该模块函数的使用，可以参考下面的例子：
 	use builtin, request, pcre;

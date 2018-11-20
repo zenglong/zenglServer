@@ -31,15 +31,24 @@ else
 	PCRE_OUTPUT_INFO = "*** notice: pcre module not enabled, you can use 'make USE_PCRE=yes' to enable it, make sure you have pcre-config and pcre.h in your system! ***"
 endif
 
+ifeq ($(USE_CURL),yes)
+	SRCS += module_curl.c module_curl.h
+	CURL_FLAG = -DUSE_CURL `curl-config --cflags --libs`
+	CURL_OUTPUT_INFO = "curl module is enabled!!!"
+else
+	CURL_OUTPUT_INFO = "*** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***"
+endif
+
 SRCS += zengl/linux/zengl_exportfuns.h 
 
 zenglServer: $(SRCS) zengl/linux/libzengl.a crustache/libcrustache.a
 		$(ERR)
-		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a $(LIB_FLAG) $(MYSQL_FLAG) $(MAGICK_FLAG) $(PCRE_FLAG)
+		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a $(LIB_FLAG) $(MYSQL_FLAG) $(MAGICK_FLAG) $(PCRE_FLAG) $(CURL_FLAG)
 		@echo 
 		@echo $(MYSQL_OUTPUT_INFO)
 		@echo $(MAGICK_OUTPUT_INFO)
 		@echo $(PCRE_OUTPUT_INFO)
+		@echo $(CURL_OUTPUT_INFO)
 
 zengl/linux/libzengl.a: zengl/linux/zengl_exportfuns.h
 	cd zengl/linux && $(MAKE) libzengl.a

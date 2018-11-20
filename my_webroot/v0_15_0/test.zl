@@ -1,0 +1,4 @@
+use builtin, curl;
+
+print 'curl version: ' + curlVersion();
+

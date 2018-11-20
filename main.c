@@ -25,6 +25,9 @@
 #ifdef USE_PCRE
 #include "module_pcre.h"
 #endif
+#ifdef USE_CURL
+#include "module_curl.h"
+#endif
 #include "debug.h" // debug.h头文件中包含远程调试相关的结构体和函数的定义
 #include "md5.h"
 #include <stdio.h>
@@ -1289,6 +1292,10 @@ ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
 #ifdef USE_PCRE
 	// 设置pcre模块的初始化函数，和pcre模块相关的C函数代码位于module_pcre.c文件里
 	zenglApi_SetModInitHandle(VM_ARG,"pcre", module_pcre_init);
+#endif
+#ifdef USE_CURL
+	// 设置curl模块的初始化函数，和curl模块相关的C函数代码位于module_curl.c文件里
+	zenglApi_SetModInitHandle(VM_ARG,"curl", module_curl_init);
 #endif
 }
 

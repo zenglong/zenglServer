@@ -1663,6 +1663,10 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			// 如果开启了magick模块，则通过export_magick_terminus将相关的资源释放掉
 			export_magick_terminus();
 #endif
+#ifdef USE_CURL
+			// 如果开启了curl模块，则通过export_curl_global_cleanup将相关的全局资源释放掉
+			export_curl_global_cleanup();
+#endif
 			// 关闭zengl虚拟机及zl_debug_log日志文件
 			zenglApi_Close(VM);
 			if(my_data.zl_debug_log != NULL) {

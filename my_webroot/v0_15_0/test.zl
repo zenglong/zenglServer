@@ -2,3 +2,6 @@ use builtin, curl;
 
 print 'curl version: ' + curlVersion();
 
+curl_handle = curlEasyInit();
+curlEasyCleanup(curl_handle);
+

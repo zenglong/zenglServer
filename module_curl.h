@@ -10,6 +10,8 @@
 
 #include "common_header.h"
 
+void export_curl_global_cleanup();
+
 ZL_EXP_VOID module_curl_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID);
 
 #endif /* MODULE_CURL_H_ */

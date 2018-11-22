@@ -1,4 +1,4 @@
-use builtin, curl, request;
+use builtin, curl, request, pcre;
 def TRUE 1;
 
 rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
@@ -12,9 +12,13 @@ curlEasySetopt(curl_handle, 'USERAGENT', 'Mozilla/5.0 (Windows NT 6.1; Win64; x6
 curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
 ret = curlEasyPerform(curl_handle, &content, &size);
 if(ret == 0)
-	print 'size: ' + size;
-	print 'content: ' + content;
-	// print 'content: ' + bltHtmlEscape(content);
+	print 'size: ' + size + '<br/>';
+	ret = pcreMatch('<title>(.*?)</title>', content, &results, 'is');
+	if(!ret)
+		print 'no match';
+	else
+		print 'title: ' + results[1];
+	endif
 else
 	print 'error: ' + curlEasyStrError(ret);
 endif

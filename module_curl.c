@@ -16,6 +16,12 @@ typedef struct _my_curl_memory_struct {
 	ZL_EXP_VOID * VM_ARG;
 } my_curl_memory_struct;
 
+typedef struct _my_curl_handle_struct {
+	char * url;
+	char * useragent;
+	CURL * curl_handle;
+} my_curl_handle_struct;
+
 static __thread ZL_EXP_BOOL st_is_curl_global_init = ZL_EXP_FALSE;
 
 static ZL_EXP_BOOL st_curl_global_init()
@@ -30,12 +36,64 @@ static ZL_EXP_BOOL st_curl_global_init()
 		return ZL_EXP_FALSE;
 }
 
+static void st_curl_free_my_handle(ZL_EXP_VOID * VM_ARG, my_curl_handle_struct * my_curl_handle)
+{
+	if(my_curl_handle != NULL) {
+		if(my_curl_handle->url != NULL) {
+			zenglApi_FreeMem(VM_ARG, my_curl_handle->url);
+		}
+		if(my_curl_handle->useragent != NULL) {
+			zenglApi_FreeMem(VM_ARG, my_curl_handle->useragent);
+		}
+		zenglApi_FreeMem(VM_ARG, my_curl_handle);
+	}
+}
+
+static char * st_curl_alloc_str(ZL_EXP_VOID * VM_ARG, char * dest, char * src)
+{
+	int src_len = strlen(src);
+	ZL_EXP_BOOL need_cpy = ZL_EXP_TRUE;
+	if(dest == NULL) {
+		dest = (char *)zenglApi_AllocMem(VM_ARG, (src_len + 1));
+	}
+	else {
+		int dest_len = strlen(dest);
+		if(dest_len != src_len)
+			dest = (char *)zenglApi_ReAllocMem(VM_ARG, dest, (src_len + 1));
+		else if(strcmp(dest, src) == 0)
+			need_cpy = ZL_EXP_FALSE;
+	}
+	if(need_cpy == ZL_EXP_TRUE) {
+		memcpy(dest, src, src_len);
+		dest[src_len] = '\0';
+	}
+	return dest;
+}
+
+static char * st_curl_process_str(ZL_EXP_VOID * VM_ARG, CURLoption option, my_curl_handle_struct * my_curl_handle, char * src)
+{
+	char * retval = NULL;
+	switch(option) {
+	case CURLOPT_URL:
+		my_curl_handle->url = st_curl_alloc_str(VM_ARG, my_curl_handle->url, src);
+		retval = my_curl_handle->url;
+		break;
+	case CURLOPT_USERAGENT:
+		my_curl_handle->useragent = st_curl_alloc_str(VM_ARG, my_curl_handle->useragent, src);
+		retval = my_curl_handle->useragent;
+		break;
+	}
+	return retval;
+}
+
 static void st_curl_easy_cleanup_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 {
 	if(ptr != NULL) {
-		CURL * curl_handle = (CURL *)ptr;
+		my_curl_handle_struct * my_curl_handle = (my_curl_handle_struct *)ptr;
+		CURL * curl_handle = my_curl_handle->curl_handle;
 		curl_easy_cleanup(curl_handle);
 		write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] curl_easy_cleanup: %x\n", curl_handle); // debug
+		st_curl_free_my_handle(VM_ARG, my_curl_handle);
 	}
 }
 
@@ -85,9 +143,12 @@ ZL_EXP_VOID module_curl_easy_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	st_curl_global_init();
 	CURL * curl_handle = curl_easy_init();
 	write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] curl_easy_init: %x\n", curl_handle); // debug
-	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)curl_handle, 0);
+	my_curl_handle_struct * my_curl_handle = zenglApi_AllocMem(VM_ARG, sizeof(my_curl_handle_struct));
+	memset(my_curl_handle, 0, sizeof(my_curl_handle_struct));
+	my_curl_handle->curl_handle = curl_handle;
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)my_curl_handle, 0);
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
-	int ret_code = resource_list_set_member(&(my_data->resource_list), curl_handle, st_curl_easy_cleanup_callback);
+	int ret_code = resource_list_set_member(&(my_data->resource_list), my_curl_handle, st_curl_easy_cleanup_callback);
 	if(ret_code != 0) {
 		zenglApi_Exit(VM_ARG, "curlEasyInit add resource to resource_list failed, resource_list_set_member error code:%d", ret_code);
 	}
@@ -102,12 +163,14 @@ ZL_EXP_VOID module_curl_easy_cleanup(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	if(arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the first argument [curl_handle] of curlEasyCleanup must be integer");
 	}
-	CURL * curl_handle = (CURL *)arg.val.integer;
-	MAIN_DATA * my_data = st_assert_curl_handle(VM_ARG, curl_handle, "curlEasyCleanup");
+	my_curl_handle_struct * my_curl_handle = (my_curl_handle_struct *)arg.val.integer;
+	MAIN_DATA * my_data = st_assert_curl_handle(VM_ARG, my_curl_handle, "curlEasyCleanup");
+	CURL * curl_handle = my_curl_handle->curl_handle;
 	curl_easy_cleanup(curl_handle);
 	write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] curl_easy_cleanup: %x\n", curl_handle); // debug
+	st_curl_free_my_handle(VM_ARG, my_curl_handle);
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
-	int ret_code = resource_list_remove_member(&(my_data->resource_list), curl_handle); // 将清理掉的实例指针从资源列表中移除
+	int ret_code = resource_list_remove_member(&(my_data->resource_list), my_curl_handle); // 将清理掉的实例指针从资源列表中移除
 	if(ret_code != 0) {
 		zenglApi_Exit(VM_ARG, "curlEasyCleanup remove resource from resource_list failed, resource_list_remove_member error code:%d", ret_code);
 	}
@@ -122,8 +185,9 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	if(arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the first argument [curl_handle] of curlEasySetopt must be integer");
 	}
-	CURL * curl_handle = (CURL *)arg.val.integer;
-	st_assert_curl_handle(VM_ARG, curl_handle, "curlEasySetopt");
+	my_curl_handle_struct * my_curl_handle = (my_curl_handle_struct *)arg.val.integer;
+	st_assert_curl_handle(VM_ARG, my_curl_handle, "curlEasySetopt");
+	CURL * curl_handle = my_curl_handle->curl_handle;
 	char * options_str[] = {
 			"URL", "USERAGENT", "FOLLOWLOCATION"
 	};
@@ -153,7 +217,7 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	case CURLOPT_URL:
 	case CURLOPT_USERAGENT:
 		if(arg.type == ZL_EXP_FAT_STR) {
-			char * option_value = arg.val.str;
+			char * option_value = st_curl_process_str(VM_ARG, option, my_curl_handle, arg.val.str);
 			retval = curl_easy_setopt(curl_handle, option, option_value);
 		}
 		else {
@@ -190,8 +254,9 @@ ZL_EXP_VOID module_curl_easy_perform(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	if(arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the first argument [curl_handle] of curlEasyPerform must be integer");
 	}
-	CURL * curl_handle = (CURL *)arg.val.integer;
-	st_assert_curl_handle(VM_ARG, curl_handle, "curlEasyPerform");
+	my_curl_handle_struct * my_curl_handle = (my_curl_handle_struct *)arg.val.integer;
+	st_assert_curl_handle(VM_ARG, my_curl_handle, "curlEasyPerform");
+	CURL * curl_handle = my_curl_handle->curl_handle;
 	zenglApi_GetFunArgInfo(VM_ARG, 2, &arg);
 	switch(arg.type){
 	case ZL_EXP_FAT_ADDR:

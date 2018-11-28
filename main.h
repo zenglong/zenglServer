@@ -16,7 +16,7 @@
 #include <stdio.h>
 
 #define ZLSERVER_MAJOR_VERSION 0  // zenglServer 主版本号
-#define ZLSERVER_MINOR_VERSION 14 // zenglServer 子版本号
+#define ZLSERVER_MINOR_VERSION 15 // zenglServer 子版本号
 #define ZLSERVER_REVISION 0       // zenglServer 修正版本号
 
 #define URL_PATH_SIZE 120    // main.c中url_path可以容纳的字符数

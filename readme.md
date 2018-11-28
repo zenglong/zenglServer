@@ -111,6 +111,30 @@ pcre module is enabled!!!
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
+### 开启curl模块
+
+从v0.15.0版本开始，在编译时，可以添加curl模块，从而可以执行抓取数据相关的操作。只要在make命令后面加入USE_CURL=yes即可。
+
+当然，要使用curl模块，前提是系统中安装了底层的curl开发库。
+
+如果是ubuntu系统，可以通过 sudo apt-get install curl libcurl3 libcurl3-dev 来安装curl相关的库和开发头文件等。
+
+如果是centos系统，则可以通过 yum install curl curl-devel 来安装相关的底层库。
+
+要同时使用mysql，magick，pcre，以及curl模块，可以使用 make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes 命令：
+
+```
+[parallels@localhost zenglServerTest]$ make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes
+...................................................
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h module_mysql.c module_mysql.h  module_magick.c module_magick.h module_pcre.c module_pcre.h module_curl.c module_curl.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand` -DUSE_PCRE `pcre-config --cflags --libs` -DUSE_CURL `curl-config --cflags --libs`
+
+mysql module is enabled!!!
+magick module is enabled!!!
+pcre module is enabled!!!
+curl module is enabled!!!
+[parallels@localhost zenglServerTest]$
+```
+
 ## 使用
 
 在根目录中，有一个config.zl的默认配置文件(使用zengl脚本语法编写)，该配置文件里定义了zenglServer需要绑定的端口号，需要启动的进程数等：

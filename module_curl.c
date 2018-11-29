@@ -265,12 +265,14 @@ ZL_EXP_VOID module_curl_easy_cleanup(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 /**
  * curlEasySetopt模块函数，设置curl抓取相关的选项，例如：抓取的目标地址，需要使用的用户代理等
  * 该模块函数的第一个参数必须是有效的my_curl_handle_struct指针，该指针由curlEasyInit模块函数返回，
- * 第二个参数是字符串类型的选项名称，暂时只支持三个选项：
+ * 第二个参数是字符串类型的选项名称，暂时只支持以下几个选项：
  * 'URL'：表示需要抓取的目标地址
  * 'USERAGENT'：需要设置的用户代理
  * 'FOLLOWLOCATION'：当抓取到重定向页面时，是否进行重定向操作
+ * 'SSL_VERIFYPEER'：是否校验SSL证书
  * 第三个参数是需要设置的具体的选项值，当第二个参数是'URL'，'USERAGENT'时，选项值必须是字符串类型，表示需要设置的url地址，用户代理等，
  * 当第二个参数是'FOLLOWLOCATION'时，选项值必须是整数类型，表示是否进行重定向操作，默认是0，即不进行重定向，需要进行重定向的，可以将选项值设置为1
+ * 当第二个参数是'SSL_VERIFYPEER'时，选项值必须是整数类型，表示是否校验SSL证书，默认是1，即需要进行校验，如果不需要校验，可以将选项值设置为0
  * 具体的例子，请参考curlEasyPerform模块函数的注释部分
  *
  * 该模块函数最终会通过curl_easy_setopt库函数去执行具体的操作，
@@ -289,11 +291,11 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	st_assert_curl_handle(VM_ARG, my_curl_handle, "curlEasySetopt");
 	CURL * curl_handle = my_curl_handle->curl_handle;
 	char * options_str[] = {
-			"URL", "USERAGENT", "FOLLOWLOCATION"
+			"URL", "USERAGENT", "FOLLOWLOCATION", "SSL_VERIFYPEER"
 	};
 	int options_str_len = sizeof(options_str)/sizeof(options_str[0]);
 	CURLoption options_enum[] = {
-			CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_FOLLOWLOCATION
+			CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_FOLLOWLOCATION, CURLOPT_SSL_VERIFYPEER
 	};
 	CURLoption option = 0;
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
@@ -325,6 +327,7 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		}
 		break;
 	case CURLOPT_FOLLOWLOCATION:
+	case CURLOPT_SSL_VERIFYPEER:
 		if(arg.type == ZL_EXP_FAT_INT) {
 			long option_value = arg.val.integer;
 			retval = curl_easy_setopt(curl_handle, option, option_value);

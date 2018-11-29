@@ -357,12 +357,14 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * 例如：
 	use builtin, curl, request;
 	def TRUE 1;
+	def FALSE 0;
 
 	rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
 	curl_handle = curlEasyInit();
 	curlEasySetopt(curl_handle, 'URL', 'https://www.example.com/');
 	curlEasySetopt(curl_handle, 'USERAGENT', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:63.0) Gecko/20100101 Firefox/63.0');
 	curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
+	curlEasySetopt(curl_handle, 'SSL_VERIFYPEER', FALSE);
 	ret = curlEasyPerform(curl_handle, &content, &size);
 	if(ret == 0)
 		print 'size: ' + size;

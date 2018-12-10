@@ -1,0 +1,28 @@
+use builtin, curl, request;
+def TRUE 1;
+def FALSE 0;
+
+rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
+
+print 'curl version: ' + curlVersion() + '<br/>';
+
+curl_handle = curlEasyInit();
+curlEasySetopt(curl_handle, 'URL', 'http://127.0.0.1:8084/v0_2_0/post.zl');
+curlEasySetopt(curl_handle, 'USERAGENT', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:63.0) Gecko/20100101 Firefox/63.0');
+curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
+curlEasySetopt(curl_handle, 'SSL_VERIFYPEER', FALSE);
+curlEasySetopt(curl_handle, 'TIMEOUT', 30);
+data['name'] = 'zenglong';
+data['job'] = 'programmer';
+data['age'] = 30;
+data['money'] = 550.35;
+data['myjpg'] = '@upload/upload_image.jpg';
+data['mypng'] = '@upload/kernel_shell.png,image/png';
+curlSetPostByHashArray(curl_handle, data);
+ret = curlEasyPerform(curl_handle, &content);
+if(ret == 0)
+	print content;
+else
+	print 'error: ' + curlEasyStrError(ret);
+endif
+curlEasyCleanup(curl_handle);

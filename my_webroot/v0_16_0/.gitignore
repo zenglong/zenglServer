@@ -1,0 +1,4 @@
+.DS_Store
+*.jpg
+!upload/*.jpg
+!upload/*.png

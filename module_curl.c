@@ -6,9 +6,15 @@
  */
 
 #include "main.h"
+#include "module_builtin.h"
 #include "module_curl.h"
 #include <curl/curl.h>
 #include <string.h>
+
+/**
+ * 根据当前执行脚本的目录路径，加上filename文件名，来生成可以被fopen等C库函数使用的路径，定义在module_builtin.c文件中
+ */
+void builtin_make_fullpath(char * full_path, char * filename, MAIN_DATA * my_data);
 
 /**
  * 和curl抓取操作相关的结构体，
@@ -37,6 +43,8 @@ typedef struct _my_curl_handle_struct {
 	char * url;
 	char * useragent;
 	CURL * curl_handle;
+	struct curl_httppost * post;
+	struct curl_slist * chunk;
 } my_curl_handle_struct;
 
 /**
@@ -74,6 +82,14 @@ static void st_curl_free_my_handle(ZL_EXP_VOID * VM_ARG, my_curl_handle_struct *
 		}
 		if(my_curl_handle->useragent != NULL) {
 			zenglApi_FreeMem(VM_ARG, my_curl_handle->useragent);
+		}
+		if(my_curl_handle->post != NULL) {
+			curl_formfree(my_curl_handle->post);
+			my_curl_handle->post = NULL;
+		}
+		if(my_curl_handle->chunk != NULL) {
+			curl_slist_free_all(my_curl_handle->chunk);
+			my_curl_handle->chunk = NULL;
 		}
 		zenglApi_FreeMem(VM_ARG, my_curl_handle);
 	}
@@ -183,6 +199,21 @@ static size_t st_write_memory_callback(void *contents, size_t size, size_t nmemb
 	chunk->size += realsize;
 	chunk->memory[chunk->size] = '\0';
 	return realsize;
+}
+
+static void st_detect_arg_is_address_type(ZL_EXP_VOID * VM_ARG,
+		int arg_index, ZENGL_EXPORT_MOD_FUN_ARG * arg_ptr, const char * arg_desc, const char * module_func_name)
+{
+	zenglApi_GetFunArgInfo(VM_ARG, arg_index, arg_ptr);
+	switch(arg_ptr->type){
+	case ZL_EXP_FAT_ADDR:
+	case ZL_EXP_FAT_ADDR_LOC:
+	case ZL_EXP_FAT_ADDR_MEMBLK:
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the %s of %s must be address type", arg_desc, module_func_name);
+		break;
+	}
 }
 
 /**
@@ -390,7 +421,7 @@ ZL_EXP_VOID module_curl_easy_perform(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 2)
-		zenglApi_Exit(VM_ARG,"usage: curlEasyPerform(curl_handle, &content[, &size]): integer");
+		zenglApi_Exit(VM_ARG,"usage: curlEasyPerform(curl_handle, &content[, &size[, &ptr]]): integer");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the first argument [curl_handle] of curlEasyPerform must be integer");
@@ -398,27 +429,11 @@ ZL_EXP_VOID module_curl_easy_perform(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	my_curl_handle_struct * my_curl_handle = (my_curl_handle_struct *)arg.val.integer;
 	st_assert_curl_handle(VM_ARG, my_curl_handle, "curlEasyPerform");
 	CURL * curl_handle = my_curl_handle->curl_handle;
-	zenglApi_GetFunArgInfo(VM_ARG, 2, &arg);
-	switch(arg.type){
-	case ZL_EXP_FAT_ADDR:
-	case ZL_EXP_FAT_ADDR_LOC:
-	case ZL_EXP_FAT_ADDR_MEMBLK:
-		break;
-	default:
-		zenglApi_Exit(VM_ARG,"the second argument [&content] of curlEasyPerform must be address type");
-		break;
-	}
-	if(argcount > 2) {
-		zenglApi_GetFunArgInfo(VM_ARG, 3, &arg);
-		switch(arg.type){
-		case ZL_EXP_FAT_ADDR:
-		case ZL_EXP_FAT_ADDR_LOC:
-		case ZL_EXP_FAT_ADDR_MEMBLK:
-			break;
-		default:
-			zenglApi_Exit(VM_ARG,"the third argument [&size] of curlEasyPerform must be address type");
-			break;
-		}
+	for(int i = 2; i <= argcount && i < 5; i++) {
+		const char * arg_desces[] = {"second argument [&content]",
+				"third argument [&size]",
+				"fourth argument [&ptr]"};
+		st_detect_arg_is_address_type(VM_ARG, i, &arg, arg_desces[i - 2], "curlEasyPerform");
 	}
 	my_curl_memory_struct chunk = {0};
 	chunk.memory = (char *)zenglApi_AllocMem(VM_ARG, 1);
@@ -429,6 +444,7 @@ ZL_EXP_VOID module_curl_easy_perform(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
 	CURLcode retval = curl_easy_perform(curl_handle);
 	if(retval == CURLE_OK) {
+		ZL_EXP_BOOL need_free = ZL_EXP_TRUE;
 		arg.type = ZL_EXP_FAT_STR;
 		arg.val.str = chunk.memory;
 		zenglApi_SetFunArg(VM_ARG,2,&arg);
@@ -436,8 +452,15 @@ ZL_EXP_VOID module_curl_easy_perform(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 			arg.type = ZL_EXP_FAT_INT;
 			arg.val.integer = (ZL_EXP_INT)chunk.size;
 			zenglApi_SetFunArg(VM_ARG,3,&arg);
+			if(argcount > 3) {
+				arg.type = ZL_EXP_FAT_INT;
+				arg.val.integer = (ZL_EXP_LONG)chunk.memory;
+				zenglApi_SetFunArg(VM_ARG,4,&arg);
+				need_free = ZL_EXP_FALSE;
+			}
 		}
-		zenglApi_FreeMem(VM_ARG, chunk.memory);
+		if(need_free)
+			zenglApi_FreeMem(VM_ARG, chunk.memory);
 		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 	}
 	else {
@@ -486,6 +509,137 @@ ZL_EXP_VOID module_curl_version(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, (char *)curl_version(), 0, 0);
 }
 
+ZL_EXP_VOID module_curl_set_post_by_hash_array(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: curlSetPostByHashArray(curl_handle, hash_array): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [curl_handle] of curlSetPostByHashArray must be integer");
+	}
+	my_curl_handle_struct * my_curl_handle = (my_curl_handle_struct *)arg.val.integer;
+	MAIN_DATA * my_data = st_assert_curl_handle(VM_ARG, my_curl_handle, "curlSetPostByHashArray");
+	CURL * curl_handle = my_curl_handle->curl_handle;
+	if(my_curl_handle->post != NULL) {
+		curl_formfree(my_curl_handle->post);
+		my_curl_handle->post = NULL;
+	}
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_MEMBLOCK)
+		zenglApi_Exit(VM_ARG,"the second argument [hash_array] of curlSetPostByHashArray must be array");
+	ZENGL_EXPORT_MOD_FUN_ARG mblk_val = {ZL_EXP_FAT_NONE,{0}};
+	ZENGL_EXPORT_MEMBLOCK memblock = arg.val.memblock;
+	BUILTIN_INFO_STRING infoString = { 0 };
+	ZL_EXP_INT size,count,set_post_count,process_count,i;
+	ZL_EXP_CHAR * key, * mblk_str;
+	struct curl_httppost * last = NULL;
+	zenglApi_GetMemBlockInfo(VM_ARG,&memblock,&size,ZL_EXP_NULL);
+	count = zenglApi_GetMemBlockNNCount(VM_ARG, &memblock);
+	set_post_count = 0;
+	if(count > 0)
+	{
+		for(i=1,process_count=0; i<=size && process_count < count; i++)
+		{
+			mblk_val = zenglApi_GetMemBlock(VM_ARG,&memblock,i);
+			zenglApi_GetMemBlockHashKey(VM_ARG,&memblock,i-1,&key);
+			if(infoString.cur > 0 || infoString.count > 0) {
+				builtin_reset_info_string(VM_ARG, &infoString);
+			}
+			if(key != ZL_EXP_NULL)
+			{
+				switch(mblk_val.type)
+				{
+				case ZL_EXP_FAT_INT:
+					builtin_make_info_string(VM_ARG, &infoString, "%ld",mblk_val.val.integer);
+					mblk_str = infoString.str;
+					break;
+				case ZL_EXP_FAT_FLOAT:
+					builtin_make_info_string(VM_ARG, &infoString, "%.16g",mblk_val.val.floatnum);
+					mblk_str = infoString.str;
+					break;
+				case ZL_EXP_FAT_STR:
+					mblk_str = mblk_val.val.str;
+					break;
+				default:
+					continue;
+				}
+				if(mblk_str[0] == '@' && strlen(mblk_str) > 1) {
+					char * comma_pos = strchr(mblk_str, ',');
+					char full_path[FULL_PATH_SIZE];
+					if(comma_pos == NULL) {
+						builtin_make_fullpath(full_path, &mblk_str[1], my_data);
+						curl_formadd(&my_curl_handle->post, &last, CURLFORM_COPYNAME, key,
+								CURLFORM_FILE, full_path, CURLFORM_END);
+					}
+					else {
+						(*comma_pos) = '\0';
+						builtin_make_fullpath(full_path, &mblk_str[1], my_data);
+						(*comma_pos) = ',';
+						char * contenttype = comma_pos + 1;
+						curl_formadd(&my_curl_handle->post, &last, CURLFORM_COPYNAME, key,
+								CURLFORM_FILE, full_path,
+								CURLFORM_CONTENTTYPE, contenttype, CURLFORM_END);
+					}
+				}
+				else
+					curl_formadd(&my_curl_handle->post, &last, CURLFORM_COPYNAME, key,
+							CURLFORM_COPYCONTENTS, mblk_str, CURLFORM_END);
+				set_post_count++;
+			}
+		}
+	}
+	if(set_post_count > 0) {
+		curl_easy_setopt(curl_handle, CURLOPT_HTTPPOST, my_curl_handle->post);
+	}
+	if(infoString.str != NULL) {
+		zenglApi_FreeMem(VM_ARG, infoString.str);
+	}
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, set_post_count, 0);
+}
+
+ZL_EXP_VOID module_curl_set_header_by_array(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: curlSetHeaderByArray(curl_handle, array): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [curl_handle] of curlSetHeaderByArray must be integer");
+	}
+	my_curl_handle_struct * my_curl_handle = (my_curl_handle_struct *)arg.val.integer;
+	st_assert_curl_handle(VM_ARG, my_curl_handle, "curlSetHeaderByArray");
+	CURL * curl_handle = my_curl_handle->curl_handle;
+	if(my_curl_handle->chunk != NULL) {
+		curl_slist_free_all(my_curl_handle->chunk);
+		my_curl_handle->chunk = NULL;
+	}
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_MEMBLOCK)
+		zenglApi_Exit(VM_ARG,"the second argument [array] of curlSetHeaderByArray must be array");
+	ZENGL_EXPORT_MOD_FUN_ARG mblk_val = {ZL_EXP_FAT_NONE,{0}};
+	ZENGL_EXPORT_MEMBLOCK memblock = arg.val.memblock;
+	ZL_EXP_INT size,count,set_header_count,process_count,i;
+	zenglApi_GetMemBlockInfo(VM_ARG,&memblock,&size,ZL_EXP_NULL);
+	count = zenglApi_GetMemBlockNNCount(VM_ARG, &memblock);
+	set_header_count = 0;
+	if(count > 0)
+	{
+		for(i=1,process_count=0; i<=size && process_count < count; i++)
+		{
+			mblk_val = zenglApi_GetMemBlock(VM_ARG,&memblock,i);
+			if(mblk_val.type == ZL_EXP_FAT_STR) {
+				my_curl_handle->chunk = curl_slist_append(my_curl_handle->chunk, mblk_val.val.str);
+				set_header_count++;
+			}
+		}
+	}
+	if(set_header_count > 0) {
+		curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, my_curl_handle->chunk);
+	}
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, set_header_count, 0);
+}
+
 /**
  * curl模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄(对应的C函数)
  */
@@ -497,4 +651,6 @@ ZL_EXP_VOID module_curl_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"curlEasyPerform",module_curl_easy_perform);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"curlEasyStrError",module_curl_easy_strerror);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"curlVersion",module_curl_version);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"curlSetPostByHashArray",module_curl_set_post_by_hash_array);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"curlSetHeaderByArray",module_curl_set_header_by_array);
 }

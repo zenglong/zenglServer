@@ -1800,6 +1800,21 @@ ZL_EXP_VOID module_builtin_is_none(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
 }
 
+ZL_EXP_VOID module_builtin_free(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltFree(ptr): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [ptr] of bltFree must be integer");
+	}
+	ZL_EXP_VOID * ptr = (ZL_EXP_VOID *)arg.val.integer;
+	if(ptr != NULL)
+		zenglApi_FreeMem(VM_ARG, ptr);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -1832,4 +1847,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltStrLen",module_builtin_str_len);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltStrReplace",module_builtin_str_replace);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltIsNone",module_builtin_is_none);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltFree",module_builtin_free);
 }

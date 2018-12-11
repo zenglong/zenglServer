@@ -386,7 +386,7 @@ ZL_EXP_VOID module_session_get_data(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	int nread = fread(file_contents, file_size, 1, fp);
 	if ( nread != 1 ) {
 		fclose(fp);
-		zenglApi_Exit(VM_ARG,"sessGetData error: Unable t read content of \"%s\"", filename);
+		zenglApi_Exit(VM_ARG,"sessGetData error: Unable to read content of \"%s\"", filename);
 	}
 	fclose(fp);
 	json_value * value;

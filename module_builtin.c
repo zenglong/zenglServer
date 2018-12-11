@@ -538,6 +538,21 @@ static void builtin_html_escape_str(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * 
 	}
 }
 
+void st_detect_arg_is_address_type(ZL_EXP_VOID * VM_ARG,
+		int arg_index, ZENGL_EXPORT_MOD_FUN_ARG * arg_ptr, const char * arg_desc, const char * module_func_name)
+{
+	zenglApi_GetFunArgInfo(VM_ARG, arg_index, arg_ptr);
+	switch(arg_ptr->type){
+	case ZL_EXP_FAT_ADDR:
+	case ZL_EXP_FAT_ADDR_LOC:
+	case ZL_EXP_FAT_ADDR_MEMBLK:
+		break;
+	default:
+		zenglApi_Exit(VM_ARG,"the %s of %s must be address type", arg_desc, module_func_name);
+		break;
+	}
+}
+
 /**
  * bltIterArray模块函数，用于对数组成员进行迭代操作
  * 例如：
@@ -1815,6 +1830,56 @@ ZL_EXP_VOID module_builtin_free(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+ZL_EXP_VOID module_builtin_read_file(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: bltReadFile(filename, &content[, &size]): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [filename] of bltReadFile must be string");
+	}
+	char * filename = arg.val.str;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	char full_path[FULL_PATH_SIZE];
+	builtin_make_fullpath(full_path, filename, my_data);
+	for(int i = 2; i <= argcount && i < 4; i++) {
+		const char * arg_desces[] = {"second argument [&content]",
+				"third argument [&size]"};
+		st_detect_arg_is_address_type(VM_ARG, i, &arg, arg_desces[i - 2], "bltReadFile");
+	}
+	int file_size;
+	struct stat filestatus;
+	if ( stat(full_path, &filestatus) != 0) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, -1, 0);
+		return;
+	}
+	file_size = filestatus.st_size;
+	FILE * fp = fopen(full_path, "rb");
+	if (fp == NULL) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, -2, 0);
+		return;
+	}
+	char * file_contents = (char *)zenglApi_AllocMem(VM_ARG, (file_size+1));
+	int nread = fread(file_contents, file_size, 1, fp);
+	if ( nread != 1 ) {
+		fclose(fp);
+		zenglApi_Exit(VM_ARG,"bltReadFile error: Unable to read content of \"%s\"", filename);
+	}
+	fclose(fp);
+	file_contents[file_size] = '\0';
+	arg.type = ZL_EXP_FAT_STR;
+	arg.val.str = file_contents;
+	zenglApi_SetFunArg(VM_ARG,2,&arg);
+	if(argcount > 2) {
+		arg.type = ZL_EXP_FAT_INT;
+		arg.val.integer = file_size;
+		zenglApi_SetFunArg(VM_ARG,3,&arg);
+	}
+	zenglApi_FreeMem(VM_ARG, file_contents);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -1848,4 +1913,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltStrReplace",module_builtin_str_replace);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltIsNone",module_builtin_is_none);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltFree",module_builtin_free);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltReadFile",module_builtin_read_file);
 }

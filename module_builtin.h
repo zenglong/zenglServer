@@ -41,6 +41,9 @@ void builtin_reset_info_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoS
  */
 void builtin_make_info_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoStringPtr, const char * format, ...);
 
+void st_detect_arg_is_address_type(ZL_EXP_VOID * VM_ARG,
+		int arg_index, ZENGL_EXPORT_MOD_FUN_ARG * arg_ptr, const char * arg_desc, const char * module_func_name);
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */

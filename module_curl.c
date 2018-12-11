@@ -42,6 +42,9 @@ typedef struct _my_curl_memory_struct {
 typedef struct _my_curl_handle_struct {
 	char * url;
 	char * useragent;
+	char * cookiefile;
+	char * cookiejar;
+	char * cookie;
 	CURL * curl_handle;
 	struct curl_httppost * post;
 	struct curl_slist * chunk;
@@ -83,6 +86,15 @@ static void st_curl_free_my_handle(ZL_EXP_VOID * VM_ARG, my_curl_handle_struct *
 		if(my_curl_handle->useragent != NULL) {
 			zenglApi_FreeMem(VM_ARG, my_curl_handle->useragent);
 		}
+		if(my_curl_handle->cookiefile != NULL) {
+			zenglApi_FreeMem(VM_ARG, my_curl_handle->cookiefile);
+		}
+		if(my_curl_handle->cookiejar != NULL) {
+			zenglApi_FreeMem(VM_ARG, my_curl_handle->cookiejar);
+		}
+		if(my_curl_handle->cookie != NULL) {
+			zenglApi_FreeMem(VM_ARG, my_curl_handle->cookie);
+		}
 		if(my_curl_handle->post != NULL) {
 			curl_formfree(my_curl_handle->post);
 			my_curl_handle->post = NULL;
@@ -123,7 +135,8 @@ static char * st_curl_alloc_str(ZL_EXP_VOID * VM_ARG, char * dest, char * src)
 /**
  * 为my_curl_handle_struct结构体中的url和useragent等字段分配内存，并设置相应的字符串信息
  */
-static char * st_curl_process_str(ZL_EXP_VOID * VM_ARG, CURLoption option, my_curl_handle_struct * my_curl_handle, char * src)
+static char * st_curl_process_str(ZL_EXP_VOID * VM_ARG, MAIN_DATA * my_data,
+		CURLoption option, my_curl_handle_struct * my_curl_handle, char * src)
 {
 	char * retval = NULL;
 	switch(option) {
@@ -134,6 +147,25 @@ static char * st_curl_process_str(ZL_EXP_VOID * VM_ARG, CURLoption option, my_cu
 	case CURLOPT_USERAGENT:
 		my_curl_handle->useragent = st_curl_alloc_str(VM_ARG, my_curl_handle->useragent, src);
 		retval = my_curl_handle->useragent;
+		break;
+	case CURLOPT_COOKIEFILE:
+	case CURLOPT_COOKIEJAR:
+		{
+			char full_path[FULL_PATH_SIZE];
+			builtin_make_fullpath(full_path, src, my_data);
+			if(option == CURLOPT_COOKIEFILE) {
+				my_curl_handle->cookiefile = st_curl_alloc_str(VM_ARG, my_curl_handle->cookiefile, full_path);
+				retval = my_curl_handle->cookiefile;
+			}
+			else {
+				my_curl_handle->cookiejar = st_curl_alloc_str(VM_ARG, my_curl_handle->cookiejar, full_path);
+				retval = my_curl_handle->cookiejar;
+			}
+		}
+		break;
+	case CURLOPT_COOKIE:
+		my_curl_handle->cookie = st_curl_alloc_str(VM_ARG, my_curl_handle->cookie, src);
+		retval = my_curl_handle->cookie;
 		break;
 	}
 	return retval;
@@ -199,21 +231,6 @@ static size_t st_write_memory_callback(void *contents, size_t size, size_t nmemb
 	chunk->size += realsize;
 	chunk->memory[chunk->size] = '\0';
 	return realsize;
-}
-
-static void st_detect_arg_is_address_type(ZL_EXP_VOID * VM_ARG,
-		int arg_index, ZENGL_EXPORT_MOD_FUN_ARG * arg_ptr, const char * arg_desc, const char * module_func_name)
-{
-	zenglApi_GetFunArgInfo(VM_ARG, arg_index, arg_ptr);
-	switch(arg_ptr->type){
-	case ZL_EXP_FAT_ADDR:
-	case ZL_EXP_FAT_ADDR_LOC:
-	case ZL_EXP_FAT_ADDR_MEMBLK:
-		break;
-	default:
-		zenglApi_Exit(VM_ARG,"the %s of %s must be address type", arg_desc, module_func_name);
-		break;
-	}
 }
 
 /**
@@ -321,14 +338,16 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the first argument [curl_handle] of curlEasySetopt must be integer");
 	}
 	my_curl_handle_struct * my_curl_handle = (my_curl_handle_struct *)arg.val.integer;
-	st_assert_curl_handle(VM_ARG, my_curl_handle, "curlEasySetopt");
+	MAIN_DATA * my_data = st_assert_curl_handle(VM_ARG, my_curl_handle, "curlEasySetopt");
 	CURL * curl_handle = my_curl_handle->curl_handle;
 	char * options_str[] = {
-			"URL", "USERAGENT", "FOLLOWLOCATION", "SSL_VERIFYPEER", "TIMEOUT"
+			"URL", "USERAGENT", "FOLLOWLOCATION", "SSL_VERIFYPEER", "TIMEOUT",
+			"COOKIEFILE", "COOKIEJAR", "COOKIE"
 	};
 	int options_str_len = sizeof(options_str)/sizeof(options_str[0]);
 	CURLoption options_enum[] = {
-			CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_FOLLOWLOCATION, CURLOPT_SSL_VERIFYPEER, CURLOPT_TIMEOUT
+			CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_FOLLOWLOCATION, CURLOPT_SSL_VERIFYPEER, CURLOPT_TIMEOUT,
+			CURLOPT_COOKIEFILE, CURLOPT_COOKIEJAR, CURLOPT_COOKIE
 	};
 	CURLoption option = 0;
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
@@ -351,8 +370,11 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	switch(option) {
 	case CURLOPT_URL:
 	case CURLOPT_USERAGENT:
+	case CURLOPT_COOKIEFILE:
+	case CURLOPT_COOKIEJAR:
+	case CURLOPT_COOKIE:
 		if(arg.type == ZL_EXP_FAT_STR) {
-			char * option_value = st_curl_process_str(VM_ARG, option, my_curl_handle, arg.val.str);
+			char * option_value = st_curl_process_str(VM_ARG, my_data, option, my_curl_handle, arg.val.str);
 			retval = curl_easy_setopt(curl_handle, option, option_value);
 		}
 		else {

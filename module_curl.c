@@ -45,6 +45,9 @@ typedef struct _my_curl_handle_struct {
 	char * cookiefile;
 	char * cookiejar;
 	char * cookie;
+	char * proxy;
+	char * postfields;
+	FILE * stderr_stream;
 	CURL * curl_handle;
 	struct curl_httppost * post;
 	struct curl_slist * chunk;
@@ -94,6 +97,15 @@ static void st_curl_free_my_handle(ZL_EXP_VOID * VM_ARG, my_curl_handle_struct *
 		}
 		if(my_curl_handle->cookie != NULL) {
 			zenglApi_FreeMem(VM_ARG, my_curl_handle->cookie);
+		}
+		if(my_curl_handle->proxy != NULL) {
+			zenglApi_FreeMem(VM_ARG, my_curl_handle->proxy);
+		}
+		if(my_curl_handle->postfields != NULL) {
+			zenglApi_FreeMem(VM_ARG, my_curl_handle->postfields);
+		}
+		if(my_curl_handle->stderr_stream != NULL) {
+			fclose(my_curl_handle->stderr_stream);
 		}
 		if(my_curl_handle->post != NULL) {
 			curl_formfree(my_curl_handle->post);
@@ -166,6 +178,14 @@ static char * st_curl_process_str(ZL_EXP_VOID * VM_ARG, MAIN_DATA * my_data,
 	case CURLOPT_COOKIE:
 		my_curl_handle->cookie = st_curl_alloc_str(VM_ARG, my_curl_handle->cookie, src);
 		retval = my_curl_handle->cookie;
+		break;
+	case CURLOPT_PROXY:
+		my_curl_handle->proxy = st_curl_alloc_str(VM_ARG, my_curl_handle->proxy, src);
+		retval = my_curl_handle->proxy;
+		break;
+	case CURLOPT_POSTFIELDS:
+		my_curl_handle->postfields = st_curl_alloc_str(VM_ARG, my_curl_handle->postfields, src);
+		retval = my_curl_handle->postfields;
 		break;
 	}
 	return retval;
@@ -332,7 +352,7 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 3)
-		zenglApi_Exit(VM_ARG,"usage: curlEasySetopt(curl_handle, option_name, option_value): integer");
+		zenglApi_Exit(VM_ARG,"usage: curlEasySetopt(curl_handle, option_name, option_value[, option_value2]): integer");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the first argument [curl_handle] of curlEasySetopt must be integer");
@@ -342,12 +362,14 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	CURL * curl_handle = my_curl_handle->curl_handle;
 	char * options_str[] = {
 			"URL", "USERAGENT", "FOLLOWLOCATION", "SSL_VERIFYPEER", "TIMEOUT",
-			"COOKIEFILE", "COOKIEJAR", "COOKIE"
+			"COOKIEFILE", "COOKIEJAR", "COOKIE", "PROXY", "POSTFIELDS",
+			"VERBOSE", "STDERR"
 	};
 	int options_str_len = sizeof(options_str)/sizeof(options_str[0]);
 	CURLoption options_enum[] = {
 			CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_FOLLOWLOCATION, CURLOPT_SSL_VERIFYPEER, CURLOPT_TIMEOUT,
-			CURLOPT_COOKIEFILE, CURLOPT_COOKIEJAR, CURLOPT_COOKIE
+			CURLOPT_COOKIEFILE, CURLOPT_COOKIEJAR, CURLOPT_COOKIE, CURLOPT_PROXY, CURLOPT_POSTFIELDS,
+			CURLOPT_VERBOSE, CURLOPT_STDERR
 	};
 	CURLoption option = 0;
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
@@ -373,6 +395,8 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	case CURLOPT_COOKIEFILE:
 	case CURLOPT_COOKIEJAR:
 	case CURLOPT_COOKIE:
+	case CURLOPT_PROXY:
+	case CURLOPT_POSTFIELDS:
 		if(arg.type == ZL_EXP_FAT_STR) {
 			char * option_value = st_curl_process_str(VM_ARG, my_data, option, my_curl_handle, arg.val.str);
 			retval = curl_easy_setopt(curl_handle, option, option_value);
@@ -381,9 +405,34 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 			zenglApi_Exit(VM_ARG,"the third argument [option_value] of curlEasySetopt must be string when [option_name] is %s", options_str[opt_idx]);
 		}
 		break;
+	case CURLOPT_STDERR:
+		if(arg.type == ZL_EXP_FAT_STR) {
+			if(my_curl_handle->stderr_stream != NULL) {
+				fclose(my_curl_handle->stderr_stream);
+			}
+			char * filename = arg.val.str;
+			char full_path[FULL_PATH_SIZE];
+			builtin_make_fullpath(full_path, filename, my_data);
+			char * mode = "wb";
+			if(argcount > 3) {
+				zenglApi_GetFunArg(VM_ARG,4,&arg);
+				if(arg.type != ZL_EXP_FAT_STR) {
+					zenglApi_Exit(VM_ARG,"the fourth argument [option_value2] of curlEasySetopt must be string when [option_name] is %s",
+							options_str[opt_idx]);
+				}
+				mode = arg.val.str;
+			}
+			my_curl_handle->stderr_stream = fopen(full_path, mode);
+			retval = curl_easy_setopt(curl_handle, option, my_curl_handle->stderr_stream);
+		}
+		else {
+			zenglApi_Exit(VM_ARG,"the third argument [option_value] of curlEasySetopt must be string when [option_name] is %s", options_str[opt_idx]);
+		}
+		break;
 	case CURLOPT_FOLLOWLOCATION:
 	case CURLOPT_SSL_VERIFYPEER:
 	case CURLOPT_TIMEOUT:
+	case CURLOPT_VERBOSE:
 		if(arg.type == ZL_EXP_FAT_INT) {
 			long option_value = arg.val.integer;
 			retval = curl_easy_setopt(curl_handle, option, option_value);

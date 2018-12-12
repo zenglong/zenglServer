@@ -1,5 +1,6 @@
 .DS_Store
 *.jpg
 cookies.txt
+dump.txt
 !upload/*.jpg
 !upload/*.png

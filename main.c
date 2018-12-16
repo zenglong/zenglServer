@@ -8,6 +8,7 @@
 #include "main.h"
 #include "dynamic_string.h"
 #include "client_socket_list.h"
+#include "zlsrv_setproctitle.h"
 /**
  * zenglServer主要是依靠 http_parser 这个第三方的解析程式来解析http协议的，
  * 该程式的项目地址：https://github.com/nodejs/http-parser
@@ -115,7 +116,6 @@ typedef struct _SERVER_CONTENT_TYPE{
 #define WRITE_LOG_WITH_PRINTF_NOARG(format) write_to_server_log_pipe(WRITE_TO_LOG, format); \
 	printf(format);
 
-char * current_process_name; // 指向当前进程的名称，通过修改该指针指向的内容，就可以修改当前进程的名称(目前名称的最大长度为255个字符)
 int server_log_fd = -1;   // 为守护进程打开的日志文件的文件描述符
 int server_log_pipefd[2]; // 该数组用于存储管道的文件描述符，子进程会将日志写入管道的一端，主进程则从另一端将其读取出来
 int server_sig_count = 0; // 需要注册的信号数
@@ -135,6 +135,8 @@ char config_web_root[150];  // 该全局变量用于存储配置文件中的webr
 char config_zl_debug_log[120]; // 该全局变量用于存储配置文件中的zl_debug_log的值，也就是zengl脚本的调试日志文件，里面存储了脚本对应的虚拟汇编指令，仅用于调试zengl脚本库的BUG时才需要用到
 char * webroot; // 该字符串指针指向最终会使用的web根目录名，当配置文件中配置了webroot时，该指针就会指向上面的config_web_root，否则就指向WEB_ROOT_DEFAULT即默认的web根目录名
 char * zl_debug_log; // 该字符串指针指向最终会使用的zl_debug_log的值，当配置文件中设置了zl_debug_log时，就指向上面的config_zl_debug_log，否则就设置为NULL(空指针)
+
+char ** zlsrv_main_argv = NULL;
 
 static char config_session_dir[120]; // session会话目录
 static long config_session_expire; // session会话默认超时时间(以秒为单位)
@@ -610,8 +612,10 @@ int main(int argc, char * argv[])
 {
 	int o;
 	char * config_file = NULL;
+	char * logfile = NULL;
+	zlsrv_main_argv = argv;
 	// 通过getopt的C库函数来获取用户在命令行中输入的参数，并根据这些参数去执行不同的操作
-	while (-1 != (o = getopt(argc, argv, "vhc:"))) {
+	while (-1 != (o = getopt(argc, argv, "vhc:l:"))) {
 		switch(o){
 		// 当使用-v参数时，会将zenglServer的版本号信息和所使用的zengl脚本语言的版本号信息给显示出来，然后直接返回以退出程序，版本号中会显示主版本号，子版本号和修正版本号
 		case 'v':
@@ -625,24 +629,33 @@ int main(int argc, char * argv[])
 			//printf("use config: %s\n", optarg);
 			config_file = optarg;
 			break;
+		case 'l':
+			logfile = optarg;
+			break;
 		// 当使用-h参数时，会显示出帮助信息，然后直接返回以退出程序
 		case 'h':
 			printf("usage: ./zenglServer [options]\n" \
 					"-v                  show version\n" \
 					"-c <config file>    set config file\n" \
+					"-l <logfile>        set logfile\n" \
 					"-h                  show this help\n");
 			return 0;
+		default:
+			exit(-1);
+			break;
 		}
 	}
 
+	if(logfile == NULL) {
+		logfile = "logfile";
+	}
+
 	// 后面会切换到守护进程，所有信息都会写入到logfile日志文件中
-	if ((server_log_fd = open("logfile", O_WRONLY|O_APPEND|O_CREAT, 0644)) < 0) {
-		printf("open for server_log_fd failed [%d] %s \n", errno, strerror(errno));
+	if ((server_log_fd = open(logfile, O_WRONLY|O_APPEND|O_CREAT, 0644)) < 0) {
+		printf("open %s for server_log_fd failed [%d] %s \n", logfile, errno, strerror(errno));
 		exit(errno);
 	}
 
-	// 将argv[0]赋值给current_process_name，通过current_process_name就可以修改当前进程的名称
-	current_process_name = argv[0];
 	//通过fork创建master主进程，该进程将在后台以守护进程的形式一直运行，并通过该进程来创建执行具体任务的child子进程
 	pid_t master_pid = fork();
 	if(master_pid < 0) {
@@ -806,8 +819,23 @@ int main(int argc, char * argv[])
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源
 	zenglApi_Close(VM);
 
-	// 将主进程的名称设置为zenglServer: master，可以在ps aux命令的输出信息中查看到该名称
-	strncpy(current_process_name, "zenglServer: master", 0xff);
+	{
+		char master_process_name[255] = {0};
+		char cwd[255] = {0};
+		if(getcwd(cwd, sizeof(cwd)) == NULL) {
+			WRITE_LOG_WITH_PRINTF("failed to get cwd  [%d] %s \n", errno, strerror(errno));
+			exit(-1);
+		}
+		snprintf(master_process_name, 0xff, "zenglServer: master[%d] cwd:%s -c %s -l %s",
+				port, cwd, config_file, logfile);
+		char * errorstr = NULL;
+		if(zlsrv_init_setproctitle(&errorstr) < 0) {
+			WRITE_LOG_WITH_PRINTF("%s \n", errorstr);
+			exit(-1);
+		}
+		// 将主进程的名称设置为zenglServer: master，可以在ps aux命令的输出信息中查看到该名称
+		zlsrv_setproctitle(master_process_name);
+	}
 
 	struct sockaddr_in server_addr;
 	// 创建服务端套接字
@@ -910,8 +938,12 @@ void fork_child_process(int idx)
 	{
 		pthread_t tid[THREAD_NUM_MAX];
 
-		// 设置child子进程的进程名
-		snprintf(current_process_name, 0xff, "zenglServer: child(%d)", idx);
+		{
+			// 设置child子进程的进程名
+			char child_process_name[80];
+			snprintf(child_process_name, sizeof(child_process_name), "zenglServer: child(%d) ppid:%d", idx, getppid());
+			zlsrv_setproctitle(child_process_name);
+		}
 
 		// 将子进程从父进程继承过来的信号处理函数取消掉
 		if (!trap_signals(ZL_EXP_FALSE)) {
@@ -978,8 +1010,14 @@ void fork_cleaner_process()
 	pid_t childpid = fork();
 
 	if(childpid == 0) {
-		// 设置cleaner进程的进程名
-		snprintf(current_process_name, 0xff, "zenglServer: cleaner");
+
+		{
+			char cleaner_process_name[80];
+			snprintf(cleaner_process_name, sizeof(cleaner_process_name), "zenglServer: cleaner  ppid:%d", getppid());
+			// 设置cleaner进程的进程名
+			zlsrv_setproctitle(cleaner_process_name);
+		}
+
 		// 将cleaner进程从父进程继承过来的信号处理函数取消掉
 		if (!trap_signals(ZL_EXP_FALSE)) {
 			fprintf(stderr, "Cleaner [pid:%d]: trap_signals() failed!\n", childpid);

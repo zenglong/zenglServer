@@ -17,7 +17,7 @@ ret = curlEasyPerform(curl_handle, &content, &size, &ptr);
 if(ret == 0)
 	print 'size: ' + size;
 	bltWriteFile('download.jpg', ptr, size);
-	print 'write to download.jpg';
+	print 'write to <a href="download.jpg" target="_blank">download.jpg</a>';
 else
 	print 'error: ' + curlEasyStrError(ret);
 endif

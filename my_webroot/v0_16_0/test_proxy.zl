@@ -12,7 +12,10 @@ curlEasySetopt(curl_handle, 'USERAGENT', 'Mozilla/5.0 (Windows NT 6.1; Win64; x6
 curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
 curlEasySetopt(curl_handle, 'SSL_VERIFYPEER', FALSE);
 curlEasySetopt(curl_handle, 'TIMEOUT', 30);
-curlEasySetopt(curl_handle, 'PROXY', 'socks5h://127.0.0.1:1080');
+curlEasySetopt(curl_handle, 'PROXY', 'http://127.0.0.1:8232');
+// curlEasySetopt(curl_handle, 'PROXY', 'socks5h://127.0.0.1:1080');
+curlEasySetopt(curl_handle, 'VERBOSE', TRUE);
+curlEasySetopt(curl_handle, 'STDERR', 'dump_proxy.txt');
 ret = curlEasyPerform(curl_handle, &content, &size);
 if(ret == 0)
 	print 'size: ' + size;

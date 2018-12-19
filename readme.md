@@ -18,9 +18,12 @@ make[1]: Entering directory '/home/zengl/zenglServer/crustache'
 gcc -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c buffer.c crustache.c houdini_html.c stack.c
 ar rc libcrustache.a buffer.o crustache.o houdini_html.o stack.o
 make[1]: Leaving directory '/home/zengl/zenglServer/crustache'
-gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm 
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c zlsrv_setproctitle.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zlsrv_setproctitle.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm    
 
 *** notice: mysql module not enabled, you can use 'make USE_MYSQL=yes' to enable it, make sure you have mysql_config and mysql.h in your system! ***
+*** notice: magick module not enabled, you can use 'make USE_MAGICK=6' to enable it, make sure you have pkg-config and 'wand/MagickWand.h' in your system! ***
+*** notice: pcre module not enabled, you can use 'make USE_PCRE=yes' to enable it, make sure you have pcre-config and pcre.h in your system! ***
+*** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
@@ -46,11 +49,12 @@ make[1]: Entering directory '/home/zengl/zenglServer/crustache'
 gcc -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c buffer.c crustache.c houdini_html.c stack.c
 ar rc libcrustache.a buffer.o crustache.o houdini_html.o stack.o
 make[1]: Leaving directory '/home/zengl/zenglServer/crustache'
-gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h module_mysql.c module_mysql.h  zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs` 
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c zlsrv_setproctitle.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zlsrv_setproctitle.h module_mysql.c module_mysql.h  zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`    
 
 mysql module is enabled!!!
 *** notice: magick module not enabled, you can use 'make USE_MAGICK=6' to enable it, make sure you have pkg-config and 'wand/MagickWand.h' in your system! ***
 *** notice: pcre module not enabled, you can use 'make USE_PCRE=yes' to enable it, make sure you have pcre-config and pcre.h in your system! ***
+*** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
@@ -80,11 +84,12 @@ make[1]: Entering directory `/home/zengl/zenglServer/crustache'
 gcc -g3 -ggdb -O0 -std=c99 -fvisibility=hidden -fPIC -c buffer.c crustache.c houdini_html.c stack.c
 ar rc libcrustache.a buffer.o crustache.o houdini_html.o stack.o
 make[1]: Leaving directory `/home/zengl/zenglServer/crustache'
-gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h module_mysql.c module_mysql.h  module_magick.c module_magick.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand`
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c zlsrv_setproctitle.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zlsrv_setproctitle.h module_mysql.c module_mysql.h  module_magick.c module_magick.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand`  
 
 mysql module is enabled!!!
 magick module is enabled!!!
 *** notice: pcre module not enabled, you can use 'make USE_PCRE=yes' to enable it, make sure you have pcre-config and pcre.h in your system! ***
+*** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
@@ -103,11 +108,12 @@ zengl@zengl-ubuntu:~/zenglServer$
 ```
 zengl@zengl-ubuntu:~/zenglServer$ make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes
 ...................................................
-gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h module_mysql.c module_mysql.h  module_magick.c module_magick.h module_pcre.c module_pcre.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand` -DUSE_PCRE `pcre-config --cflags --libs`
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c zlsrv_setproctitle.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zlsrv_setproctitle.h module_mysql.c module_mysql.h  module_magick.c module_magick.h module_pcre.c module_pcre.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand` -DUSE_PCRE `pcre-config --cflags --libs` 
 
 mysql module is enabled!!!
 magick module is enabled!!!
 pcre module is enabled!!!
+*** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
@@ -126,7 +132,7 @@ zengl@zengl-ubuntu:~/zenglServer$
 ```
 [parallels@localhost zenglServerTest]$ make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes
 ...................................................
-gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h module_mysql.c module_mysql.h  module_magick.c module_magick.h module_pcre.c module_pcre.h module_curl.c module_curl.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand` -DUSE_PCRE `pcre-config --cflags --libs` -DUSE_CURL `curl-config --cflags --libs`
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c zlsrv_setproctitle.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zlsrv_setproctitle.h module_mysql.c module_mysql.h  module_magick.c module_magick.h module_pcre.c module_pcre.h module_curl.c module_curl.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand` -DUSE_PCRE `pcre-config --cflags --libs` -DUSE_CURL `curl-config --cflags --libs`
 
 mysql module is enabled!!!
 magick module is enabled!!!
@@ -178,9 +184,9 @@ shm_min_size = 300 * KBYTE; // 需要放进共享内存的缓存的最小大小�
 ```
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer 
 zengl@zengl-ubuntu:~/zenglServer$ ps -aux | grep zenglServer
-zengl      300  0.0  0.0  26440  2124 ?        Ss   19:08   0:00 zenglServer: master
-zengl      301  0.0  0.0  42832   528 ?        Sl   19:08   0:00 zenglServer: child(0)
-zengl      302  0.0  0.0  26440   528 ?        S    19:08   0:00 zenglServer: cleaner
+zengl      300  0.0  0.0  26440  2124 ?        Ss   19:08   0:00 zenglServer: master[8083] cwd:/home/zengl/zenglServer -c config.zl -l logfile
+zengl      301  0.0  0.0  42832   528 ?        Sl   19:08   0:00 zenglServer: child(0) ppid:300
+zengl      302  0.0  0.0  26440   528 ?        S    19:08   0:00 zenglServer: cleaner  ppid:300
 zengl@zengl-ubuntu:~/zenglServer$ cat logfile
 create master process for daemon [pid:300]
 use default config: config.zl
@@ -268,13 +274,15 @@ querys['name']: zengl
 querys['job']: programmer
 ```
 
-要退出zenglServer，需要kill掉主进程(名称为zenglServer: master的进程)，注意：kill子进程的话，主进程会自动重启子进程：
+要退出zenglServer，需要kill掉主进程，也就是名称为zenglServer: master...的进程，主进程名中还可以看到端口号，例如下面例子中的master[8083]表示使用的是8083的端口，还能看到zenglServer执行时的cwd即当前工作目录，以及所使用的配置文件和日志文件。
+
+注意：如果只kill子进程的话，主进程会自动重启子进程，所以需要kill主进程，在kill主进程时，主进程会自动终止所有的子进程，下面的进程列表中，子进程的名称的末尾会包含ppid:...，也就是该子进程所属的父进程的pid(进程ID)，当启动了多个zenglServer时，就可以知道哪些子进程是属于哪个zenglServer的了：
 
 ```
 zengl@zengl-ubuntu:~/zenglServer$ ps aux | grep zenglServer
-zengl      300  0.0  0.0  26440  2124 ?        Ss   19:08   0:00 zenglServer: master
-zengl      301  0.0  0.0 108368   528 ?        Sl   19:08   0:00 zenglServer: child(0)
-zengl      302  0.0  0.0  26440   528 ?        S    19:08   0:00 zenglServer: cleaner
+zengl      300  0.0  0.0  26440  2124 ?        Ss   19:08   0:00 zenglServer: master[8083] cwd:/home/zengl/zenglServer -c config.zl -l logfile
+zengl      301  0.0  0.0 108368   528 ?        Sl   19:08   0:00 zenglServer: child(0) ppid:300
+zengl      302  0.0  0.0  26440   528 ?        S    19:08   0:00 zenglServer: cleaner  ppid:300
 zengl@zengl-ubuntu:~/zenglServer$ kill 300
 zengl@zengl-ubuntu:~/zenglServer$ ps aux | grep zenglServer
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
@@ -298,6 +306,7 @@ zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -h
 usage: ./zenglServer [options]
 -v                  show version
 -c <config file>    set config file
+-l <logfile>        set logfile
 -h                  show this help
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
@@ -324,6 +333,21 @@ Master: Spawning child(0) [pid 673]
 Master: Spawning cleaner [pid 674] 
 epoll max fd count : 896
 ------------ cleaner sleep begin: 1515237890
+```
+
+通过-l命令行参数可以指定日志文件的文件名(文件名可以是相对于当前执行的zenglServer的文件路径):
+
+```
+zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl -l logfile_test
+zengl@zengl-ubuntu:~/zenglServer$ ps aux | grep zenglServer
+zengl      9939  0.0  0.0  26440  2124 ?        Ss   19:08   0:00 zenglServer: master[8083] cwd:/home/zengl/zenglServer -c config.zl -l logfile_test
+zengl      9940  0.0  0.0 108368   528 ?        Sl   19:08   0:00 zenglServer: child(0) ppid:9939
+zengl      9943  0.0  0.0  26440   528 ?        S    19:08   0:00 zenglServer: cleaner  ppid:9939
+zengl@zengl-ubuntu:~/zenglServer$ tail -n 50 logfile_test
+create master process for daemon [pid:9939] 
+use config: config.zl
+......................................
+zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
 ## 远程调试

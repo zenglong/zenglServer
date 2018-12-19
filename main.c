@@ -826,7 +826,7 @@ int main(int argc, char * argv[])
 			WRITE_LOG_WITH_PRINTF("failed to get cwd  [%d] %s \n", errno, strerror(errno));
 			exit(-1);
 		}
-		snprintf(master_process_name, 0xff, "zenglServer: master[%d] cwd:%s -c %s -l %s",
+		snprintf(master_process_name, 0xff, "zenglServer: master[%ld] cwd:%s -c %s -l %s",
 				port, cwd, config_file, logfile);
 		char * errorstr = NULL;
 		if(zlsrv_init_setproctitle(&errorstr) < 0) {

@@ -2,5 +2,6 @@
 *.jpg
 cookies.txt
 dump.txt
+dump_proxy.txt
 !upload/*.jpg
 !upload/*.png

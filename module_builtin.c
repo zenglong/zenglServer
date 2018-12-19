@@ -538,6 +538,12 @@ static void builtin_html_escape_str(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * 
 	}
 }
 
+/**
+ * 用于检测模块函数的某个参数是否是引用类型，
+ * arg_index表示需要检测第几个参数，当arg_index为1时，表示检测第一个参数，为2时表示检测第二个参数，以此类推，
+ * arg_desc存储检测到不是引用类型而报错时，参数的英文描述，例如：第二个参数一般用second argument [&...]来描述，
+ * module_func_name表示进行类型检测的模块函数名，主要用于报错时进行显示
+ */
 void st_detect_arg_is_address_type(ZL_EXP_VOID * VM_ARG,
 		int arg_index, ZENGL_EXPORT_MOD_FUN_ARG * arg_ptr, const char * arg_desc, const char * module_func_name)
 {
@@ -1815,6 +1821,17 @@ ZL_EXP_VOID module_builtin_is_none(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_FALSE, 0);
 }
 
+/**
+ * bltFree模块函数，用于释放掉zengl脚本中分配的指针资源
+ * 某些模块函数会分配一些指针以供调用者使用，
+ * 例如，curl模块的curlEasyPerform模块函数，当提供了&ptr参数时，
+ * 就会在内部分配一个指针，该指针指向的内存空间中存储了curl抓取到的数据，当抓取到的数据是jpg，png之类的图像等的二进制数据时，
+ * 脚本中就可以利用指针将这些二进制数据写入文件，从而可以将curl下载的图像数据保存为文件，
+ * 当这些指针不再需要使用时，可以用bltFree模块函数将其释放掉，如果没有使用该模块函数进行释放，
+ * 在脚本退出时，zengl虚拟机也会自动清理这些指针
+ *
+ * 该模块函数的第一个参数ptr表示需要释放的指针，在zengl脚本中，指针其实就是一个整数，该整数代表了指针所指向的内存地址
+ */
 ZL_EXP_VOID module_builtin_free(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -1830,6 +1847,23 @@ ZL_EXP_VOID module_builtin_free(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+/**
+ * bltReadFile模块函数，根据文件名读取文件内容
+ * 该模块函数的第一个参数filename表示需要读取的文件的文件名，该文件名是一个相对于当前主执行脚本的路径，
+ * 第二个&content参数必须是引用类型，用于存储读取的文件内容，
+ * 第三个&size参数是可选的，当提供了该参数时，也必须是引用类型，用于存储文件的字节大小，
+ * 该模块函数如果执行成功会返回整数0，执行失败则返回小于0的值，当返回值为-1时表示文件不存在，返回值为-2时表示无法打开文件，
+ * 例如：
+	use builtin;
+	ret = bltReadFile('cookies.txt', &file_content, &file_size);
+	if(ret == 0)
+		print 'cookies.txt file size: ' + file_size;
+		print 'file content: \n' + file_content;
+	else
+		print 'read cookies.txt failed, maybe the file does not exists, or open failed.';
+	endif
+ * 上面这段代码会将cookies.txt文件的内容读取到file_content变量，同时将该文件的字节大小存储到file_size变量
+ */
 ZL_EXP_VOID module_builtin_read_file(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

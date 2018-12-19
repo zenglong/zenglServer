@@ -32,25 +32,23 @@ typedef struct _my_curl_memory_struct {
  * curlEasyInit模块函数会返回以下类型的指针，
  * 其他的curl模块函数，例如：curlEasySetopt，curlEasyPerform等，都需要接收该类型的指针来进行curl相关的操作，
  * 该结构体中，又封装了一个CURL类型的指针，该指针是用于执行实际的curl操作的，
- * 结构体中的url字段，用于存储需要抓取的目标url地址，
- * 结构体中的useragent字段，用于存储设置的用户代理信息，
  * 在curlEasySetopt模块函数设置URL和USERAGENT时，会将下面结构体中的url和useragent字段对应的指针传给底层的库函数，
  * 在旧的curl库版本中(例如：7.15版本)，url和useragent等，需要自己提供和维护独立的内存空间，新的curl版本中会在内部执行拷贝操作，不需要外部调用者提供和维护独立的内存空间，
  * 为了兼容旧的curl库版本，就有了下面这个结构体，该结构体为curl需要的url和useragent等提供了独立的url，useragent等字段来指向相应的数据。
  * 结构体中的url和useragent字段，会被zengl虚拟机分配独立的互不干扰的内存空间，以确保旧版本的curl库函数能正常工作。
  */
 typedef struct _my_curl_handle_struct {
-	char * url;
-	char * useragent;
-	char * cookiefile;
-	char * cookiejar;
-	char * cookie;
-	char * proxy;
-	char * postfields;
-	FILE * stderr_stream;
-	CURL * curl_handle;
-	struct curl_httppost * post;
-	struct curl_slist * chunk;
+	char * url;           // 需要抓取的目标url地址
+	char * useragent;     // 需要设置的用户代理信息
+	char * cookiefile;    // 需要读cookie的文件名，当需要发送cookie信息时，curl会读取该文件，并将其中的cookie作为请求发送出去
+	char * cookiejar;     // 需要写入cookie的文件名，当curl获取到的响应头中包含了设置cookie的信息时，会将这些cookie写入到指定的文件
+	char * cookie;        // 存储自定义的cookie
+	char * proxy;         // 用于设置http，socks5之类的代理
+	char * postfields;    // 用于设置application/x-www-form-urlencoded类型的POST请求
+	FILE * stderr_stream; // 当使用VERBOSE输出调试信息时，会将调试信息写入到stderr_stream文件指针所对应的文件中
+	CURL * curl_handle;   // 用于执行实际的底层的curl操作
+	struct curl_httppost * post; // 用于设置multipart/form-data类型的POST请求
+	struct curl_slist * chunk;   // 用于设置自定义的HTTP请求头
 } my_curl_handle_struct;
 
 /**
@@ -78,7 +76,7 @@ static ZL_EXP_BOOL st_curl_global_init()
 
 /**
  * 下面这个函数，用于清理curlEasyInit模块函数返回的my_curl_handle_struct类型的指针，
- * 它还会将my_curl_handle_struct类型的结构体中的url和useragent字段对应的内存也释放掉。
+ * 它还会将my_curl_handle_struct类型的结构体中的url和useragent等字段对应的内存也释放掉。
  */
 static void st_curl_free_my_handle(ZL_EXP_VOID * VM_ARG, my_curl_handle_struct * my_curl_handle)
 {
@@ -339,11 +337,37 @@ ZL_EXP_VOID module_curl_easy_cleanup(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * 'FOLLOWLOCATION'：当抓取到重定向页面时，是否进行重定向操作
  * 'SSL_VERIFYPEER'：是否校验SSL证书
  * 'TIMEOUT': 设置超时时间
- * 第三个参数是需要设置的具体的选项值，当第二个参数是'URL'，'USERAGENT'时，选项值必须是字符串类型，表示需要设置的url地址，用户代理等，
+ * 'COOKIEFILE': 设置需要读cookie的文件名，当需要发送cookie信息时，curl会读取该文件，并将其中的cookie作为请求发送出去
+ * 'COOKIEJAR': 设置需要写入cookie的文件名，当curl获取到的响应头中包含了设置cookie的信息时，会将这些cookie写入到指定的文件
+ * 'COOKIE': 设置自定义的cookie
+ * 'PROXY': 设置http，socks5之类的代理，socks协议的代理需要7.21.7及以上的版本才支持，低版本的curl库只支持http协议的代理
+ * 'POSTFIELDS': 设置application/x-www-form-urlencoded类型的POST请求
+ * 'VERBOSE': 设置是否输出详细的连接信息，包含了请求头和响应头在内，方便调试，这些连接信息会输出到 STDERR 所指定的文件中
+ * 'STDERR': 当开启了VERBOSE时，详细的连接信息会保存到STDERR所指定的文件中
+ *
+ * 第三个参数是需要设置的具体的选项值，
+ *
+ * 当第二个参数是'URL'，'USERAGENT'，'COOKIE'，'PROXY'，'POSTFIELDS'时，
+ * 选项值必须是字符串类型，表示需要设置的url地址，用户代理等，
+ * 当第二个参数是'COOKIEFILE'，'COOKIEJAR'时，选项值也是字符串，表示需要读取和写入cookie的文件的路径（该路径是相对于当前主执行脚本的）
+ *
+ * 当第二个参数是'STDERR'时，可以有两个选项值：
+ * 	第一个选项值option_value表示相对于当前主执行脚本的文件路径，即需要输出VERBOSE信息到哪个文件，
+ * 	第二个选项值option_value2是可选的，表示需要以什么模式来打开该文件，默认是wb表示以写入模式打开文件，该模式会清空文件中原有的内容，
+ * 		如果option_value2设置为ab，则表示以追加的方式打开文件，VERBOSE信息会追加到文件的末尾。
+ *
+ * 当第二个参数是'VERBOSE'时，选项值必须是整数类型，表示是否输出详细的连接信息，默认是0，即不输出连接信息，如果要输出连接信息，可以将选项值设置为1
  * 当第二个参数是'FOLLOWLOCATION'时，选项值必须是整数类型，表示是否进行重定向操作，默认是0，即不进行重定向，需要进行重定向的，可以将选项值设置为1
  * 当第二个参数是'SSL_VERIFYPEER'时，选项值必须是整数类型，表示是否校验SSL证书，默认是1，即需要进行校验，如果不需要校验，可以将选项值设置为0
  * 当第二个参数是'TIMEOUT'时，选项值必须是整数类型，表示需要设置的超时时间
- * 具体的例子，请参考curlEasyPerform模块函数的注释部分
+ *
+ * 和'URL'，'USERAGENT'，'FOLLOWLOCATION'，'SSL_VERIFYPEER'，'TIMEOUT'选项相关的例子，请参考curlEasyPerform模块函数的注释部分
+ * 和'COOKIEFILE'选项相关的例子可以参考 my_webroot/v0_16_0/test_cookiefile.zl 脚本对应的代码
+ * 和'COOKIEJAR'选项相关的例子可以参考 my_webroot/v0_16_0/test_cookiejar.zl 脚本对应的代码
+ * 和'COOKIE'选项相关的例子可以参考 my_webroot/v0_16_0/test_cookie.zl 脚本对应的代码
+ * 和'PROXY'选项相关的例子可以参考 my_webroot/v0_16_0/test_proxy.zl 脚本对应的代码
+ * 和'POSTFIELDS'选项相关的例子可以参考 my_webroot/v0_16_0/test_postfields.zl 脚本对应的代码
+ * 和'VERBOSE'，'STDERR'选项相关的例子可以参考 my_webroot/v0_16_0/test_verbose.zl 脚本对应的代码
  *
  * 该模块函数最终会通过curl_easy_setopt库函数去执行具体的操作，
  * 该库函数的官方地址为：https://curl.haxx.se/libcurl/c/curl_easy_setopt.html
@@ -455,9 +479,15 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 
 /**
  * curlEasyPerform模块函数，它会使用curl库执行具体的抓取操作
- * 该模块函数的第一个参数必须是有效的my_curl_handle_struct指针，该指针由curlEasyInit模块函数返回，
- * 第二个参数content必须是引用类型，用于存储抓取到的具体数据，
- * 第三个参数size也必须是引用类型，用于存储抓取到的数据的字节大小，该参数是可选的，
+ * 该模块函数的第一个参数必须是有效的my_curl_handle_struct类型的指针，该指针由curlEasyInit模块函数返回，
+ * 第二个参数content必须是引用类型，用于存储抓取到的具体数据（只能存储字符串数据，如果是图像等二进制数据会存储不完整），
+ * 第三个参数size也必须是引用类型（该参数是可选的），用于存储抓取到的数据的字节大小，
+ * 第四个参数ptr也必须是引用类型（该参数也是可选的），用于存储指针，该指针指向的内存中存储了抓取到的数据，当抓取到的数据是图像等二进制数据时，
+ * 就可以使用该指针来访问这些二进制数据，例如，可以利用指针和数据的字节大小，将二进制数据写入文件等，ptr指针在不需要用了时，需要使用
+ * bltFree模块函数将该指针对应的内存空间释放掉(zengl虚拟机内部并没有执行实际的释放，只是做了标记，下次需要分配内存时，就会直接重利用这段内存)，
+ * 如果没有手动释放，则只有等到脚本结束后，由zengl虚拟机来自动释放该指针对应的内存，
+ * 建议还是手动释放，因为如果脚本中有循环下载操作的话，就会导致内存越来越大，只有等脚本执行结束才能自动释放。
+ *
  * 该模块函数如果执行成功，会返回0，如果执行失败，则返回相应的错误码，可以使用curlEasyStrError模块函数，来获取错误码对应的字符串类型的错误描述，
  * 例如：
 	use builtin, curl, request;
@@ -484,6 +514,36 @@ ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	接着，通过curlEasySetopt模块函数来设置需要抓取的目标地址，以及设置useragent用户代理等，
 	在设置好后，最后通过curlEasyPerform模块函数去执行抓取操作，如果返回的ret为0，则content变量将包含抓取的数据，size变量则会包含抓取数据的字节大小，
 	如果返回的ret不为0，则会将返回值传递给curlEasyStrError模块函数，以获取具体的错误描述信息。
+
+	如果要下载图像等二进制数据，则可以使用第四个ptr参数，例如：
+
+	use builtin, curl, request;
+	def TRUE 1;
+	def FALSE 0;
+
+	rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
+
+	print 'curl version: ' + curlVersion();
+
+	curl_handle = curlEasyInit();
+	curlEasySetopt(curl_handle, 'URL', 'https://raw.githubusercontent.com/zenglong/zenglOX/master/screenshot/v302_1.jpg');
+	curlEasySetopt(curl_handle, 'USERAGENT', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:63.0) Gecko/20100101 Firefox/63.0');
+	curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
+	curlEasySetopt(curl_handle, 'SSL_VERIFYPEER', FALSE);
+	curlEasySetopt(curl_handle, 'TIMEOUT', 30);
+	ret = curlEasyPerform(curl_handle, &content, &size, &ptr);
+	if(ret == 0)
+		print 'size: ' + size;
+		bltWriteFile('download.jpg', ptr, size);
+		print 'write to <a href="download.jpg" target="_blank">download.jpg</a>';
+	else
+		print 'error: ' + curlEasyStrError(ret);
+	endif
+	curlEasyCleanup(curl_handle);
+	bltFree(ptr);
+
+	上面脚本中，在curlEasyPerform模块函数中使用了&ptr，将获取的图像数据的指针存储到ptr变量，接着就可以使用bltWriteFile模块函数，
+	根据ptr指针和size图像的字节大小，将curl抓取到的图像的二进制数据写入到download.jpg文件中了。
 
 	该模块函数在底层最终会通过curl_easy_perform库函数去执行具体的抓取操作，
 	该库函数的官方地址为：https://curl.haxx.se/libcurl/c/curl_easy_perform.html
@@ -580,6 +640,93 @@ ZL_EXP_VOID module_curl_version(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_STR, (char *)curl_version(), 0, 0);
 }
 
+/**
+ * curlSetPostByHashArray模块函数，通过哈希数组来设置multipart/form-data类型的POST请求，
+ * 该模块函数的第一个参数必须是有效的my_curl_handle_struct类型的指针，该指针由curlEasyInit模块函数返回，
+ * 第二个参数hash_array是用于设置POST请求的哈希数组，数组中的每个带有字符串key的成员都对应一个POST请求的名值对信息，
+ * 数组成员的字符串key将作为POST请求的name，数组成员的值将作为POST请求的值，
+ * 当需要在POST请求中发送文件时，可以使用@file_path的格式来设置需要发送的文件的路径（该路径是相对于当前主执行脚本的路径），
+ * 例如：@upload/upload_image.jpg 表示将 upload/upload_image.jpg 对应的文件内容通过POST请求发送出去，
+ * 还可以设置发送文件的Content-Type类型，只需在路径后面跟随Content-Type类型名即可，
+ * 文件路径和Content-Type类型名之间通过英文半角逗号隔开，
+ * 例如：@upload/kernel_shell.png,image/png 表示需要发送的文件路径为upload/kernel_shell.png，Content-Type类型为image/png，
+ *
+ * 示例代码如下：
+
+	use builtin, curl, request;
+	def TRUE 1;
+	def FALSE 0;
+
+	rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
+
+	print 'curl version: ' + curlVersion() + '<br/>';
+
+	curl_handle = curlEasyInit();
+	curlEasySetopt(curl_handle, 'URL', 'http://127.0.0.1:8084/v0_2_0/post.zl');
+	curlEasySetopt(curl_handle, 'USERAGENT', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:63.0) Gecko/20100101 Firefox/63.0');
+	curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
+	curlEasySetopt(curl_handle, 'SSL_VERIFYPEER', FALSE);
+	curlEasySetopt(curl_handle, 'TIMEOUT', 30);
+	data['name'] = 'zenglong';
+	data['job'] = 'programmer';
+	data['age'] = 30;
+	data['money'] = 550.35;
+	data['myjpg'] = '@upload/upload_image.jpg';
+	data['mypng'] = '@upload/kernel_shell.png,image/png';
+	curlSetPostByHashArray(curl_handle, data);
+	ret = curlEasyPerform(curl_handle, &content);
+	if(ret == 0)
+		print content;
+	else
+		print 'error: ' + curlEasyStrError(ret);
+	endif
+	curlEasyCleanup(curl_handle);
+
+	上面脚本中，先通过data数组设置需要发送的POST请求所对应的名值对信息，
+	例如上面的 data['job'] = 'programmer'; 表示将要设置一个名为job，值为programmer的POST请求，
+	在创建好包含名值对的哈希数组后，接着就可以通过curlSetPostByHashArray模块函数将数组中的数据和底层的curl操作指针进行绑定，
+	当使用curlEasyPerform执行具体的请求操作时，就会根据这些数据来创建一个multipart/form-data类型的POST请求。
+
+	上面脚本在执行时，会构建出类似如下所示的multipart/form-data类型的POST请求：
+
+	POST /v0_2_0/post.zl HTTP/1.1
+	................................
+	Content-Type: multipart/form-data; boundary=------------------------------cb39d046a2e0
+	................................
+
+	------------------------------cb39d046a2e0
+	Content-Disposition: form-data; name="name"
+
+	zenglong
+	------------------------------cb39d046a2e0
+	Content-Disposition: form-data; name="job"
+
+	programmer
+	------------------------------cb39d046a2e0
+	Content-Disposition: form-data; name="age"
+
+	30
+	------------------------------cb39d046a2e0
+	Content-Disposition: form-data; name="money"
+
+	550.35
+	------------------------------cb39d046a2e0
+	Content-Disposition: form-data; name="myjpg"; filename="upload_image.jpg"
+	Content-Type: image/jpeg
+
+	.......JFIF..............................
+	.........................................
+	------------------------------cb39d046a2e0
+	Content-Disposition: form-data; name="mypng"; filename="kernel_shell.png"
+	Content-Type: image/png
+
+	..PNG....................................
+	.........................................
+	------------------------------cb39d046a2e0--
+
+	该模块函数在底层会通过curl_formadd库函数，来进行实际的构建multipart/form-data类型的POST请求的操作，
+	该库函数的官方地址：https://curl.haxx.se/libcurl/c/curl_formadd.html
+ */
 ZL_EXP_VOID module_curl_set_post_by_hash_array(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -669,6 +816,56 @@ ZL_EXP_VOID module_curl_set_post_by_hash_array(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT a
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, set_post_count, 0);
 }
 
+/**
+ * curlSetHeaderByArray模块函数，设置自定义的HTTP请求头，
+ * 该模块函数的第一个参数必须是有效的my_curl_handle_struct类型的指针，该指针由curlEasyInit模块函数返回，
+ * 第二个参数array必须是一个数组，数组中的每一项都对应一个自定义的请求头，
+ * 如果自定义的请求头中只包含请求头名，而不包含对应的值时，表示如果存在该名称对应的请求头的话，就将其移除掉，
+ * 例如：'Accept:' 就表示移除掉Accept请求头，
+ * 当自定义的请求头名和已存在的请求头名称相同时，表示修改该请求头对应的值，
+ * 例如：'Host: example.com'，表示将已存在的Host请求头的值修改为 example.com，
+ * 可以设置一个空的没有值的请求头，例如: 'X-silly-header;' 表示设置一个名为X-silly-header，值为空的请求头，
+ * 不过自定义这种没有值的请求头，在低版本的curl库中并不支持，例如：7.15和7.19的版本。
+ *
+ * 示例代码如下：
+
+	use builtin, curl, request;
+	def TRUE 1;
+	def FALSE 0;
+
+	rqtSetResponseHeader("Content-Type: text/html; charset=utf-8");
+
+	print 'curl version: ' + curlVersion() + '<br/>';
+
+	curl_handle = curlEasyInit();
+	curlEasySetopt(curl_handle, 'URL', 'http://127.0.0.1:8084/v0_5_0/show_header.zl');
+	curlEasySetopt(curl_handle, 'USERAGENT', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:63.0) Gecko/20100101 Firefox/63.0');
+	curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
+	curlEasySetopt(curl_handle, 'SSL_VERIFYPEER', FALSE);
+	curlEasySetopt(curl_handle, 'TIMEOUT', 30);
+	curlSetHeaderByArray(curl_handle, bltArray('Accept:', 'Another: yes', 'Host: example.com', 'X-silly-header;'));
+	ret = curlEasyPerform(curl_handle, &content);
+	if(ret == 0)
+		print content;
+	else
+		print 'error: ' + curlEasyStrError(ret);
+	endif
+	curlEasyCleanup(curl_handle);
+
+	上面脚本中，通过curlSetHeaderByArray添加了一个Another: yes的请求头，移除了Accept请求头，修改了Host请求头，
+	还设置了一个名为X-silly-header的值为空的请求头，该脚本的执行结果类似如下所示：
+
+	curl version: libcurl/7.29.0 NSS/3.34 zlib/1.2.11 libidn/1.28 libssh2/1.4.3
+	请求头信息：
+
+	User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:63.0) Gecko/20100101 Firefox/63.0
+	Another: yes
+	Host: example.com
+	X-silly-header:
+
+	该模块函数在底层会通过curl_slist_append库函数，来执行具体的构建自定义请求头的操作，
+	该库函数的官方地址：https://curl.haxx.se/libcurl/c/curl_slist_append.html
+ */
 ZL_EXP_VOID module_curl_set_header_by_array(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

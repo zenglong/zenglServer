@@ -13,6 +13,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+extern long config_request_body_max_size;
+extern long config_request_header_max_size;
+extern long config_request_url_max_size;
+
 void routine_close_client_socket(CLIENT_SOCKET_LIST * socket_list, int lst_idx);
 
 static int on_info(http_parser* p);
@@ -202,20 +206,20 @@ int client_socket_list_process_epollin(CLIENT_SOCKET_LIST * list, int client_soc
 				return CLIENT_EPOLL_EAGAIN_ERRNO;
 			}
 			else {
-				write_to_server_log_pipe(WRITE_TO_PIPE, " **** error:[%d] %s\n", errno, strerror(errno));
+				write_to_server_log_pipe(WRITE_TO_PIPE_, " **** error:[%d] %s\n", errno, strerror(errno));
 				routine_close_client_socket(list, idx);
 				return -1;
 			}
 		}
 		else if(data_length == 0) {
-			write_to_server_log_pipe(WRITE_TO_PIPE, " **** warning: 0 data length occured");
-			write_to_server_log_pipe(WRITE_TO_PIPE, " %d[%d]\n", data_length, total_length);
+			write_to_server_log_pipe(WRITE_TO_PIPE_, " **** warning: 0 data length occured");
+			write_to_server_log_pipe(WRITE_TO_PIPE_, " %d[%d] ", data_length, total_length);
 			routine_close_client_socket(list, idx);
 			return -1;
 		}
 		parsed = http_parser_execute(&(list->member[idx].parser), &settings, buffer, data_length);
 		if(parsed != data_length) {
-			write_to_server_log_pipe(WRITE_TO_PIPE, " **** parser error: parsed[%d] != data_length[%d]", (int)parsed, data_length);
+			write_to_server_log_pipe(WRITE_TO_PIPE_, " **** parser error: parsed[%d] != data_length[%d]", (int)parsed, data_length);
 			routine_close_client_socket(list, idx);
 			return -1;
 		}
@@ -258,14 +262,14 @@ int client_socket_list_process_epollout(CLIENT_SOCKET_LIST * list, int idx)
 				return CLIENT_EPOLL_EAGAIN_ERRNO;
 			}
 			else {
-				write_to_server_log_pipe(WRITE_TO_PIPE, " **** error:[%d] %s\n", errno, strerror(errno));
+				write_to_server_log_pipe(WRITE_TO_PIPE_, " **** error:[%d] %s\n", errno, strerror(errno));
 				routine_close_client_socket(list, idx);
 				return -1;
 			}
 		}
 		else {
-			write_to_server_log_pipe(WRITE_TO_PIPE, " **** warning: 0 data length occured when send", errno, strerror(errno));
-			write_to_server_log_pipe(WRITE_TO_PIPE, " %d[%d]\n", data_length, total_length);
+			write_to_server_log_pipe(WRITE_TO_PIPE_, " **** warning: 0 data length occured when send", errno, strerror(errno));
+			write_to_server_log_pipe(WRITE_TO_PIPE_, " %d[%d]\n", data_length, total_length);
 			routine_close_client_socket(list, idx);
 			return -1;
 		}
@@ -323,8 +327,8 @@ static int on_message_complete(http_parser* p) {
  */
 static int on_url(http_parser* p, const char *at, size_t length) {
 	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
-	if((my_data->request_url.count + (int)length) > REQUEST_URL_STR_MAX_SIZE) {
-		length = REQUEST_URL_STR_MAX_SIZE - my_data->request_url.count;
+	if((my_data->request_url.count + (int)length) > config_request_url_max_size) {
+		length = config_request_url_max_size - my_data->request_url.count;
 		if(length <= 0)
 			return 0;
 	}
@@ -347,7 +351,7 @@ static int on_url(http_parser* p, const char *at, size_t length) {
  */
 static int on_header_value(http_parser* p, const char *at, size_t length) {
 	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
-	if((my_data->request_header.count + (int)length) >= REQUEST_HEADER_STR_MAX_SIZE) {
+	if((my_data->request_header.count + (int)length) >= config_request_header_max_size) {
 		return 0;
 	}
 	if(my_data->header_status == ON_HEADER_STATUS_ENUM_FIELD) {
@@ -368,7 +372,7 @@ static int on_header_value(http_parser* p, const char *at, size_t length) {
  */
 static int on_header_field(http_parser* p, const char *at, size_t length) {
 	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
-	if((my_data->request_header.count + (int)length) >= REQUEST_HEADER_STR_MAX_SIZE){
+	if((my_data->request_header.count + (int)length) >= config_request_header_max_size){
 		return 0;
 	}
 	if(my_data->header_status == ON_HEADER_STATUS_ENUM_VALUE) {
@@ -389,7 +393,7 @@ static int on_header_field(http_parser* p, const char *at, size_t length) {
  */
 static int on_body(http_parser* p, const char *at, size_t length) {
 	MY_PARSER_DATA * my_data = (MY_PARSER_DATA *)p->data;
-	if((my_data->request_body.count + (int)length) >= REQUEST_BODY_STR_MAX_SIZE) {
+	if((my_data->request_body.count + (int)length) >= config_request_body_max_size) {
 		return 0;
 	}
 	dynamic_string_append(&my_data->request_body, (char *)at, (int)length, REQUEST_BODY_STR_SIZE);

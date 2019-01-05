@@ -9,6 +9,7 @@ test.txt
 *.a
 *.o
 *.log
+*.pid
 
 my_webroot/v0_2_0/*
 !my_webroot/v0_2_0/form.html

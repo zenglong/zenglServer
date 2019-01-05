@@ -107,8 +107,6 @@ typedef struct _SERVER_CONTENT_TYPE{
 #define DEFAULT_CONFIG_FILE "config.zl" // 当启动zenglServer时，如果没有使用-c命令行参数来指定配置文件名时，就会使用该宏对应的值来作为默认的配置文件名
 #define SERVER_LOG_PIPE_STR_SIZE 1024 // 写入日志的动态字符串的初始化及动态扩容的大小
 #define SHM_MIN_SIZE (300 * 1024) // 如果配置文件中没有设置shm_min_size时，就使用该宏的值作为需要放进共享内存的缓存的最小大小(以字节为单位)
-#define WRITE_TO_PIPE 1 // 子进程统一将日志写入管道中，再由主进程从管道中将日志读取出来并写入日志文件
-#define WRITE_TO_LOG 0  // 主进程的日志信息，则可以直接写入日志文件
 
 // 启动过程中，在没有重定向输出之前，如果发生错误或警告，除了写入日志，还会显示在命令行终端，方便启动时不用通过查看日志就可以发现错误等
 #define WRITE_LOG_WITH_PRINTF(format, ...) write_to_server_log_pipe(WRITE_TO_LOG, format, __VA_ARGS__); \
@@ -131,14 +129,16 @@ int process_max_open_fd_num; // 用于存储进程最多能打开的文件描述
 struct epoll_event * process_epoll_events; // epoll_wait接收到EPOLLIN之类的事件时，会将这些事件写入到该数组中
 long config_debug_mode = 0; // 该全局变量用于存储配置文件中的debug_mode的值，用于判断当前的配置是否处于调试模式
 long server_process_num; // 需要创建的子进程数
-char config_web_root[150];  // 该全局变量用于存储配置文件中的webroot对应的字符串值，也就是web根目录对应的目录名
-char config_zl_debug_log[120]; // 该全局变量用于存储配置文件中的zl_debug_log的值，也就是zengl脚本的调试日志文件，里面存储了脚本对应的虚拟汇编指令，仅用于调试zengl脚本库的BUG时才需要用到
+char config_web_root[FULL_PATH_SIZE];  // 该全局变量用于存储配置文件中的webroot对应的字符串值，也就是web根目录对应的目录名
+char config_zl_debug_log[FULL_PATH_SIZE]; // 该全局变量用于存储配置文件中的zl_debug_log的值，也就是zengl脚本的调试日志文件，里面存储了脚本对应的虚拟汇编指令，仅用于调试zengl脚本库的BUG时才需要用到
 char * webroot; // 该字符串指针指向最终会使用的web根目录名，当配置文件中配置了webroot时，该指针就会指向上面的config_web_root，否则就指向WEB_ROOT_DEFAULT即默认的web根目录名
 char * zl_debug_log; // 该字符串指针指向最终会使用的zl_debug_log的值，当配置文件中设置了zl_debug_log时，就指向上面的config_zl_debug_log，否则就设置为NULL(空指针)
 
 char ** zlsrv_main_argv = NULL;
 
-static char config_session_dir[120]; // session会话目录
+static char * server_logfile = NULL;
+
+static char config_session_dir[FULL_PATH_SIZE]; // session会话目录
 static long config_session_expire; // session会话默认超时时间(以秒为单位)
 static long config_session_cleaner_interval; // session会话文件清理进程的清理时间间隔(以秒为单位)
 
@@ -150,6 +150,14 @@ static long config_zengl_cache_enable; // 是否开启zengl脚本的编译缓存
 
 static long config_shm_enable; // 是否将zengl脚本的编译缓存放入共享内存
 static long config_shm_min_size; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
+
+static long config_verbose = ZL_EXP_TRUE;
+
+long config_request_body_max_size;
+long config_request_header_max_size;
+long config_request_url_max_size;
+
+static char config_pidfile[FULL_PATH_SIZE];
 
 // server_content_types数组中存储了文件名后缀与内容类型之间的对应关系
 static SERVER_CONTENT_TYPE server_content_types[] = {
@@ -568,6 +576,10 @@ int read_from_server_log_pipe()
  */
 int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...)
 {
+	if(config_verbose == ZL_EXP_FALSE) {
+		if(write_to_pipe == WRITE_TO_PIPE)
+			return 0;
+	}
 	if(server_log_pipe_string.str == NULL) {
 		server_log_pipe_string.size = SERVER_LOG_PIPE_STR_SIZE;
 		server_log_pipe_string.str = (char *)malloc(server_log_pipe_string.size * sizeof(char));
@@ -656,6 +668,10 @@ int main(int argc, char * argv[])
 		exit(errno);
 	}
 
+	server_logfile = malloc(strlen(logfile) + 1);
+	strncpy(server_logfile, logfile, strlen(logfile));
+	server_logfile[strlen(logfile)] = '\0';
+
 	//通过fork创建master主进程，该进程将在后台以守护进程的形式一直运行，并通过该进程来创建执行具体任务的child子进程
 	pid_t master_pid = fork();
 	if(master_pid < 0) {
@@ -674,6 +690,24 @@ int main(int argc, char * argv[])
 	if (pipe(server_log_pipefd) == -1) {
 		WRITE_LOG_WITH_PRINTF("pipe() failed [%d] %s \n", errno, strerror(errno));
 		exit(errno);
+	}
+
+	if(URL_PATH_SIZE <= 30) {
+		WRITE_LOG_WITH_PRINTF("the URL_PATH_SIZE: %d is too small, please redefine it.\n", URL_PATH_SIZE);
+		exit(-1);
+	}
+	else if(URL_PATH_SIZE > 4096) {
+		WRITE_LOG_WITH_PRINTF("the URL_PATH_SIZE: %d is too big, please redefine it.\n", URL_PATH_SIZE);
+		exit(-1);
+	}
+
+	if(FULL_PATH_SIZE <= 30) {
+		WRITE_LOG_WITH_PRINTF("the FULL_PATH_SIZE: %d is too small, please redefine it.\n", FULL_PATH_SIZE);
+		exit(-1);
+	}
+	else if(FULL_PATH_SIZE > 4096) {
+		WRITE_LOG_WITH_PRINTF("the FULL_PATH_SIZE: %d is too big, please redefine it.\n", FULL_PATH_SIZE);
+		exit(-1);
 	}
 
 	// 当没有使用-c命令行参数指定配置文件名时，就使用默认的配置文件名
@@ -797,6 +831,30 @@ int main(int argc, char * argv[])
 	if(zenglApi_GetValueAsInt(VM,"shm_min_size", &config_shm_min_size) < 0)
 		config_shm_min_size = SHM_MIN_SIZE;
 
+	if(zenglApi_GetValueAsInt(VM,"verbose", &config_verbose) < 0)
+		config_verbose = ZL_EXP_TRUE;
+
+	if(zenglApi_GetValueAsInt(VM,"request_body_max_size", &config_request_body_max_size) < 0)
+		config_request_body_max_size = REQUEST_BODY_STR_MAX_SIZE;
+
+	if(zenglApi_GetValueAsInt(VM,"request_header_max_size", &config_request_header_max_size) < 0)
+		config_request_header_max_size = REQUEST_HEADER_STR_MAX_SIZE;
+
+	if(zenglApi_GetValueAsInt(VM,"request_url_max_size", &config_request_url_max_size) < 0)
+		config_request_url_max_size = REQUEST_URL_STR_MAX_SIZE;
+
+	char * pidfile;
+	config_pidfile[0] = '\0';
+	if((pidfile = zenglApi_GetValueAsString(VM,"pidfile")) != NULL) {
+		if((strlen(pidfile) + 1) <= sizeof(config_pidfile)) {
+			strncpy(config_pidfile, pidfile, strlen(pidfile));
+			config_pidfile[strlen(pidfile)] = '\0';
+		}
+		else {
+			WRITE_LOG_WITH_PRINTF("warning: pidfile in %s is too long, so no pidfile use\n", config_file);
+		}
+	}
+
 	// 显示出配置文件中定义的配置信息，如果配置文件没有定义这些值，则显示出默认值
 	write_to_server_log_pipe(WRITE_TO_LOG, "run %s complete, config: \n", config_file);
 	write_to_server_log_pipe(WRITE_TO_LOG, "port: %ld process_num: %ld\n", port, server_process_num);
@@ -809,13 +867,38 @@ int main(int argc, char * argv[])
 			config_session_cleaner_interval);
 	// 将远程调试相关的配置，以及是否开启zengl脚本的编译缓存的配置，记录到日志中
 	write_to_server_log_pipe(WRITE_TO_LOG, "remote_debug_enable: %s remote_debugger_ip: %s remote_debugger_port: %ld"
-			" zengl_cache_enable: %s shm_enable: %s shm_min_size: %ld\n",
+			" zengl_cache_enable: %s shm_enable: %s shm_min_size: %ld\n"
+			"verbose: %s request_body_max_size: %ld, request_header_max_size: %ld request_url_max_size: %ld\n"
+			"URL_PATH_SIZE: %d FULL_PATH_SIZE: %d\n",
 			config_remote_debug_enable ? "True" : "False",
 			config_remote_debugger_ip,
 			config_remote_debugger_port,
 			config_zengl_cache_enable ? "True" : "False",
 			config_shm_enable ? "True" : "False",
-			config_shm_min_size);
+			config_shm_min_size,
+			config_verbose ? "True" : "False",
+			config_request_body_max_size,
+			config_request_header_max_size,
+			config_request_url_max_size,
+			URL_PATH_SIZE, FULL_PATH_SIZE);
+
+	if(strlen(config_pidfile) > 0) {
+		write_to_server_log_pipe(WRITE_TO_LOG, "pidfile: %s\n", config_pidfile);
+		char master_pid_str[30];
+		snprintf(master_pid_str, 30, "%d", getpid());
+		int pidfile_fd = open(config_pidfile, O_WRONLY|O_TRUNC|O_CREAT, 0644); // TODO
+		if(pidfile_fd < 0) {
+			WRITE_LOG_WITH_PRINTF("open %s for pidfile failed [%d] %s \n", config_pidfile, errno, strerror(errno));
+		}
+		else {
+			write(pidfile_fd, master_pid_str, strlen(master_pid_str));
+			close(pidfile_fd);
+		}
+	}
+	else {
+		write_to_server_log_pipe(WRITE_TO_LOG, "no pidfile.\n");
+	}
+
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源
 	zenglApi_Close(VM);
 
@@ -1224,7 +1307,28 @@ void sig_terminate_master_callback()
 	close(server_socket_fd);
 	write_to_server_log_pipe(WRITE_TO_LOG, "closed server socket\n===================================\n\n");
 	free(server_log_pipe_string.str);
+	if(server_logfile != NULL) {
+		free(server_logfile);
+	}
+	if(strlen(config_pidfile) > 0) {
+		unlink(config_pidfile);
+	}
 	exit(0);
+}
+
+void sig_usr1_callback()
+{
+	if(server_logfile != NULL) {
+		int new_log_fd = -1;
+		if ((new_log_fd = open(server_logfile, O_WRONLY|O_APPEND|O_CREAT, 0644)) < 0) {
+			write_to_server_log_pipe(WRITE_TO_LOG, "open %s for server_log_fd failed [%d] %s \n", server_logfile,
+					errno, strerror(errno));
+			return ;
+		}
+		close(server_log_fd);
+		server_log_fd = new_log_fd;
+		write_to_server_log_pipe(WRITE_TO_LOG, "reopen %s in sigusr1 \n", server_logfile);
+	}
 }
 
 /**
@@ -1245,6 +1349,9 @@ void register_signals()
 
     server_sig_pairs[++i].signal          = SIGTERM;
     server_sig_pairs[i].action.sa_handler = &sig_terminate_master_callback;
+
+    server_sig_pairs[++i].signal          = SIGUSR1;
+    server_sig_pairs[i].action.sa_handler = &sig_usr1_callback;
 
     /* setting sigcount now is easier than doing it dynamically */
     server_sig_count = ++i;
@@ -1425,8 +1532,12 @@ void routine_close_client_socket(CLIENT_SOCKET_LIST * socket_list, int lst_idx)
 		pthread_mutex_lock(&(my_thread_lock.lock));
 		client_socket_list_free_by_idx(socket_list, lst_idx);
 		epoll_fd_add_count--;
-		write_to_server_log_pipe(WRITE_TO_PIPE, "free socket_list[%d]/list_cnt:%d epoll_fd_add_count:%d pid:%d tid:%d\n", lst_idx,
-				 socket_list->count, epoll_fd_add_count, getpid(), routine_get_tid());
+		if(config_verbose)
+			write_to_server_log_pipe(WRITE_TO_PIPE, "free socket_list[%d]/list_cnt:%d epoll_fd_add_count:%d pid:%d tid:%d\n", lst_idx,
+					 socket_list->count, epoll_fd_add_count, getpid(), routine_get_tid());
+		else
+			write_to_server_log_pipe(WRITE_TO_PIPE_, "free [%d]/%d epoll:%d pid:%d tid:%d\n", lst_idx,
+								 socket_list->count, epoll_fd_add_count, getpid(), routine_get_tid());
 		pthread_mutex_unlock(&(my_thread_lock.lock));
 	}
 }
@@ -1440,7 +1551,7 @@ void routine_close_single_socket(int client_socket_fd)
 		pthread_mutex_lock(&(my_thread_lock.lock));
 		close(client_socket_fd);
 		epoll_fd_add_count--;
-		write_to_server_log_pipe(WRITE_TO_PIPE, "close single socket:%d pid:%d tid:%d\n", client_socket_fd, getpid(), routine_get_tid());
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "close single socket:%d pid:%d tid:%d\n", client_socket_fd, getpid(), routine_get_tid());
 		pthread_mutex_unlock(&(my_thread_lock.lock));
 	}
 }
@@ -1529,8 +1640,16 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	timeinfo = localtime ( &rawtime );
 	char * current_time = asctime (timeinfo);
 	// 将当前时间和客户端套接字对应的描述符给打印出来
-	write_to_server_log_pipe(WRITE_TO_PIPE, "-----------------------------------\n%srecv [client_socket_fd:%d] [lst_idx:%d] [pid:%d] [tid:%d]:",
-					current_time, socket_list->member[lst_idx].client_socket_fd, lst_idx, getpid(), routine_get_tid());
+	if(config_verbose) {
+		write_to_server_log_pipe(WRITE_TO_PIPE, "-----------------------------------\n%srecv [client_socket_fd:%d] [lst_idx:%d] [pid:%d] [tid:%d]:",
+						current_time, socket_list->member[lst_idx].client_socket_fd, lst_idx, getpid(), routine_get_tid());
+	}
+	else {
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "%d/%02d/%02d %02d:%02d:%02d fd:%d idx:%d pid:%d tid:%d | ",
+								(timeinfo->tm_year + 1900), (timeinfo->tm_mon + 1), (timeinfo->tm_mday),
+								timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec,
+								socket_list->member[lst_idx].client_socket_fd, lst_idx, getpid(), routine_get_tid());
+	}
 	write_to_server_log_pipe(WRITE_TO_PIPE, "\n\n");
 	MY_PARSER_DATA * parser_data = &(socket_list->member[lst_idx].parser_data);
 	write_to_server_log_pipe(WRITE_TO_PIPE, "request header: ");
@@ -1548,12 +1667,15 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		}while(1);
 	}
 	write_to_server_log_pipe(WRITE_TO_PIPE, "\n\n");
-	write_to_server_log_pipe(WRITE_TO_PIPE, "url: %s\n", parser_data->request_url.str);
+	if(config_verbose)
+		write_to_server_log_pipe(WRITE_TO_PIPE, "url: %s\n", parser_data->request_url.str);
+	else
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "url: %s | ", parser_data->request_url.str);
 	// 通过http_parser_parse_url来解析url资源路径(包含查询字符串)，该函数会将路径信息和查询字符串信息给解析出来，并将解析结果存储到url_parser中
 	if(http_parser_parse_url(parser_data->request_url.str,
 			strlen(parser_data->request_url.str), 0,
 			&(parser_data->url_parser))) {
-		write_to_server_log_pipe(WRITE_TO_PIPE, "**** failed to parse URL %s ****\n",
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "**** failed to parse URL %s ****\n",
 				socket_list->member[lst_idx].parser_data.request_url.str);
 		routine_close_client_socket(socket_list, lst_idx);
 		return -1;
@@ -1595,7 +1717,10 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		else
 			full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, "/index.html");
 		full_path[full_length] = '\0';
-		write_to_server_log_pipe(WRITE_TO_PIPE, "full_path: %s\n", full_path);
+		if(config_verbose)
+			write_to_server_log_pipe(WRITE_TO_PIPE, "full_path: %s\n", full_path);
+		else
+			write_to_server_log_pipe(WRITE_TO_PIPE_, "full_path: %s | ", full_path);
 		// 以只读方式打开文件
 		doc_fd = open(full_path, O_RDONLY);
 		if(doc_fd > 0) {
@@ -1603,7 +1728,10 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		}
 	}
 	else {
-		write_to_server_log_pipe(WRITE_TO_PIPE, "full_path: %s\n", full_path);
+		if(config_verbose)
+			write_to_server_log_pipe(WRITE_TO_PIPE, "full_path: %s\n", full_path);
+		else
+			write_to_server_log_pipe(WRITE_TO_PIPE_, "full_path: %s | ", full_path);
 		// 如果要访问的文件是以.zl结尾的，就将该文件当做zengl脚本来进行编译执行
 		if(full_length > 3 && S_ISREG(filestatus.st_mode) && (strncmp(full_path + (full_length - 3), ".zl", 3) == 0)) {
 			// my_data是传递给zengl脚本的额外数据，里面包含了客户端套接字等可能需要用到的信息
@@ -1671,7 +1799,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			if(zenglApi_Run(VM, full_path) == -1) //编译执行zengl脚本
 			{
 				// 如果执行失败，则显示错误信息，并抛出500内部错误给客户端
-				write_to_server_log_pipe(WRITE_TO_PIPE, "zengl run <%s> failed: %s\n",full_path, zenglApi_GetErrorString(VM));
+				write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run <%s> failed: %s\n",full_path, zenglApi_GetErrorString(VM));
 				client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 500 Internal Server Error\r\n", 36);
 				dynamic_string_append(&my_data.response_body, "500 Internal Server Error", 25, 200);
 				status_code = 500;
@@ -1803,10 +1931,13 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	}
 	// 在日志中输出响应状态码和响应主体数据的长度
 	if(is_custom_status_code)
-		write_to_server_log_pipe(WRITE_TO_PIPE, "status: customize, ");
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "status: customize, ");
 	else
-		write_to_server_log_pipe(WRITE_TO_PIPE, "status: %d, ", status_code);
-	write_to_server_log_pipe(WRITE_TO_PIPE, "content length: %d\n", content_length);
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "status: %d, ", status_code);
+	if(config_verbose)
+		write_to_server_log_pipe(WRITE_TO_PIPE, "content length: %d\n", content_length);
+	else
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "length: %d | ", content_length);
 	// 通过client_socket_list_log_response_header函数，在日志中记录完整的响应头信息
 	client_socket_list_log_response_header(socket_list, lst_idx);
 	return lst_idx;

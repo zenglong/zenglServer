@@ -29,3 +29,11 @@ zengl_cache_enable = FALSE; // 是否开启zengl脚本的编译缓存，默认�
 
 shm_enable = FALSE; // 是否将zengl脚本的编译缓存放入共享内存
 shm_min_size = 300 * KBYTE; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
+
+verbose = TRUE;
+
+request_body_max_size = 200 * KBYTE;
+request_header_max_size = 5 * KBYTE;
+request_url_max_size = 1024;
+
+pidfile = "zenglServer.pid";

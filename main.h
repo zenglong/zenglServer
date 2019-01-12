@@ -16,12 +16,14 @@
 #include <stdio.h>
 
 #define ZLSERVER_MAJOR_VERSION 0  // zenglServer 主版本号
-#define ZLSERVER_MINOR_VERSION 16 // zenglServer 子版本号
+#define ZLSERVER_MINOR_VERSION 17 // zenglServer 子版本号
 #define ZLSERVER_REVISION 0       // zenglServer 修正版本号
 
+// 可以在make编译程序时，自定义URL_PATH_SIZE的值，如果没有进行过自定义，则使用默认值：120
 #ifndef URL_PATH_SIZE
 	#define URL_PATH_SIZE 120    // main.c中url_path可以容纳的字符数
 #endif
+// 可以在make编译程序时，自定义FULL_PATH_SIZE的值，如果没有进行过自定义，则使用默认值：200
 #ifndef FULL_PATH_SIZE
 	#define FULL_PATH_SIZE 200   // main.c中full_path完整路径可以容纳的字符数
 #endif
@@ -38,7 +40,7 @@
 
 #define WRITE_TO_PIPE 1 // 子进程统一将日志写入管道中，再由主进程从管道中将日志读取出来并写入日志文件
 #define WRITE_TO_LOG 0  // 主进程的日志信息，则可以直接写入日志文件
-#define WRITE_TO_PIPE_ 2
+#define WRITE_TO_PIPE_ 2 // 当使用了精简日志模式时，就只会记录WRITE_TO_LOG和WRITE_TO_PIPE_的日志信息
 
 // 在解析请求头信息中的field和value时，会用到的枚举状态
 typedef enum _ON_HEADER_STATUS{

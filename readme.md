@@ -141,6 +141,26 @@ curl module is enabled!!!
 [parallels@localhost zenglServerTest]$
 ```
 
+### 自定义URL_PATH_SIZE和FULL_PATH_SIZE宏对应的值
+
+从v0.17.0版本开始，在编译时，可以自定义main.h头文件中的URL_PATH_SIZE和FULL_PATH_SIZE宏对应的值，只要在make命令后面加入URL_PATH_SIZE=xxx和FULL_PATH_SIZE=xxx即可(xxx表示需要自定义的数值)：
+
+```
+[parallels@localhost zenglServerTest]$ make URL_PATH_SIZE=200 FULL_PATH_SIZE=300 USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes
+...................................................
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c .....  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a -D URL_PATH_SIZE=200 -D FULL_PATH_SIZE=300 -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand` -DUSE_PCRE `pcre-config --cflags --libs` -DUSE_CURL `curl-config --cflags --libs`
+
+mysql module is enabled!!!
+magick module is enabled!!!
+pcre module is enabled!!!
+curl module is enabled!!!
+[parallels@localhost zenglServerTest]$ 
+```
+
+当处于详细日志模式时(当配置文件中的verbose为TRUE时)，可以在日志中看到每个请求的url_path和full_path，URL_PATH_SIZE可以控制url_path所允许的最大长度(最多可以容纳多少个字符)，FULL_PATH_SIZE则可以控制full_path所允许的最大长度，此外，很多模块函数中也是用FULL_PATH_SIZE作为文件路径的最大长度。
+
+如果没有在make命令中自定义URL_PATH_SIZE和FULL_PATH_SIZE的话，URL_PATH_SIZE的默认值会是120，FULL_PATH_SIZE的默认值则是200。在自定义这两个宏值时，自定义的值必须大于30，且小于等于4096。
+
 ## 使用
 
 在根目录中，有一个config.zl的默认配置文件(使用zengl脚本语法编写)，该配置文件里定义了zenglServer需要绑定的端口号，需要启动的进程数等：
@@ -177,6 +197,15 @@ zengl_cache_enable = FALSE; // 是否开启zengl脚本的编译缓存，默认�
 
 shm_enable = FALSE; // 是否将zengl脚本的编译缓存放入共享内存
 shm_min_size = 300 * KBYTE; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
+
+verbose = TRUE; // 使用详细日志模式，还是精简日志模式，默认是TRUE即详细日志模式，设置为FALSE可以切换到精简日志模式，在详细日志模式中，会将每个请求的请求头和响应头都记录到日志中
+
+request_body_max_size = 200 * KBYTE; // 设置每个请求的主体数据所允许的最大字节值
+request_header_max_size = 5 * KBYTE; // 设置请求头所允许的最大字节值
+request_url_max_size = 1024; // 设置url资源路径(包括请求参数在内)所允许的最大字符数
+
+pidfile = "zenglServer.pid"; // 设置记录主进程的进程ID的文件名(该文件名可以是相对于当前工作目录的路径)
+
 ```
 
 在编译成功后，直接运行生成好的zenglServer可执行文件即可(从v0.4.0版本开始，zenglServer默认以守护进程模式启动，并采用epoll方式来处理请求)：
@@ -196,6 +225,9 @@ port: 8083 process_num: 1
 webroot: my_webroot
 session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
 remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999 zengl_cache_enable: False shm_enable: False shm_min_size: 307200
+verbose: True request_body_max_size: 204800, request_header_max_size: 5120 request_url_max_size: 1024
+URL_PATH_SIZE: 120 FULL_PATH_SIZE: 200
+pidfile: zenglServer.pid
 bind done
 accept sem initialized.
 process_max_open_fd_num: 1024
@@ -299,6 +331,12 @@ closed server socket
 
 可以在logfile中看到Killing children以及shutting down之类的退出信息。
 
+从v0.17.0版本开始，增加了pidfile配置，可以指定用于存储主进程的进程ID的文件，config.zl中pidfile默认的值为zenglServer.pid，可以在kill主进程时，直接使用该文件，这样就不用去手动查询和输入主进程的ID了：
+
+```
+zengl@zengl-ubuntu:~/zenglServer$ kill `cat zenglServer.pid`
+```
+
 zenglServer有几个可选的命令行参数，可以使用-h查看帮助信息：
 
 ```
@@ -315,8 +353,8 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 ```
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -v
-zenglServer version: v0.11.0
-zengl language version: v1.8.1
+zenglServer version: v0.17.0
+zengl language version: v1.8.2
 zengl@zengl-ubuntu:~/zenglServer$ ./zenglServer -c config.zl
 zengl@zengl-ubuntu:~/zenglServer$ tail -f logfile 
 use config: config.zl
@@ -348,6 +386,89 @@ create master process for daemon [pid:9939]
 use config: config.zl
 ......................................
 zengl@zengl-ubuntu:~/zenglServer$ 
+```
+
+## 精简日志模式
+
+从v0.17.0版本开始，可以使用精简日志模式，只需将配置文件中的verbose设置为FALSE即可：
+
+```
+def TRUE 1;
+def FALSE 0;
+def KBYTE 1024;
+
+....................................................
+
+verbose = FALSE; // 使用详细日志模式，还是精简日志模式，默认是TRUE即详细日志模式，设置为FALSE可以切换到精简日志模式，在详细日志模式中，会将每个请求的请求头和响应头都记录到日志中
+
+....................................................
+
+```
+
+在精简日志模式下，日志中只会记录每个请求的url之类的路径信息，不会去记录每个请求的请求头和响应头信息：
+
+```
+zengl@zengl-ubuntu:~/zenglServer$ tail -n 30 logfile
+....................................................
+create master process for daemon [pid:7159] 
+use default config: config.zl
+*** config is in debug mode ***
+run config.zl complete, config: 
+port: 8083 process_num: 1
+webroot: my_webroot
+session_dir: my_sessions session_expire: 1440 cleaner_interval: 3600
+remote_debug_enable: False remote_debugger_ip: 127.0.0.1 remote_debugger_port: 9999 zengl_cache_enable: False shm_enable: False shm_min_size: 307200
+verbose: False request_body_max_size: 204800, request_header_max_size: 5120 request_url_max_size: 1024
+URL_PATH_SIZE: 200 FULL_PATH_SIZE: 300
+pidfile: zenglServer.pid
+bind done
+accept sem initialized.
+process_max_open_fd_num: 1024 
+Master: Spawning child(0) [pid 7160] 
+Master: Spawning cleaner [pid 7163] 
+2019/01/12 16:27:31 fd:8 idx:0 pid:7160 tid:7162 | url: /v0_15_0/test.zl | full_path: my_webroot/v0_15_0/test.zl | status: 200, length: 1367 | free [0]/0 epoll:1 pid:7160 tid:7162
+2019/01/12 16:27:33 fd:9 idx:0 pid:7160 tid:7162 | url: /favicon.ico | full_path: my_webroot/favicon.ico | status: 200, length: 67646 | free [0]/0 epoll:0 pid:7160 tid:7162
+2019/01/12 16:27:34 fd:10 idx:0 pid:7160 tid:7162 | url: /v0_5_0/show_header.zl | full_path: my_webroot/v0_5_0/show_header.zl | status: 200, length: 647 | free [0]/0 epoll:1 pid:7160 tid:7162
+2019/01/12 16:27:34 fd:8 idx:0 pid:7160 tid:7162 | url: /favicon.ico | full_path: my_webroot/favicon.ico | status: 200, length: 67646 | free [0]/0 epoll:0 pid:7160 tid:7162
+2019/01/12 16:28:52 fd:9 idx:0 pid:7160 tid:7162 | url: /v0_5_0/show_header.zl | full_path: my_webroot/v0_5_0/show_header.zl | status: 200, length: 626 | free [0]/0 epoll:1 pid:7160 tid:7162
+zengl@zengl-ubuntu:~/zenglServer$ 
+```
+
+## 设置允许上传的文件大小
+
+从v0.17.0版本开始，在配置文件中增加了request_body_max_size的配置，该配置用于设置每个请求的主体数据所允许的最大字节值。
+
+当需要上传较大的文件时，就需要调整该配置值，例如，假设配置值是200K，但是上传文件的大小是300K，那么上传就会失败。因为上传文件的请求对应的主体数据的字节大小大于设置的200K，此时，就需要将此配置根据情况调大，例如调到400K等，这样就可以上传较大的文件了。
+
+配置文件中的request_body_max_size的默认值是200K字节：
+
+```
+def TRUE 1;
+def FALSE 0;
+def KBYTE 1024;
+
+.......................................................
+
+request_body_max_size = 200 * KBYTE; // 设置每个请求的主体数据所允许的最大字节值
+.......................................................
+```
+
+## 设置请求头允许的最大字节值
+
+从v0.17.0版本开始，在配置文件中增加了request_header_max_size的配置，该配置用于设置请求头所允许的最大字节值，当请求中可能包含较大的请求头时，就需要调整该配置的值。
+
+例如，当请求头中包含很多Cookie信息时，就会导致请求头比较大，此时就需要适当的调大该配置的值，这样，服务端才能记录到完整的请求头信息。
+
+配置文件中的request_header_max_size的默认值是5K字节：
+
+```
+def TRUE 1;
+def FALSE 0;
+def KBYTE 1024;
+
+.......................................................
+request_header_max_size = 5 * KBYTE; // 设置请求头所允许的最大字节值
+.......................................................
 ```
 
 ## 远程调试
@@ -544,6 +665,8 @@ def KBYTE 1024;
 
 shm_enable = FALSE; // 是否将zengl脚本的编译缓存放入共享内存
 shm_min_size = 300 * KBYTE; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
+
+.................................
 ```
 
 上面还有个配置shm_min_size是需要放入共享内存的缓存的最小大小，默认是300K字节，也就是当编译缓存的大小超过300K时，才会放入共享内存，小于300K的还是使用文件缓存的方式。如果某个缓存使用了共享内存，那么在日志中可以看到和共享内存相关的信息：
@@ -565,6 +688,30 @@ closed accept_sem
 shutdowned server socket
 closed server socket
 ===================================
+```
+
+## 日志分割
+
+从v0.17.0版本开始，增加了对SIGUSR1信号的处理，在主进程接收到该信号时，会重新打开日志文件，同时增加了log_backup.sh脚本，该脚本就利用SIGUSR1信号来实现日志分割：
+
+```
+zengl@zengl-ubuntu:~/zenglServer$ ./log_backup.sh
+usage: ./log_backup.sh logfile_name pidfile_name
+zengl@zengl-ubuntu:~/zenglServer$ ./log_backup.sh logfile zenglServer.pid
+zengl@zengl-ubuntu:~/zenglServer$ ls -l log_backup
+总用量 0
+-rw-r--r--. 1 zengl zengl 10909 1月  12 16:03 logfile_20190112.log
+zengl@zengl-ubuntu:~/zenglServer$ 
+```
+
+log_backup.sh脚本后面需要跟随日志文件名，例如上面的logfile，然后还要跟随pidfile对应的文件名，例如上面的zenglServer.pid，该脚本会将logfile备份到log_backup目录中。
+
+同时通过SIGUSR1信号让主进程重新打开一个新的日志文件。可以将脚本加入计划任务，从而实现按天来分割日志：
+
+```
+zengl@zengl-ubuntu:~/zenglServer$ crontab -l
+18 16 * * * cd /home/zengl/zenglServer && ./log_backup.sh logfile zenglServer.pid
+zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
 - zenglServer是在Ubuntu 16.04 LTS x86-64(GCC版本号为：5.4.0)，Ubuntu 17.04 x86-64(GCC版本号为：6.3.0)中进行的开发测试，并在CentOS 5.8, 6.x, 7.x中进行了简单的测试。

@@ -30,10 +30,11 @@ zengl_cache_enable = FALSE; // 是否开启zengl脚本的编译缓存，默认�
 shm_enable = FALSE; // 是否将zengl脚本的编译缓存放入共享内存
 shm_min_size = 300 * KBYTE; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
 
-verbose = TRUE;
+verbose = TRUE; // 使用详细日志模式，还是精简日志模式，默认是TRUE即详细日志模式，设置为FALSE可以切换到精简日志模式，在详细日志模式中，会将每个请求的请求头和响应头都记录到日志中
 
-request_body_max_size = 200 * KBYTE;
-request_header_max_size = 5 * KBYTE;
-request_url_max_size = 1024;
+request_body_max_size = 200 * KBYTE; // 设置每个请求的主体数据所允许的最大字节值
+request_header_max_size = 5 * KBYTE; // 设置请求头所允许的最大字节值
+request_url_max_size = 1024; // 设置url资源路径(包括请求参数在内)所允许的最大字符数
 
-pidfile = "zenglServer.pid";
+pidfile = "zenglServer.pid"; // 设置记录主进程的进程ID的文件名(该文件名可以是相对于当前工作目录的路径)
+

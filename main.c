@@ -134,9 +134,9 @@ char config_zl_debug_log[FULL_PATH_SIZE]; // 该全局变量用于存储配置�
 char * webroot; // 该字符串指针指向最终会使用的web根目录名，当配置文件中配置了webroot时，该指针就会指向上面的config_web_root，否则就指向WEB_ROOT_DEFAULT即默认的web根目录名
 char * zl_debug_log; // 该字符串指针指向最终会使用的zl_debug_log的值，当配置文件中设置了zl_debug_log时，就指向上面的config_zl_debug_log，否则就设置为NULL(空指针)
 
-char ** zlsrv_main_argv = NULL;
+char ** zlsrv_main_argv = NULL; // 将main函数的argv参数指针保存为全局变量，以供zlsrv_setproctitle.c文件使用
 
-static char * server_logfile = NULL;
+static char * server_logfile = NULL; // 将日志文件名保存到server_logfile，方便在SIGUSR1信号处理中，通过文件名重新打开日志文件
 
 static char config_session_dir[FULL_PATH_SIZE]; // session会话目录
 static long config_session_expire; // session会话默认超时时间(以秒为单位)
@@ -151,12 +151,22 @@ static long config_zengl_cache_enable; // 是否开启zengl脚本的编译缓存
 static long config_shm_enable; // 是否将zengl脚本的编译缓存放入共享内存
 static long config_shm_min_size; // 需要放进共享内存的缓存的最小大小，只有超过这个大小的缓存才放入共享内存中，以字节为单位
 
+// 是否使用详细的日志记录模式，在详细模式下，会将每个请求的请求头和响应头等都记录到日志中，默认就是详细模式
+// 如果将配置文件中的verbose设置为FALSE，就是精简模式，该模式下，只会记录请求的路径信息，而不会记录具体的请求头和响应头等
 static long config_verbose = ZL_EXP_TRUE;
 
+// 存储配置文件中的request_body_max_size的配置值，该配置用于设置每个请求的主体数据所允许的最大字节值
+// 当需要上传较大的文件时，就需要调整该配置值，例如，假设配置值是200K，但是上传文件的大小是300K，那么上传就会失败，
+// 因为上传文件的请求对应的主体数据的字节大小大于设置的200K，此时，就需要将此配置根据情况调大，例如调到400K等，这样就可以上传较大的文件了
 long config_request_body_max_size;
+// 存储配置文件中的request_header_max_size的配置值，该配置用于设置请求头所允许的最大字节值，当请求中可能包含较大的请求头时，
+// 就需要调整该配置的值，例如，当请求头中包含很多Cookie信息时，就会导致请求头比较大，此时就可以适当的调大该配置的值，
+// 这样，服务端就能记录到完整的请求头信息了
 long config_request_header_max_size;
+// 存储配置文件中的request_url_max_size的配置值，该配置用于设置url资源路径(包括请求参数在内)所允许的最大字符数
 long config_request_url_max_size;
 
+// 存储配置文件中的pidfile的配置值，该配置用于设置记录主进程的进程ID的文件名(该文件名可以是相对于当前工作目录的路径)
 static char config_pidfile[FULL_PATH_SIZE];
 
 // server_content_types数组中存储了文件名后缀与内容类型之间的对应关系
@@ -576,6 +586,7 @@ int read_from_server_log_pipe()
  */
 int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...)
 {
+	// 当配置文件中的verbose值为FALSE时(即开启精简日志模式时)，就不在日志中记录WRITE_TO_PIPE的信息，这些信息大部分是方便调试开发的信息
 	if(config_verbose == ZL_EXP_FALSE) {
 		if(write_to_pipe == WRITE_TO_PIPE)
 			return 0;
@@ -668,6 +679,7 @@ int main(int argc, char * argv[])
 		exit(errno);
 	}
 
+	// 将日志文件名保存到server_logfile变量所指向的字符串中
 	server_logfile = malloc(strlen(logfile) + 1);
 	strncpy(server_logfile, logfile, strlen(logfile));
 	server_logfile[strlen(logfile)] = '\0';
@@ -692,6 +704,7 @@ int main(int argc, char * argv[])
 		exit(errno);
 	}
 
+	// 当通过make命令设置自定义的URL_PATH_SIZE时，如果设置的值小于等于30，或者大于4096时，就提示需要重新设置，并退出程序
 	if(URL_PATH_SIZE <= 30) {
 		WRITE_LOG_WITH_PRINTF("the URL_PATH_SIZE: %d is too small, please redefine it.\n", URL_PATH_SIZE);
 		exit(-1);
@@ -701,6 +714,7 @@ int main(int argc, char * argv[])
 		exit(-1);
 	}
 
+	// 当通过make命令设置自定义的FULL_PATH_SIZE时，如果设置的值小于等于30，或者大于4096时，就提示需要重新设置，并退出程序
 	if(FULL_PATH_SIZE <= 30) {
 		WRITE_LOG_WITH_PRINTF("the FULL_PATH_SIZE: %d is too small, please redefine it.\n", FULL_PATH_SIZE);
 		exit(-1);
@@ -831,20 +845,26 @@ int main(int argc, char * argv[])
 	if(zenglApi_GetValueAsInt(VM,"shm_min_size", &config_shm_min_size) < 0)
 		config_shm_min_size = SHM_MIN_SIZE;
 
+	// 获取配置文件中设置的verbose的值，该配置表示是使用详细日志模式，还是精简日志模式，默认是TRUE即详细日志模式，
+	// 设置为FALSE可以切换到精简日志模式，在详细日志模式中，会将每个请求的请求头和响应头都记录到日志中
 	if(zenglApi_GetValueAsInt(VM,"verbose", &config_verbose) < 0)
 		config_verbose = ZL_EXP_TRUE;
 
+	// 获取配置文件中设置的request_body_max_size的值，用于设置每个请求的主体数据所允许的最大字节值
 	if(zenglApi_GetValueAsInt(VM,"request_body_max_size", &config_request_body_max_size) < 0)
 		config_request_body_max_size = REQUEST_BODY_STR_MAX_SIZE;
 
+	// 获取配置文件中设置的request_header_max_size的值，用于设置每个请求头所允许的最大字节值
 	if(zenglApi_GetValueAsInt(VM,"request_header_max_size", &config_request_header_max_size) < 0)
 		config_request_header_max_size = REQUEST_HEADER_STR_MAX_SIZE;
 
+	// 获取配置文件中设置的request_url_max_size的值，用于设置url资源路径(包括请求参数在内)所允许的最大字符数
 	if(zenglApi_GetValueAsInt(VM,"request_url_max_size", &config_request_url_max_size) < 0)
 		config_request_url_max_size = REQUEST_URL_STR_MAX_SIZE;
 
 	char * pidfile;
 	config_pidfile[0] = '\0';
+	// 获取配置文件中设置的pidfile的值，用于设置记录主进程的进程ID的文件名(该文件名可以是相对于当前工作目录的路径)
 	if((pidfile = zenglApi_GetValueAsString(VM,"pidfile")) != NULL) {
 		if((strlen(pidfile) + 1) <= sizeof(config_pidfile)) {
 			strncpy(config_pidfile, pidfile, strlen(pidfile));
@@ -865,7 +885,7 @@ int main(int argc, char * argv[])
 	write_to_server_log_pipe(WRITE_TO_LOG, "session_dir: %s session_expire: %ld cleaner_interval: %ld\n", config_session_dir,
 			config_session_expire,
 			config_session_cleaner_interval);
-	// 将远程调试相关的配置，以及是否开启zengl脚本的编译缓存的配置，记录到日志中
+	// 将远程调试相关的配置，以及是否开启zengl脚本的编译缓存等配置，记录到日志中
 	write_to_server_log_pipe(WRITE_TO_LOG, "remote_debug_enable: %s remote_debugger_ip: %s remote_debugger_port: %ld"
 			" zengl_cache_enable: %s shm_enable: %s shm_min_size: %ld\n"
 			"verbose: %s request_body_max_size: %ld, request_header_max_size: %ld request_url_max_size: %ld\n"
@@ -882,6 +902,7 @@ int main(int argc, char * argv[])
 			config_request_url_max_size,
 			URL_PATH_SIZE, FULL_PATH_SIZE);
 
+	// 如果设置了pidfile文件，则将主进程的进程ID记录到pidfile所指定的文件中
 	if(strlen(config_pidfile) > 0) {
 		write_to_server_log_pipe(WRITE_TO_LOG, "pidfile: %s\n", config_pidfile);
 		char master_pid_str[30];
@@ -1310,12 +1331,17 @@ void sig_terminate_master_callback()
 	if(server_logfile != NULL) {
 		free(server_logfile);
 	}
+	// 在退出程序时，自动清理掉pidfile对应的文件(该文件中记录了主进程的进程ID)
 	if(strlen(config_pidfile) > 0) {
 		unlink(config_pidfile);
 	}
 	exit(0);
 }
 
+/**
+ * 当主进程接收到SIGUSR1信号时，会触发的信号处理函数，该信号处理函数会重新打开日志文件，
+ * 通过该信号，可以实现在不重启程序的情况下，进行日志的备份和分割等操作
+ */
 void sig_usr1_callback()
 {
 	if(server_logfile != NULL) {
@@ -1350,6 +1376,7 @@ void register_signals()
     server_sig_pairs[++i].signal          = SIGTERM;
     server_sig_pairs[i].action.sa_handler = &sig_terminate_master_callback;
 
+    // 将SIGUSR1信号和sig_usr1_callback信号处理函数进行绑定
     server_sig_pairs[++i].signal          = SIGUSR1;
     server_sig_pairs[i].action.sa_handler = &sig_usr1_callback;
 

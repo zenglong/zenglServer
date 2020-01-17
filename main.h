@@ -42,6 +42,8 @@
 #define WRITE_TO_LOG 0  // 主进程的日志信息，则可以直接写入日志文件
 #define WRITE_TO_PIPE_ 2 // 当使用了精简日志模式时，就只会记录WRITE_TO_LOG和WRITE_TO_PIPE_的日志信息
 
+#define MAIN_RUN_IN_CMD_FD -10011
+
 // 在解析请求头信息中的field和value时，会用到的枚举状态
 typedef enum _ON_HEADER_STATUS{
 	ON_HEADER_STATUS_ENUM_NONE,

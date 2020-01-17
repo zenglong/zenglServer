@@ -64,6 +64,8 @@ void * routine_epoll_append_fd(void * arg);
 void *routine(void *arg);
 static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int lst_idx);
 
+static int main_run_cmd(char * run_cmd);
+
 // 由于配置文件是使用zengl脚本语法编写的，当在配置文件中使用print指令时，就会调用下面的回调函数，去执行具体的打印操作
 ZL_EXP_INT main_config_run_print(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCount,ZL_EXP_VOID * VM_ARG);
 
@@ -137,6 +139,8 @@ char * zl_debug_log; // 该字符串指针指向最终会使用的zl_debug_log�
 char ** zlsrv_main_argv = NULL; // 将main函数的argv参数指针保存为全局变量，以供zlsrv_setproctitle.c文件使用
 
 static char * server_logfile = NULL; // 将日志文件名保存到server_logfile，方便在SIGUSR1信号处理中，通过文件名重新打开日志文件
+
+static ZL_EXP_BOOL is_run_in_cmd = ZL_EXP_FALSE;
 
 static char config_session_dir[FULL_PATH_SIZE]; // session会话目录
 static long config_session_expire; // session会话默认超时时间(以秒为单位)
@@ -591,6 +595,9 @@ int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...
 		if(write_to_pipe == WRITE_TO_PIPE)
 			return 0;
 	}
+	if(is_run_in_cmd == ZL_EXP_TRUE) {
+		write_to_pipe = WRITE_TO_LOG;
+	}
 	if(server_log_pipe_string.str == NULL) {
 		server_log_pipe_string.size = SERVER_LOG_PIPE_STR_SIZE;
 		server_log_pipe_string.str = (char *)malloc(server_log_pipe_string.size * sizeof(char));
@@ -636,9 +643,10 @@ int main(int argc, char * argv[])
 	int o;
 	char * config_file = NULL;
 	char * logfile = NULL;
+	char * run_cmd = NULL;
 	zlsrv_main_argv = argv;
 	// 通过getopt的C库函数来获取用户在命令行中输入的参数，并根据这些参数去执行不同的操作
-	while (-1 != (o = getopt(argc, argv, "vhc:l:"))) {
+	while (-1 != (o = getopt(argc, argv, "vhc:l:r:"))) {
 		switch(o){
 		// 当使用-v参数时，会将zenglServer的版本号信息和所使用的zengl脚本语言的版本号信息给显示出来，然后直接返回以退出程序，版本号中会显示主版本号，子版本号和修正版本号
 		case 'v':
@@ -655,12 +663,21 @@ int main(int argc, char * argv[])
 		case 'l':
 			logfile = optarg;
 			break;
+		case 'r':
+			run_cmd = optarg;
+			is_run_in_cmd = ZL_EXP_TRUE;
+			if(strlen(run_cmd) == 0) {
+				printf("please set script url for -r option\n");
+				exit(-1);
+			}
+			break;
 		// 当使用-h参数时，会显示出帮助信息，然后直接返回以退出程序
 		case 'h':
 			printf("usage: ./zenglServer [options]\n" \
 					"-v                  show version\n" \
 					"-c <config file>    set config file\n" \
 					"-l <logfile>        set logfile\n" \
+					"-r <script_url>     set script url(include query params) for cmd\n" \
 					"-h                  show this help\n");
 			return 0;
 		default:
@@ -685,17 +702,22 @@ int main(int argc, char * argv[])
 	server_logfile[strlen(logfile)] = '\0';
 
 	//通过fork创建master主进程，该进程将在后台以守护进程的形式一直运行，并通过该进程来创建执行具体任务的child子进程
-	pid_t master_pid = fork();
-	if(master_pid < 0) {
-		WRITE_LOG_WITH_PRINTF("failed to create master process [%d] %s \n", errno, strerror(errno));
-		// 创建master进程失败，直接退出
-		exit(-1);
+	if(run_cmd == NULL) {
+		pid_t master_pid = fork();
+		if(master_pid < 0) {
+			WRITE_LOG_WITH_PRINTF("failed to create master process [%d] %s \n", errno, strerror(errno));
+			// 创建master进程失败，直接退出
+			exit(-1);
+		}
+		else if(master_pid > 0) {
+			// 记录master主进程的进程ID
+			write_to_server_log_pipe(WRITE_TO_LOG, "create master process for daemon [pid:%d] \n", master_pid);
+			// 创建完master进程后，直接返回以退出当前进程
+			return 0;
+		}
 	}
-	else if(master_pid > 0) {
-		// 记录master主进程的进程ID
-		write_to_server_log_pipe(WRITE_TO_LOG, "create master process for daemon [pid:%d] \n", master_pid);
-		// 创建完master进程后，直接返回以退出当前进程
-		return 0;
+	else {
+		write_to_server_log_pipe(WRITE_TO_LOG, "**--------- cmd begin ---------***\ncreate master process for cmd [pid:%d] \n", getpid());
 	}
 
 	// 创建日志用的管道，子进程中的日志信息会先写入管道，再由主进程统一从管道中读取出来，并写入日志文件中
@@ -903,26 +925,35 @@ int main(int argc, char * argv[])
 			URL_PATH_SIZE, FULL_PATH_SIZE);
 
 	// 如果设置了pidfile文件，则将主进程的进程ID记录到pidfile所指定的文件中
-	if(strlen(config_pidfile) > 0) {
-		write_to_server_log_pipe(WRITE_TO_LOG, "pidfile: %s\n", config_pidfile);
-		char master_pid_str[30];
-		snprintf(master_pid_str, 30, "%d", getpid());
-		int pidfile_fd = open(config_pidfile, O_WRONLY|O_TRUNC|O_CREAT, 0644); // TODO
-		if(pidfile_fd < 0) {
-			WRITE_LOG_WITH_PRINTF("open %s for pidfile failed [%d] %s \n", config_pidfile, errno, strerror(errno));
+	if(run_cmd == NULL) {
+		if(strlen(config_pidfile) > 0) {
+			write_to_server_log_pipe(WRITE_TO_LOG, "pidfile: %s\n", config_pidfile);
+			char master_pid_str[30];
+			snprintf(master_pid_str, 30, "%d", getpid());
+			int pidfile_fd = open(config_pidfile, O_WRONLY|O_TRUNC|O_CREAT, 0644); // TODO
+			if(pidfile_fd < 0) {
+				WRITE_LOG_WITH_PRINTF("open %s for pidfile failed [%d] %s \n", config_pidfile, errno, strerror(errno));
+			}
+			else {
+				write(pidfile_fd, master_pid_str, strlen(master_pid_str));
+				close(pidfile_fd);
+			}
 		}
 		else {
-			write(pidfile_fd, master_pid_str, strlen(master_pid_str));
-			close(pidfile_fd);
+			write_to_server_log_pipe(WRITE_TO_LOG, "no pidfile.\n");
 		}
-	}
-	else {
-		write_to_server_log_pipe(WRITE_TO_LOG, "no pidfile.\n");
 	}
 
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源
 	zenglApi_Close(VM);
 
+	if(run_cmd != NULL)
+	{
+		int cmd_ret = main_run_cmd(run_cmd);
+		write_to_server_log_pipe(WRITE_TO_LOG, "**--------- cmd end return:%d ---------***\n\n", cmd_ret);
+		return cmd_ret;
+	}
+	else
 	{
 		char master_process_name[255] = {0};
 		char cwd[255] = {0};
@@ -1968,4 +1999,167 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	// 通过client_socket_list_log_response_header函数，在日志中记录完整的响应头信息
 	client_socket_list_log_response_header(socket_list, lst_idx);
 	return lst_idx;
+}
+
+static int main_run_cmd(char * run_cmd)
+{
+	time_t rawtime;
+	struct tm * timeinfo;
+	time ( &rawtime );
+	timeinfo = localtime ( &rawtime );
+	char * current_time = asctime (timeinfo);
+	write_to_server_log_pipe(WRITE_TO_PIPE_, "%d/%02d/%02d %02d:%02d:%02d pid:%d \n ",
+							(timeinfo->tm_year + 1900), (timeinfo->tm_mon + 1), (timeinfo->tm_mday),
+							timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec,
+							getpid());
+	write_to_server_log_pipe(WRITE_TO_PIPE_, "\n\n");
+	MY_PARSER_DATA my_parser_data = {0};
+	MY_PARSER_DATA * parser_data = &my_parser_data;
+	char str_null[1];
+	str_null[0] = STR_NULL;
+	dynamic_string_append(&parser_data->request_url, run_cmd, (int)strlen(run_cmd), REQUEST_URL_STR_SIZE);
+	dynamic_string_append(&parser_data->request_url, str_null, 1, REQUEST_URL_STR_SIZE);
+	write_to_server_log_pipe(WRITE_TO_PIPE_, "url: %s\n", parser_data->request_url.str);
+	// 通过http_parser_parse_url来解析url资源路径(包含查询字符串)，该函数会将路径信息和查询字符串信息给解析出来，并将解析结果存储到url_parser中
+	if(http_parser_parse_url(parser_data->request_url.str,
+			strlen(parser_data->request_url.str), 0,
+			&(parser_data->url_parser))) {
+		printf("**** failed to parse URL %s ****\n", parser_data->request_url.str);
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "**** failed to parse URL %s ****\n", parser_data->request_url.str);
+		return -1;
+	}
+
+	char url_path[URL_PATH_SIZE];
+	int tmp_len;
+	// 将解析出来的url路径存储到url_path中
+	if((parser_data->url_parser.field_set & (1 << UF_PATH)) && (parser_data->url_parser.field_data[UF_PATH].len > 0)) {
+		if(parser_data->url_parser.field_data[UF_PATH].len >= URL_PATH_SIZE)
+			tmp_len = URL_PATH_SIZE - 1;
+		else
+			tmp_len = parser_data->url_parser.field_data[UF_PATH].len;
+		strncpy(url_path, parser_data->request_url.str + parser_data->url_parser.field_data[UF_PATH].off, tmp_len);
+		url_path[tmp_len] = STR_NULL;
+	}
+	else {
+		url_path[0] = '/';
+		url_path[1] = STR_NULL;
+	}
+	write_to_server_log_pipe(WRITE_TO_PIPE_, "url_path: %s\n", url_path);
+
+	// full_path中存储了需要访问的目标文件的完整路径信息
+	char full_path[FULL_PATH_SIZE];
+	struct stat filestatus;
+	// 下面会根据webroot根目录，和url_path来构建full_path完整路径
+	int full_length = main_full_path_append(full_path, 0, FULL_PATH_SIZE, webroot);
+	int root_length = full_length;
+	full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, url_path);
+	full_path[full_length] = '\0';
+	stat(full_path, &filestatus);
+
+	if(S_ISDIR(filestatus.st_mode)) {
+		const char * error_str = "it's a directory, can't be run!";
+		printf("%s\n", error_str);
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "%s\n", error_str);
+		return -1;
+	}
+	else {
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "full_path: %s\n", full_path);
+		// 如果要访问的文件是以.zl结尾的，就将该文件当做zengl脚本来进行编译执行
+		if(full_length > 3 && S_ISREG(filestatus.st_mode) && (strncmp(full_path + (full_length - 3), ".zl", 3) == 0)) {
+			// my_data是传递给zengl脚本的额外数据，里面包含了客户端套接字等可能需要用到的信息
+			MAIN_DATA my_data = {0};
+			my_data.full_path = full_path;
+			my_data.client_socket_fd = MAIN_RUN_IN_CMD_FD;
+			my_data.my_parser_data = parser_data;
+			ZL_EXP_VOID * VM;
+			VM = zenglApi_Open();
+			ZENGL_EXPORT_VM_MAIN_ARG_FLAGS flags = ZL_EXP_CP_AF_IN_DEBUG_MODE;
+			// 只有在调试模式下，并且在配置文件中，设置了zl_debug_log时，才设置run_info处理函数，该函数会将zengl脚本的虚拟汇编指令写入到指定的日志文件
+			if(config_debug_mode && (zl_debug_log != NULL)) {
+				my_data.zl_debug_log = fopen(zl_debug_log,"w+");
+				if(my_data.zl_debug_log != NULL) {
+					zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_INFO,main_userdef_run_info);
+					/**
+					 * 如果不需要输出调试日志，就不用设置ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO输出调试信息的标志，输出调试信息会占用很多执行时间
+					 * 即便没有设置ZL_EXP_VFLAG_HANDLE_RUN_INFO处理句柄，也就是没有写入zl_debug_log日志文件，也会占用不少执行时间
+					 */
+					flags |= ZL_EXP_CP_AF_OUTPUT_DEBUG_INFO;
+				}
+			}
+			zenglApi_SetFlags(VM, flags);
+			// 设置在zengl脚本中使用print指令时，会执行的回调函数
+			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_userdef_run_print);
+			// 设置zengl脚本的模块初始化函数
+			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_MODULE_INIT,main_userdef_module_init);
+			// 设置my_data额外数据
+			zenglApi_SetExtraData(VM, "my_data", &my_data);
+
+			DEBUG_INFO debug_info;
+			// 如果开启了远程调试功能，则初始化远程调试相关的结构体，并通过zenglAPI设置中断回调函数等
+			if(config_remote_debug_enable) {
+				debug_init(&debug_info);
+				my_data.debug_info = &debug_info;
+				zenglApi_DebugSetBreakHandle(VM, debug_break, debug_conditionError,ZL_EXP_TRUE,ZL_EXP_FALSE); //设置调试API
+			}
+
+			char cache_path[80];
+			ZL_EXP_BOOL is_reuse_cache;
+			// 如果开启了zengl脚本的编译缓存，则尝试重利用缓存数据
+			if(config_zengl_cache_enable) {
+				// 根据脚本文件名得到缓存文件的路径信息
+				main_get_zengl_cache_path(cache_path, sizeof(cache_path), full_path);
+				// 尝试重利用缓存数据
+				main_try_to_reuse_zengl_cache(VM, cache_path, full_path, &is_reuse_cache);
+			}
+			if(zenglApi_Run(VM, full_path) == -1) //编译执行zengl脚本
+			{
+				// 如果执行失败，则显示错误信息，并抛出500内部错误给客户端
+				write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run <%s> failed: %s\n",full_path, zenglApi_GetErrorString(VM));
+				printf("zengl run <%s> failed: %s\n",full_path, zenglApi_GetErrorString(VM));
+			}
+			else {
+				// 如果开启了编译缓存，那么在没有重利用缓存数据时(例如缓存文件不存在，或者原脚本内容发生的改变等)，就生成新的缓存数据，并将其写入缓存文件中
+				if(config_zengl_cache_enable && !is_reuse_cache)
+					main_write_zengl_cache_to_file(VM, cache_path);
+			}
+
+			// 如果开启了远程调试，则在关闭zengl虚拟机之前，需要通过debug_exit函数来关闭掉打开的调试套接字，以及释放掉分配过的动态字符串资源
+			if(config_remote_debug_enable)
+				debug_exit(VM, &debug_info);
+
+			resource_list_remove_all_resources(VM, &(my_data.resource_list));
+			#ifdef USE_MAGICK
+				// 如果开启了magick模块，则通过export_magick_terminus将相关的资源释放掉
+				export_magick_terminus();
+			#endif
+			#ifdef USE_CURL
+				// 如果开启了curl模块，则通过export_curl_global_cleanup将相关的全局资源释放掉
+				export_curl_global_cleanup();
+			#endif
+			// 关闭zengl虚拟机及zl_debug_log日志文件
+			zenglApi_Close(VM);
+			if(my_data.zl_debug_log != NULL) {
+				fclose(my_data.zl_debug_log);
+			}
+
+			// 如果在zengl脚本中设置了响应头，则先将响应头输出给客户端
+			if(my_data.response_header.count > 0) {
+				dynamic_string_append(&my_data.response_header, str_null, 1, RESPONSE_HEADER_STR_SIZE);
+				printf("%s", my_data.response_header.str);
+				// 输出完响应头后，将response_header动态字符串释放掉
+				dynamic_string_free(&my_data.response_header);
+			}
+			dynamic_string_append(&my_data.response_body, str_null, 1, RESPONSE_BODY_STR_SIZE);
+			printf("%s", my_data.response_body.str);
+			// 释放response_body动态字符串
+			dynamic_string_free(&my_data.response_body);
+			return 0;
+		}
+		else {
+			const char * error_str = "it's not a normal zengl script file, can't be run!";
+			printf("%s\n", error_str);
+			write_to_server_log_pipe(WRITE_TO_PIPE_, "%s\n", error_str);
+			return -1;
+		}
+	}
 }

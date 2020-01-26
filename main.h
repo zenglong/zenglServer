@@ -84,6 +84,8 @@ char * main_get_webroot();
 int main_full_path_append(char * full_path, int full_path_length, int full_path_size, char * append_path);
 //模块函数中，可以通过main_get_session_config函数来获取配置文件设置过的会话目录，会话超时时间，以及cleaner进程的清理时间间隔
 void main_get_session_config(char ** session_dir, long * session_expire, long * session_cleaner_interval);
+void main_check_is_run_in_cmd(ZL_EXP_BOOL * arg_is_run_in_cmd);
+void main_set_is_immediate_print(ZL_EXP_BOOL arg_is_immediate_print);
 /**
  * 在进行远程调试时，可以通过此函数来获取配置文件中和远程调试相关的配置信息
  * 例如 remote_debug_enable：是否开启了远程调试，remote_debugger_ip：远程调试器的ip地址，remote_debugger_port：远程调试器的端口号

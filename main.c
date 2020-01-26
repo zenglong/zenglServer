@@ -141,6 +141,7 @@ char ** zlsrv_main_argv = NULL; // 将main函数的argv参数指针保存为全�
 static char * server_logfile = NULL; // 将日志文件名保存到server_logfile，方便在SIGUSR1信号处理中，通过文件名重新打开日志文件
 
 static ZL_EXP_BOOL is_run_in_cmd = ZL_EXP_FALSE;
+static ZL_EXP_BOOL is_immediate_print = ZL_EXP_FALSE;
 
 static char config_session_dir[FULL_PATH_SIZE]; // session会话目录
 static long config_session_expire; // session会话默认超时时间(以秒为单位)
@@ -540,6 +541,17 @@ void main_get_session_config(char ** session_dir, long * session_expire, long * 
 		(*session_expire) = config_session_expire;
 	if(session_cleaner_interval != NULL)
 		(*session_cleaner_interval) = config_session_cleaner_interval;
+}
+
+void main_check_is_run_in_cmd(ZL_EXP_BOOL * arg_is_run_in_cmd)
+{
+	if(arg_is_run_in_cmd != NULL)
+		(*arg_is_run_in_cmd) = is_run_in_cmd;
+}
+
+void main_set_is_immediate_print(ZL_EXP_BOOL arg_is_immediate_print)
+{
+	is_immediate_print = arg_is_immediate_print;
 }
 
 /**
@@ -947,6 +959,7 @@ int main(int argc, char * argv[])
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源
 	zenglApi_Close(VM);
 
+	// 如果是命令行模式，则通过main_run_cmd函数在命令行中直接运行脚本
 	if(run_cmd != NULL)
 	{
 		int cmd_ret = main_run_cmd(run_cmd);
@@ -1460,6 +1473,14 @@ ZL_EXP_INT main_userdef_run_print(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCo
 	// write(my_data->client_socket_fd, "\n", 1);
 	dynamic_string_append(&my_data->response_body, infoStrPtr, infoStrCount, RESPONSE_BODY_STR_SIZE);
 	dynamic_string_append(&my_data->response_body, "\n", 1, RESPONSE_BODY_STR_SIZE);
+	if(is_immediate_print && is_run_in_cmd) {
+		char str_null[1];
+		str_null[0] = STR_NULL;
+		dynamic_string_append(&my_data->response_body, str_null, 1, RESPONSE_BODY_STR_SIZE);
+		printf("%s", my_data->response_body.str);
+		// 释放response_body动态字符串
+		dynamic_string_free(&my_data->response_body);
+	}
 	return 0;
 }
 
@@ -2149,10 +2170,12 @@ static int main_run_cmd(char * run_cmd)
 				// 输出完响应头后，将response_header动态字符串释放掉
 				dynamic_string_free(&my_data.response_header);
 			}
-			dynamic_string_append(&my_data.response_body, str_null, 1, RESPONSE_BODY_STR_SIZE);
-			printf("%s", my_data.response_body.str);
-			// 释放response_body动态字符串
-			dynamic_string_free(&my_data.response_body);
+			if(my_data.response_body.count > 0) {
+				dynamic_string_append(&my_data.response_body, str_null, 1, RESPONSE_BODY_STR_SIZE);
+				printf("%s", my_data.response_body.str);
+				// 释放response_body动态字符串
+				dynamic_string_free(&my_data.response_body);
+			}
 			return 0;
 		}
 		else {

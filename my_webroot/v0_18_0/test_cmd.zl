@@ -1,0 +1,26 @@
+use builtin, request;
+
+def TRUE 1;
+def FALSE 0;
+
+if(bltIsRunInCmd())
+	bltSetImmediatePrint(TRUE);
+	print 'now in cmd';
+else
+	print 'must be run in cmd';
+	bltExit();
+endif
+
+querys = rqtGetQuery();
+if(querys['name'])
+	print 'name: ' + querys['name'];
+endif
+maxsec = bltInt(querys['maxsec']);
+if(maxsec <= 0)
+	bltExit('invalid maxsec arg');
+endif
+
+for(i=1; i <= maxsec; i++)
+	print 'I\'ll sleep for ' + i + ' seconds';
+	bltSleep(i);
+endfor

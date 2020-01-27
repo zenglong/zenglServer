@@ -1942,6 +1942,19 @@ ZL_EXP_VOID module_builtin_set_immediate_print(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT 
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+ZL_EXP_VOID module_builtin_sleep(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: bltSleep(seconds): integer");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [seconds] of bltSleep must be integer");
+	}
+	ZL_EXP_LONG retval = (ZL_EXP_LONG)sleep((unsigned int)arg.val.integer);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -1978,4 +1991,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltReadFile",module_builtin_read_file);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltIsRunInCmd",module_builtin_is_run_in_cmd);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSetImmediatePrint",module_builtin_set_immediate_print);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSleep",module_builtin_sleep);
 }

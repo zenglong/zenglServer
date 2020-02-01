@@ -1914,17 +1914,35 @@ ZL_EXP_VOID module_builtin_read_file(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+/**
+ * bltIsRunInCmd模块函数，判断当前脚本是否是在命令行中运行
+ * 返回整数1则表示在命令行中运行，否则就不是命令行模式
+ * 例如：
+ * if(bltIsRunInCmd())
+ 		bltSetImmediatePrint(TRUE);
+ 		print 'now in cmd';
+   else
+ 		print 'must be run in cmd';
+ 		bltExit();
+   endif
+ */
 ZL_EXP_VOID module_builtin_is_run_in_cmd(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	ZL_EXP_BOOL arg_is_run_in_cmd;
 	main_check_is_run_in_cmd(&arg_is_run_in_cmd);
-	if(arg_is_run_in_cmd)
+	if(arg_is_run_in_cmd) // 返回整数1则表示在命令行中运行，否则就不是命令行模式
 		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 1, 0);
 	else
 		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+/**
+ * bltSetImmediatePrint模块函数，在命令行模式下开启或关闭立即打印模式
+ * 该模块函数的第一个参数is_immediate_print表示是否开启立即打印模式，如果是不为0的整数就表示开启，否则表示关闭
+ * 在立即打印模式中，命令行下运行的脚本在使用print指令输出信息时，会立即输出到命令行终端
+ * 示例代码，参考上面的bltIsRunInCmd模块函数的示例
+ */
 ZL_EXP_VOID module_builtin_set_immediate_print(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -1942,6 +1960,15 @@ ZL_EXP_VOID module_builtin_set_immediate_print(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT 
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+/**
+ * bltSleep模块函数，让当前线程睡眠一段时间
+ * 该模块函数的第一个参数seconds表示睡眠多少秒
+ * 例如：
+ * for(i=1; i <= maxsec; i++)
+ 		print 'I\'ll sleep for ' + i + ' seconds';
+ 		bltSleep(i);
+   endfor
+ */
 ZL_EXP_VOID module_builtin_sleep(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

@@ -64,6 +64,7 @@ void * routine_epoll_append_fd(void * arg);
 void *routine(void *arg);
 static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int lst_idx);
 
+// 以命令行的方式执行脚本
 static int main_run_cmd(char * run_cmd);
 
 // 由于配置文件是使用zengl脚本语法编写的，当在配置文件中使用print指令时，就会调用下面的回调函数，去执行具体的打印操作
@@ -140,8 +141,8 @@ char ** zlsrv_main_argv = NULL; // 将main函数的argv参数指针保存为全�
 
 static char * server_logfile = NULL; // 将日志文件名保存到server_logfile，方便在SIGUSR1信号处理中，通过文件名重新打开日志文件
 
-static ZL_EXP_BOOL is_run_in_cmd = ZL_EXP_FALSE;
-static ZL_EXP_BOOL is_immediate_print = ZL_EXP_FALSE;
+static ZL_EXP_BOOL is_run_in_cmd = ZL_EXP_FALSE; // 通过该变量来判断，当前是否是以命令行的方式在运行脚本
+static ZL_EXP_BOOL is_immediate_print = ZL_EXP_FALSE; // 是否使用立即打印模式，当使用立即打印模式时，脚本在命令行下运行，使用print指令输出信息时，会立刻显示到终端上
 
 static char config_session_dir[FULL_PATH_SIZE]; // session会话目录
 static long config_session_expire; // session会话默认超时时间(以秒为单位)
@@ -543,12 +544,19 @@ void main_get_session_config(char ** session_dir, long * session_expire, long * 
 		(*session_cleaner_interval) = config_session_cleaner_interval;
 }
 
+/**
+ * bltIsRunInCmd模块函数会通过此函数来判断当前是否处于命令行模式
+ */
 void main_check_is_run_in_cmd(ZL_EXP_BOOL * arg_is_run_in_cmd)
 {
 	if(arg_is_run_in_cmd != NULL)
 		(*arg_is_run_in_cmd) = is_run_in_cmd;
 }
 
+/**
+ * bltSetImmediatePrint模块函数会通过此函数，来设置当前是否启用立即打印模式
+ * 在立即打印模式中，命令行下运行的脚本在使用print指令输出信息时，会立即输出到命令行终端
+ */
 void main_set_is_immediate_print(ZL_EXP_BOOL arg_is_immediate_print)
 {
 	is_immediate_print = arg_is_immediate_print;
@@ -607,6 +615,7 @@ int write_to_server_log_pipe(ZL_EXP_BOOL write_to_pipe, const char * format, ...
 		if(write_to_pipe == WRITE_TO_PIPE)
 			return 0;
 	}
+	// 命令行模式下，只有一个进程，所以这种情况下，直接写入日志文件即可
 	if(is_run_in_cmd == ZL_EXP_TRUE) {
 		write_to_pipe = WRITE_TO_LOG;
 	}
@@ -655,7 +664,7 @@ int main(int argc, char * argv[])
 	int o;
 	char * config_file = NULL;
 	char * logfile = NULL;
-	char * run_cmd = NULL;
+	char * run_cmd = NULL; // 需要在命令行中执行的脚本的相对路径(包括需要传递给脚本的参数)
 	zlsrv_main_argv = argv;
 	// 通过getopt的C库函数来获取用户在命令行中输入的参数，并根据这些参数去执行不同的操作
 	while (-1 != (o = getopt(argc, argv, "vhc:l:r:"))) {
@@ -675,9 +684,10 @@ int main(int argc, char * argv[])
 		case 'l':
 			logfile = optarg;
 			break;
+		// 当使用-r选项时，可以直接在命令行中运行脚本，-r后面需要跟随脚本的url路径和参数信息，例如: ./zenglServer -r "/v0_1_1/test.zl?a=12&b=456"
 		case 'r':
 			run_cmd = optarg;
-			is_run_in_cmd = ZL_EXP_TRUE;
+			is_run_in_cmd = ZL_EXP_TRUE; // 将is_run_in_cmd设置为TRUE，表示当前在命令行中运行
 			if(strlen(run_cmd) == 0) {
 				printf("please set script url for -r option\n");
 				exit(-1);
@@ -728,7 +738,7 @@ int main(int argc, char * argv[])
 			return 0;
 		}
 	}
-	else {
+	else { // 命令行模式下，只需要一个进程，就不需要再创建子进程了
 		write_to_server_log_pipe(WRITE_TO_LOG, "**--------- cmd begin ---------***\ncreate master process for cmd [pid:%d] \n", getpid());
 	}
 
@@ -936,7 +946,7 @@ int main(int argc, char * argv[])
 			config_request_url_max_size,
 			URL_PATH_SIZE, FULL_PATH_SIZE);
 
-	// 如果设置了pidfile文件，则将主进程的进程ID记录到pidfile所指定的文件中
+	// 如果设置了pidfile文件，则将主进程的进程ID记录到pidfile所指定的文件中(只有在非命令行模式下，才需要执行这步操作)
 	if(run_cmd == NULL) {
 		if(strlen(config_pidfile) > 0) {
 			write_to_server_log_pipe(WRITE_TO_LOG, "pidfile: %s\n", config_pidfile);
@@ -1473,6 +1483,7 @@ ZL_EXP_INT main_userdef_run_print(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCo
 	// write(my_data->client_socket_fd, "\n", 1);
 	dynamic_string_append(&my_data->response_body, infoStrPtr, infoStrCount, RESPONSE_BODY_STR_SIZE);
 	dynamic_string_append(&my_data->response_body, "\n", 1, RESPONSE_BODY_STR_SIZE);
+	// 在命令行模式下，如果开启了立即打印，则会直接通过printf函数将信息输出到终端
 	if(is_immediate_print && is_run_in_cmd) {
 		char str_null[1];
 		str_null[0] = STR_NULL;
@@ -2022,6 +2033,12 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	return lst_idx;
 }
 
+/**
+ * 当使用了-r选项来运行脚本时，会在主进程中，以命令行的方式直接执行脚本
+ * 例如: ./zenglServer -r "/v0_1_1/test.zl?a=12&b=456"
+ * 就是直接在命令行中运行test.zl脚本，并向脚本中传递a参数和b参数
+ * 命令行方式运行时，也需要提供完整的相对路径，以及类似http的请求参数
+ */
 static int main_run_cmd(char * run_cmd)
 {
 	time_t rawtime;
@@ -2170,6 +2187,7 @@ static int main_run_cmd(char * run_cmd)
 				// 输出完响应头后，将response_header动态字符串释放掉
 				dynamic_string_free(&my_data.response_header);
 			}
+			// 如果有响应主体数据，则将响应主体数据输出到终端
 			if(my_data.response_body.count > 0) {
 				dynamic_string_append(&my_data.response_body, str_null, 1, RESPONSE_BODY_STR_SIZE);
 				printf("%s", my_data.response_body.str);
@@ -2178,7 +2196,7 @@ static int main_run_cmd(char * run_cmd)
 			}
 			return 0;
 		}
-		else {
+		else { // 只有以.zl结尾的常规文件，才会被当成zengl脚本来执行，其他文件在命令行下会直接报错，并返回
 			const char * error_str = "it's not a normal zengl script file, can't be run!";
 			printf("%s\n", error_str);
 			write_to_server_log_pipe(WRITE_TO_PIPE_, "%s\n", error_str);

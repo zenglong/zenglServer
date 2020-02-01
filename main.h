@@ -42,7 +42,7 @@
 #define WRITE_TO_LOG 0  // 主进程的日志信息，则可以直接写入日志文件
 #define WRITE_TO_PIPE_ 2 // 当使用了精简日志模式时，就只会记录WRITE_TO_LOG和WRITE_TO_PIPE_的日志信息
 
-#define MAIN_RUN_IN_CMD_FD -10011
+#define MAIN_RUN_IN_CMD_FD -10011 // 当以命令行模式运行时，会使用-10010作为MAIN_DATA中的client_socket_fd即客户端套接字的文件描述符
 
 // 在解析请求头信息中的field和value时，会用到的枚举状态
 typedef enum _ON_HEADER_STATUS{
@@ -84,7 +84,9 @@ char * main_get_webroot();
 int main_full_path_append(char * full_path, int full_path_length, int full_path_size, char * append_path);
 //模块函数中，可以通过main_get_session_config函数来获取配置文件设置过的会话目录，会话超时时间，以及cleaner进程的清理时间间隔
 void main_get_session_config(char ** session_dir, long * session_expire, long * session_cleaner_interval);
+// bltIsRunInCmd模块函数会通过此函数来判断当前是否处于命令行模式
 void main_check_is_run_in_cmd(ZL_EXP_BOOL * arg_is_run_in_cmd);
+// bltSetImmediatePrint模块函数会通过此函数，来设置当前是否启用立即打印模式
 void main_set_is_immediate_print(ZL_EXP_BOOL arg_is_immediate_print);
 /**
  * 在进行远程调试时，可以通过此函数来获取配置文件中和远程调试相关的配置信息

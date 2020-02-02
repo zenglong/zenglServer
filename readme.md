@@ -714,7 +714,35 @@ zengl@zengl-ubuntu:~/zenglServer$ crontab -l
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
-- zenglServer是在Ubuntu 16.04 LTS x86-64(GCC版本号为：5.4.0)，Ubuntu 17.04 x86-64(GCC版本号为：6.3.0)中进行的开发测试，并在CentOS 5.8, 6.x, 7.x中进行了简单的测试。
+### 在命令行中直接运行脚本(v0.18.0版本新增功能)
+
+从v0.18.0版本开始，增加了-r选项，该选项后面可以跟随需要执行的脚本的相对路径和参数，使用该选项后，zenglServer就会以单进程的方式直接在命令行中执行脚本。例如：
+
+```
+[root@localhost zenglServerTest]# ./zenglServer -r "/v0_18_0/test_cmd.zl?maxsec=3&name=zl"
+now in cmd
+name: zl
+I'll sleep for 1 seconds
+I'll sleep for 2 seconds
+I'll sleep for 3 seconds
+[root@localhost zenglServerTest]# 
+```
+
+通过命令行方式执行脚本时，脚本中通过print指令输出的信息会直接显示到命令行终端。
+
+-r选项还可以配合其他选项一起使用，例如，配合-c选项来指定配置文件等：
+
+```
+[root@localhost zenglServerTest]# ./zenglServer -c config.zl -r "/v0_18_0/test_cmd.zl?maxsec=3&name=zl"
+now in cmd
+name: zl
+I'll sleep for 1 seconds
+I'll sleep for 2 seconds
+^C
+[root@localhost zenglServerTest]# 
+```
+
+- zenglServer 在CentOS 5.8, 6.x, 7.x, Ubuntu 18.04中进行了测试。
 
 - zenglServer的C源代码中，加入了必要的注释信息，读者可以通过阅读源码的相关注释来理解代码。
 

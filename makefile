@@ -39,6 +39,14 @@ else
 	CURL_OUTPUT_INFO = "*** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***"
 endif
 
+ifeq ($(USE_REDIS),yes)
+	SRCS += module_redis.c module_redis.h
+	REDIS_FLAG = -DUSE_REDIS `pkg-config --cflags --libs hiredis`
+	REDIS_OUTPUT_INFO = "redis module is enabled!!!"
+else
+	REDIS_OUTPUT_INFO = "*** notice: redis module not enabled, you can use 'make USE_REDIS=yes' to enable it, make sure you have pkg-config and hiredis.h in your system! ***"
+endif
+
 ifdef URL_PATH_SIZE
 	URL_PATH_SIZE_FLAG = -D URL_PATH_SIZE=$(URL_PATH_SIZE)
 endif
@@ -51,12 +59,13 @@ SRCS += zengl/linux/zengl_exportfuns.h
 
 zenglServer: $(SRCS) zengl/linux/libzengl.a crustache/libcrustache.a
 		$(ERR)
-		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a $(URL_PATH_SIZE_FLAG) $(FULL_PATH_SIZE_FLAG) $(LIB_FLAG) $(MYSQL_FLAG) $(MAGICK_FLAG) $(PCRE_FLAG) $(CURL_FLAG)
+		$(CC) $(CFLAGS) $(SRCS) -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a $(URL_PATH_SIZE_FLAG) $(FULL_PATH_SIZE_FLAG) $(LIB_FLAG) $(MYSQL_FLAG) $(MAGICK_FLAG) $(PCRE_FLAG) $(CURL_FLAG) $(REDIS_FLAG)
 		@echo 
 		@echo $(MYSQL_OUTPUT_INFO)
 		@echo $(MAGICK_OUTPUT_INFO)
 		@echo $(PCRE_OUTPUT_INFO)
 		@echo $(CURL_OUTPUT_INFO)
+		@echo $(REDIS_OUTPUT_INFO)
 
 zengl/linux/libzengl.a: zengl/linux/zengl_exportfuns.h
 	cd zengl/linux && $(MAKE) libzengl.a

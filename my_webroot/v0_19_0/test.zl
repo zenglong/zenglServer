@@ -1,0 +1,6 @@
+use builtin, redis;
+
+con = redisConnect("127.0.0.1", 6379);
+
+print redisCommand(con, "get name");
+

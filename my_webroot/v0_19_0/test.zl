@@ -1,6 +1,42 @@
 use builtin, redis;
+def TRUE 1;
+def FALSE 0;
 
-con = redisConnect("127.0.0.1", 6379);
+fun exit(error)
+	print error;
+	bltExit();
+endfun
 
-print redisCommand(con, "get name");
+if(!redisConnect("127.0.0.1", 6379, &con, &error))
+	exit(error);
+endif
+
+if(!redisCommand(con, "get name", &result, &is_null, &error))
+	exit(error);
+endif
+
+if(is_null)
+	print '*** null ***';
+else
+	print result;
+endif
+
+if(!redisCommand(con, "hset hash2 testname testvalue", &result, &is_null, &error))
+	exit(error);
+else
+	print result;
+endif
+
+if(!redisCommand(con, "hgetall hash2", &result, &is_null, &error, TRUE))
+	exit(error);
+endif
+
+if(is_null)
+	print '*** null ***';
+else
+	print result;
+	for(i=0;bltIterArray(result,&i,&k,&v);)
+		print k + ':' + v;
+	endfor
+endif
 

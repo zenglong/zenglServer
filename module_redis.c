@@ -55,6 +55,64 @@ static void set_arg_value(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_EXPORT_MOD_FUN
 	zenglApi_SetFunArg(VM_ARG,argnum,&arg);
 }
 
+static redisReply * st_redis_set_command_by_array(ZL_EXP_VOID * VM_ARG, redisContext * context,
+		ZENGL_EXPORT_MEMBLOCK memblock, ZL_EXP_INT * memblock_count)
+{
+	ZL_EXP_INT size,count,process_count,i,j;
+	ZENGL_EXPORT_MOD_FUN_ARG mblk_val = {ZL_EXP_FAT_NONE,{0}};
+	zenglApi_GetMemBlockInfo(VM_ARG,&memblock,&size,ZL_EXP_NULL);
+	count = zenglApi_GetMemBlockNNCount(VM_ARG, &memblock);
+	(*memblock_count) = count;
+	if(count <= 0) {
+		return NULL;
+	}
+	char ** argv = (char **)zenglApi_AllocMem(VM_ARG, sizeof(char *) * count);
+	for(i = 0; i < count; i++) {
+		argv[i] = NULL;
+	}
+	for(i=1,process_count=0; i<=size && process_count < count; i++) {
+		char tmp[150] = {0};
+		mblk_val = zenglApi_GetMemBlock(VM_ARG,&memblock,i);
+		switch(mblk_val.type)
+		{
+		case ZL_EXP_FAT_INT:
+		case ZL_EXP_FAT_FLOAT:
+		case ZL_EXP_FAT_STR:
+			process_count++;
+			break;
+		}
+		switch(mblk_val.type)
+		{
+		case ZL_EXP_FAT_INT:
+			snprintf(tmp, 150, "%d", mblk_val.val.integer);
+			argv[process_count - 1] = zenglApi_AllocMemForString(VM_ARG, tmp);
+			break;
+		case ZL_EXP_FAT_FLOAT:
+			snprintf(tmp, 150, "%.16g", mblk_val.val.floatnum);
+			argv[process_count - 1] = zenglApi_AllocMemForString(VM_ARG, tmp);
+			break;
+		case ZL_EXP_FAT_STR:
+			argv[process_count - 1] = zenglApi_AllocMemForString(VM_ARG, mblk_val.val.str);
+			break;
+		}
+	}
+	(*memblock_count) = process_count;
+	if(process_count > 0) {
+		redisReply * retval = redisCommandArgv(context, process_count, (const char **)argv, NULL);
+		for(i = 0; i < count; i++) {
+			if(argv[i] != NULL) {
+				zenglApi_FreeMem(VM_ARG, argv[i]);
+			}
+		}
+		zenglApi_FreeMem(VM_ARG, argv);
+		return retval;
+	}
+	else {
+		zenglApi_FreeMem(VM_ARG, argv);
+		return NULL;
+	}
+}
+
 ZL_EXP_VOID module_redis_connect(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -124,10 +182,17 @@ ZL_EXP_VOID module_redis_command(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"redisCommand runtime error: invalid context");
 	}
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
-	if(arg.type != ZL_EXP_FAT_STR) {
-		zenglApi_Exit(VM_ARG,"the second argument [command] of redisCommand must be string");
+	char * command = NULL;
+	ZENGL_EXPORT_MEMBLOCK command_memblock = {0};
+	if(arg.type == ZL_EXP_FAT_STR) {
+		command = arg.val.str;
 	}
-	char * command = arg.val.str;
+	else if(arg.type == ZL_EXP_FAT_MEMBLOCK) {
+		command_memblock = arg.val.memblock;
+	}
+	else {
+		zenglApi_Exit(VM_ARG,"the second argument [command] of redisCommand must be string or array");
+	}
 	ZL_EXP_LONG array_assoc = ZL_EXP_FALSE;
 	detect_arg_is_address_type(VM_ARG, 3, &arg, "third", "result", "redisCommand");
 	if(argcount > 3) {
@@ -143,10 +208,32 @@ ZL_EXP_VOID module_redis_command(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 			}
 		}
 	}
-	redisReply * reply = redisCommand(context, command);
+	redisReply * reply = NULL;
+	ZL_EXP_INT memblock_valid_count = 0;
+	if(command != NULL) {
+		reply = redisCommand(context, command);
+	}
+	else {
+		reply = st_redis_set_command_by_array(VM_ARG, context, command_memblock, &memblock_valid_count);
+	}
 	ZL_EXP_LONG retval = ZL_EXP_TRUE;
 	ZL_EXP_LONG is_null = ZL_EXP_FALSE;
-	if(reply->type == REDIS_REPLY_ERROR) {
+	if(reply == NULL) {
+		char error_str[300] = {0};
+		if(argcount > 4) {
+			if(memblock_valid_count <= 0) {
+				snprintf(error_str, 300, "redisCommand error: command array invalid count: %d", memblock_valid_count);
+				set_arg_value(VM_ARG, 5, ZL_EXP_FAT_STR, (char *)error_str, 0);
+			}
+			else {
+				snprintf(error_str, 300, "redisCommand error: reply is null");
+				set_arg_value(VM_ARG, 5, ZL_EXP_FAT_STR, (char *)error_str, 0);
+			}
+		}
+		set_arg_value(VM_ARG, 3, ZL_EXP_FAT_INT, NULL, 0);
+		retval = ZL_EXP_FALSE;
+	}
+	else if(reply->type == REDIS_REPLY_ERROR) {
 		if(argcount > 4) {
 			DYNAMIC_STRING errstr = {0};
 			const char * err_const = "redisCommand error: ";

@@ -21,7 +21,7 @@ else
 	print result;
 endif
 
-if(!redisCommand(con, "hset hash2 testname testvalue", &result, &is_null, &error))
+if(!redisCommand(con, bltArray('hset', 'hash2', 'testname', 'say "hello world!"'), &result, &is_null, &error))
 	exit(error);
 else
 	print result;

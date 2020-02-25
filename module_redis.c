@@ -10,6 +10,7 @@
 #include <hiredis.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/time.h>
 
 static void module_redis_free_context_resource_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 {
@@ -117,7 +118,7 @@ ZL_EXP_VOID module_redis_connect(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 3)
-		zenglApi_Exit(VM_ARG,"usage: redisConnect(ip, port, &context[, &error])");
+		zenglApi_Exit(VM_ARG,"usage: redisConnect(ip, port, &context[, &error[, timeout]])");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
 		zenglApi_Exit(VM_ARG,"the first argument [ip] of redisConnect must be string");
@@ -131,11 +132,27 @@ ZL_EXP_VOID module_redis_connect(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	else {
 		zenglApi_Exit(VM_ARG,"the second argument [port] of redisConnect must be integer");
 	}
+	time_t timeout = 0;
 	detect_arg_is_address_type(VM_ARG, 3, &arg, "third", "context", "redisConnect");
 	if(argcount > 3) {
 		detect_arg_is_address_type(VM_ARG, 4, &arg, "fourth", "error", "redisConnect");
+		if(argcount > 4) {
+			zenglApi_GetFunArg(VM_ARG,5,&arg);
+			if(arg.type != ZL_EXP_FAT_INT) {
+				zenglApi_Exit(VM_ARG,"the fifth argument [timeout] of redisConnect must be integer");
+			}
+			timeout = (time_t)arg.val.integer;
+		}
 	}
-	redisContext * context = redisConnect((const char *)ip, port);
+	redisContext * context = NULL;
+	if(!timeout) {
+		context = redisConnect((const char *)ip, port);
+	}
+	else {
+		struct timeval tv = {0};
+		tv.tv_sec = timeout;
+		context = redisConnectWithTimeout((const char *)ip, port, tv);
+	}
 	ZL_EXP_LONG retval = ZL_EXP_TRUE;
 	if(context == NULL || context->err) {
 		if(argcount > 3) {
@@ -310,8 +327,31 @@ ZL_EXP_VOID module_redis_command(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
 }
 
+ZL_EXP_VOID module_redis_free(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: redisFree(context)");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [context] of redisFree must be integer");
+	}
+	redisContext * context = (redisContext *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_redis_context(&(my_data->resource_list), context)) {
+		zenglApi_Exit(VM_ARG,"redisFree runtime error: invalid context");
+	}
+	redisFree(context);
+	int ret_code = resource_list_remove_member(&(my_data->resource_list), context);
+	if(ret_code != 0) {
+		zenglApi_Exit(VM_ARG, "redisFree remove resource from resource_list failed, resource_list_remove_member error code:%d", ret_code);
+	}
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
+}
+
 ZL_EXP_VOID module_redis_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 {
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"redisConnect",module_redis_connect);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"redisCommand",module_redis_command);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"redisFree",module_redis_free);
 }

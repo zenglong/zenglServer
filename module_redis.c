@@ -85,7 +85,7 @@ static redisReply * st_redis_set_command_by_array(ZL_EXP_VOID * VM_ARG, redisCon
 		switch(mblk_val.type)
 		{
 		case ZL_EXP_FAT_INT:
-			snprintf(tmp, 150, "%d", mblk_val.val.integer);
+			snprintf(tmp, 150, "%ld", mblk_val.val.integer);
 			argv[process_count - 1] = zenglApi_AllocMemForString(VM_ARG, tmp);
 			break;
 		case ZL_EXP_FAT_FLOAT:

@@ -12,26 +12,31 @@ if(bltIsRunInCmd())
 	print 'now in cmd';
 endif
 
+// 连接redis服务器
 if(!redisConnect("127.0.0.1", 6379, &con, &error, 30))
 	exit(error);
 endif
 
+// 向redis服务器发送 get name 命令
 if(!redisCommand(con, "get name", &result, &is_null, &error))
 	exit(error);
 endif
 
+// 判断命令的执行结果是否为空，不为空则将结果打印出来
 if(is_null)
 	print '*** null ***';
 else
 	print result;
 endif
 
+// 以数组的形式发送命令：hset hash2 testname "say \"hello world!\""
 if(!redisCommand(con, bltArray('hset', 'hash2', 'testname', 'say "hello world!"'), &result, &is_null, &error))
 	exit(error);
 else
 	print result;
 endif
 
+// 执行命令 hgetall hash2 ，并将结果转为哈希数组
 if(!redisCommand(con, "hgetall hash2", &result, &is_null, &error, TRUE))
 	exit(error);
 endif
@@ -40,6 +45,7 @@ if(is_null)
 	print '*** null ***';
 else
 	print result;
+	// 循环将哈希数组中每个成员的键名和值打印出来
 	for(i=0;bltIterArray(result,&i,&k,&v);)
 		print k + ':' + v;
 	endfor

@@ -24,6 +24,7 @@ gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.
 *** notice: magick module not enabled, you can use 'make USE_MAGICK=6' to enable it, make sure you have pkg-config and 'wand/MagickWand.h' in your system! ***
 *** notice: pcre module not enabled, you can use 'make USE_PCRE=yes' to enable it, make sure you have pcre-config and pcre.h in your system! ***
 *** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***
+*** notice: redis module not enabled, you can use 'make USE_REDIS=yes' to enable it, make sure you have pkg-config and hiredis.h in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
@@ -55,6 +56,7 @@ mysql module is enabled!!!
 *** notice: magick module not enabled, you can use 'make USE_MAGICK=6' to enable it, make sure you have pkg-config and 'wand/MagickWand.h' in your system! ***
 *** notice: pcre module not enabled, you can use 'make USE_PCRE=yes' to enable it, make sure you have pcre-config and pcre.h in your system! ***
 *** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***
+*** notice: redis module not enabled, you can use 'make USE_REDIS=yes' to enable it, make sure you have pkg-config and hiredis.h in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
@@ -90,6 +92,7 @@ mysql module is enabled!!!
 magick module is enabled!!!
 *** notice: pcre module not enabled, you can use 'make USE_PCRE=yes' to enable it, make sure you have pcre-config and pcre.h in your system! ***
 *** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***
+*** notice: redis module not enabled, you can use 'make USE_REDIS=yes' to enable it, make sure you have pkg-config and hiredis.h in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
@@ -114,6 +117,7 @@ mysql module is enabled!!!
 magick module is enabled!!!
 pcre module is enabled!!!
 *** notice: curl module not enabled, you can use 'make USE_CURL=yes' to enable it, make sure you have curl-config and 'curl/curl.h' in your system! ***
+*** notice: redis module not enabled, you can use 'make USE_REDIS=yes' to enable it, make sure you have pkg-config and hiredis.h in your system! ***
 zengl@zengl-ubuntu:~/zenglServer$ 
 ```
 
@@ -138,7 +142,50 @@ mysql module is enabled!!!
 magick module is enabled!!!
 pcre module is enabled!!!
 curl module is enabled!!!
+*** notice: redis module not enabled, you can use 'make USE_REDIS=yes' to enable it, make sure you have pkg-config and hiredis.h in your system! ***
 [parallels@localhost zenglServerTest]$
+```
+
+### 开启redis模块
+
+从v0.19.0版本开始，在编译时，可以添加redis模块，从而可以执行redis缓存相关的工作。只要在make命令后面加入USE_REDIS=yes即可。
+
+当然，要使用redis模块，前提是系统中安装了hiredis的底层库。
+
+如果是ubuntu系统，可以通过 sudo apt-get install libhiredis-dev 来安装hiredis相关的库和开发头文件等。
+
+如果是centos系统，则可以通过 yum install hiredis-devel 来安装相关的底层库。
+
+还可以使用源码编译方式来安装hiredis库：
+
+```
+curl -L -o hiredis.zip https://github.com/redis/hiredis/archive/v0.13.3.zip
+unzip -d ./hiredis hiredis.zip
+cd hiredis/hiredis-0.13.3/
+make -j
+sudo make install
+sudo ldconfig
+```
+
+使用源码编译安装时，还需要通过PKG_CONFIG_PATH环境变量来指定make install时，安装的hiredis.pc的位置(下面假设该文件位于/usr/local/lib/pkgconfig/目录中)：
+
+```
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig/
+```
+
+要同时使用mysql，magick，pcre，curl，以及redis模块，可以使用 make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes USE_REDIS=yes 命令。
+
+```
+[root@localhost zenglServerTest]# make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes USE_REDIS=yes
+............................................................
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c zlsrv_setproctitle.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zlsrv_setproctitle.h module_mysql.c module_mysql.h  module_magick.c module_magick.h module_pcre.c module_pcre.h module_curl.c module_curl.h module_redis.c module_redis.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a   -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand` -DUSE_PCRE `pcre-config --cflags --libs` -DUSE_CURL `curl-config --cflags --libs` -DUSE_REDIS `pkg-config --cflags --libs hiredis`
+
+mysql module is enabled!!!
+magick module is enabled!!!
+pcre module is enabled!!!
+curl module is enabled!!!
+redis module is enabled!!!
+[root@localhost zenglServerTest]# 
 ```
 
 ### 自定义URL_PATH_SIZE和FULL_PATH_SIZE宏对应的值

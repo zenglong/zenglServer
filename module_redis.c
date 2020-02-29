@@ -12,12 +12,19 @@
 #include <string.h>
 #include <sys/time.h>
 
+/**
+ * 在zengl脚本退出之前，会自动通过下面的回调函数，
+ * 将所有未释放的redis连接资源都释放掉
+ */
 static void module_redis_free_context_resource_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 {
 	redisContext * context = (redisContext *)ptr;
 	redisFree(context);
 }
 
+/**
+ * 判断context对应的连接，是否是有效的redis连接
+ */
 static ZL_EXP_BOOL is_valid_redis_context(RESOURCE_LIST * resource_list, void * context)
 {
 	int ret = resource_list_get_ptr_idx(resource_list, context, module_redis_free_context_resource_callback);
@@ -27,6 +34,9 @@ static ZL_EXP_BOOL is_valid_redis_context(RESOURCE_LIST * resource_list, void * 
 		return ZL_EXP_FALSE;
 }
 
+/**
+ * 检测模块函数argnum位置所对应的参数，是否是引用类型
+ */
 static void detect_arg_is_address_type(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_EXPORT_MOD_FUN_ARG * arg,
 		const char * arg_pos, const char * arg_name, const char * func_name)
 {
@@ -42,6 +52,9 @@ static void detect_arg_is_address_type(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_E
 	}
 }
 
+/**
+ * 将模块函数argnum位置对应的参数设置为指定的值
+ */
 static void set_arg_value(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_EXPORT_MOD_FUN_ARG_TYPE arg_type,
 		ZL_EXP_CHAR * arg_str_val, ZL_EXP_LONG arg_int_val)
 {
@@ -56,6 +69,11 @@ static void set_arg_value(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_EXPORT_MOD_FUN
 	zenglApi_SetFunArg(VM_ARG,argnum,&arg);
 }
 
+/**
+ * 将zengl数组转换为C语言字符串数组argv，然后就可以调用redisCommandArgv库函数来发送redis命令了，
+ * 例如：bltArray('hset', 'hash2', 'testname', 'say "hello world!"')
+ * 转为argv字符串数组后，再调用redisCommandArgv，就可以发送 hset hash2 testname "say \"hello world!\"" 命令给redis
+ */
 static redisReply * st_redis_set_command_by_array(ZL_EXP_VOID * VM_ARG, redisContext * context,
 		ZENGL_EXPORT_MEMBLOCK memblock, ZL_EXP_INT * memblock_count)
 {
@@ -114,6 +132,30 @@ static redisReply * st_redis_set_command_by_array(ZL_EXP_VOID * VM_ARG, redisCon
 	}
 }
 
+/**
+ * redisConnect模块函数，根据指定的ip地址，端口号等参数连接对应的redis服务器
+ * 第一个参数ip表示需要连接的redis服务器所在的ip地址或者主机名
+ * 第二个参数port表示需要连接的redis服务器的端口号
+ * 第三个参数context必须是引用类型，用于存储redis连接相关的上下文指针，通过该指针可以向redis服务器发送命令等
+ * 第四个参数error是可选参数，也必须是引用类型，当连接发生错误时，会将错误信息存储到该参数中
+ * 第五个参数timeout也是可选参数，表示连接超时时间，以秒为单位
+ * 如果该模块函数连接成功，会返回1，连接失败则返回0，并将连接失败的原因存储到第四个error参数中
+ *
+ * 例如：
+ * use builtin, redis;
+ *
+ * fun exit(error)
+		print error;
+		bltExit();
+   endfun
+
+   if(!redisConnect("127.0.0.1", 6379, &con, &error, 30))
+		exit(error);
+   endif
+
+   上面这段代码会尝试连接ip地址为127.0.0.1，端口为6379的redis服务器，并设置了30秒的连接超时时间
+   如果连接成功，则会将连接相关的上下文指针存储到con变量，如果连接失败，则会将错误信息存储到error变量
+ */
 ZL_EXP_VOID module_redis_connect(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -184,6 +226,65 @@ ZL_EXP_VOID module_redis_connect(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
 }
 
+/**
+ * redisCommand模块函数，向redis服务器发送命令，并获取redis命令的执行结果
+ * 第一个参数context，是通过redisConnect模块函数获取到的和redis连接相关的上下文指针
+ * 第二个参数command，表示需要发送的redis命令，可以是字符串的形式，也可以是数组的形式
+ * 第三个参数result必须是引用类型，用于存储redis命令的执行结果
+ * 第四个参数is_null是可选参数，也必须是引用类型，用于表示执行结果是否为空
+ * 第五个参数error也是可选参数，也必须是引用类型，当命令执行出错时，会将出错信息存储到该参数中
+ * 第六个参数array_assoc也是可选参数，用于表示如果结果是数组类型的话，是否将其转换为哈希数组(使用字符串作为数组成员的key)
+ * 如果redis命令执行成功，该模块函数会返回1，执行失败则返回0
+ *
+ * 例如：
+	use builtin, redis;
+	def TRUE 1;
+	def FALSE 0;
+
+	fun exit(error)
+		print error;
+		bltExit();
+	endfun
+
+	// 连接redis服务器
+	if(!redisConnect("127.0.0.1", 6379, &con, &error, 30))
+		exit(error);
+	endif
+
+	// 向redis服务器发送 get name 命令
+	if(!redisCommand(con, "get name", &result, &is_null, &error))
+		exit(error);
+	endif
+
+	// 判断命令的执行结果是否为空，不为空则将结果打印出来
+	if(is_null)
+		print '*** null ***';
+	else
+		print result;
+	endif
+
+	// 以数组的形式发送命令：hset hash2 testname "say \"hello world!\""
+	if(!redisCommand(con, bltArray('hset', 'hash2', 'testname', 'say "hello world!"'), &result, &is_null, &error))
+		exit(error);
+	else
+		print result;
+	endif
+
+	// 执行命令 hgetall hash2 ，并将结果转为哈希数组
+	if(!redisCommand(con, "hgetall hash2", &result, &is_null, &error, TRUE))
+		exit(error);
+	endif
+
+	if(is_null)
+		print '*** null ***';
+	else
+		print result;
+		// 循环将哈希数组中每个成员的键名和值打印出来
+		for(i=0;bltIterArray(result,&i,&k,&v);)
+			print k + ':' + v;
+		endfor
+	endif
+ */
 ZL_EXP_VOID module_redis_command(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -327,6 +428,10 @@ ZL_EXP_VOID module_redis_command(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
 }
 
+/**
+ * redisFree模块函数，将redis连接相关的上下文指针，对应的资源给释放掉
+ * 第一个参数context表示需要释放的redis连接相关的上下文指针
+ */
 ZL_EXP_VOID module_redis_free(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -349,6 +454,9 @@ ZL_EXP_VOID module_redis_free(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, ZL_EXP_TRUE, 0);
 }
 
+/**
+ * redis模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄(对应的C函数)
+ */
 ZL_EXP_VOID module_redis_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 {
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"redisConnect",module_redis_connect);

@@ -1536,6 +1536,7 @@ ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
 	zenglApi_SetModInitHandle(VM_ARG,"curl", module_curl_init);
 #endif
 #ifdef USE_REDIS
+	// 设置redis模块的初始化函数，和redis模块相关的C函数代码位于module_redis.c文件里
 	zenglApi_SetModInitHandle(VM_ARG,"redis", module_redis_init);
 #endif
 }

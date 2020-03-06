@@ -127,7 +127,7 @@ zengl@zengl-ubuntu:~/zenglServer$
 
 当然，要使用curl模块，前提是系统中安装了底层的curl开发库。
 
-如果是ubuntu系统，可以通过 sudo apt-get install curl libcurl3 libcurl3-dev 来安装curl相关的库和开发头文件等。
+如果是ubuntu系统，可以通过 sudo apt-get install curl libcurl3 libcurl3-dev 来安装curl相关的库和开发头文件等（如果没有libcurl3，则可以尝试使用sudo apt-get install curl libcurl4 libcurl4-openssl-dev 来安装curl相关的库和开发头文件）。
 
 如果是centos系统，则可以通过 yum install curl curl-devel 来安装相关的底层库。
 

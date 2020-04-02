@@ -27,6 +27,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#define MODULE_BUILTIN_DUMP_INT 0
+#define MODULE_BUILTIN_DUMP_UINT 1
+#define MODULE_BUILTIN_DUMP_HEX 2
+#define MODULE_BUILTIN_DUMP_CHAR 3
+#define MODULE_BUILTIN_DUMP_OCTAL 4
+
 static int builtin_crustache__context_get(
 		ZL_EXP_VOID * VM_ARG,
 		builtin_mustache_context * new_context,
@@ -1982,6 +1988,68 @@ ZL_EXP_VOID module_builtin_sleep(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
 }
 
+ZL_EXP_VOID module_builtin_dump_ptr_data(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 3)
+		zenglApi_Exit(VM_ARG,"usage: bltDumpPtrData(ptr, ptr_data_len, format): string");
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT && arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the second argument [ptr] of bltDumpPtrData must be integer or string");
+	}
+	unsigned char * ptr = NULL;
+	ZL_EXP_BOOL is_ptr_str = ZL_EXP_FALSE;
+	if(arg.type == ZL_EXP_FAT_INT)
+		ptr = (unsigned char *)arg.val.integer;
+	else {
+		ptr = (unsigned char *)arg.val.str;
+		is_ptr_str = ZL_EXP_TRUE;
+	}
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the second argument [ptr_data_len] of bltDumpPtrData must be integer");
+	}
+	int ptr_data_len = (int)arg.val.integer;
+	if(is_ptr_str && ptr_data_len > strlen((char *)ptr)) {
+		ptr_data_len = strlen((char *)ptr);
+	}
+	zenglApi_GetFunArg(VM_ARG,3,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the third argument [format] of bltDumpPtrData must be integer");
+	}
+	int format = arg.val.integer;
+	BUILTIN_INFO_STRING infoString = { 0 };
+	int i;
+	for(i = 0; i < ptr_data_len; i++) {
+		switch (format) {
+		case MODULE_BUILTIN_DUMP_INT:
+			builtin_make_info_string(VM_ARG, &infoString, "%03d ", (int)ptr[i]);
+			break;
+		case MODULE_BUILTIN_DUMP_UINT:
+			builtin_make_info_string(VM_ARG, &infoString, "%03u ", (unsigned int)ptr[i]);
+			break;
+		case MODULE_BUILTIN_DUMP_HEX:
+			builtin_make_info_string(VM_ARG, &infoString, "%02X ", (unsigned int)ptr[i]);
+			break;
+		case MODULE_BUILTIN_DUMP_OCTAL:
+			builtin_make_info_string(VM_ARG, &infoString, "%03o ", (unsigned int)ptr[i]);
+			break;
+		case MODULE_BUILTIN_DUMP_CHAR:
+			builtin_make_info_string(VM_ARG, &infoString, "%c ", (unsigned char)ptr[i]);
+			break;
+		default:
+			zenglApi_Exit(VM_ARG,"the third argument [format] of bltDumpPtrData is invalid number");
+			break;
+		}
+	}
+	if(infoString.str != NULL) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, infoString.str, 0, 0);
+		zenglApi_FreeMem(VM_ARG, infoString.str);
+	}
+	else
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "", 0, 0);
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -2019,4 +2087,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltIsRunInCmd",module_builtin_is_run_in_cmd);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSetImmediatePrint",module_builtin_set_immediate_print);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSleep",module_builtin_sleep);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltDumpPtrData",module_builtin_dump_ptr_data);
 }

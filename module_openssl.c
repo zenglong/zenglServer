@@ -13,12 +13,18 @@
 #include <openssl/err.h>
 #include <string.h>
 
-#define MOD_OPENSSL_PADDING_NUM 4
+#define MODULE_OPENSSL_PADDING_NUM 4
+
+typedef struct _MODULE_OPENSSL_RSA_KEY {
+	RSA * rsa;
+	ZL_EXP_BOOL is_public_key;
+} MODULE_OPENSSL_RSA_KEY;
 
 static void module_openssl_free_rsa_resource_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 {
-	RSA * rsa = (RSA *)ptr;
-	RSA_free(rsa);
+	MODULE_OPENSSL_RSA_KEY * mod_openssl_rsa = (MODULE_OPENSSL_RSA_KEY *)ptr;
+	RSA_free(mod_openssl_rsa->rsa);
+	zenglApi_FreeMem(VM_ARG, mod_openssl_rsa);
 }
 
 static ZL_EXP_BOOL is_valid_rsa_key(RESOURCE_LIST * resource_list, void * key)
@@ -86,6 +92,9 @@ ZL_EXP_VOID module_openssl_read_key(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	char * password = NULL;
 	if(argcount > 2) {
 		zenglApi_GetFunArg(VM_ARG,3,&arg);
+		if(arg.type != ZL_EXP_FAT_STR) {
+			zenglApi_Exit(VM_ARG,"the third argument [password] of opensslReadKey must be string");
+		}
 		password = arg.val.str;
 	}
 	BIO * keybio = BIO_new_mem_buf(key, -1);
@@ -111,12 +120,15 @@ ZL_EXP_VOID module_openssl_read_key(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		free(err);
 		return ;
 	}
+	MODULE_OPENSSL_RSA_KEY * mod_openssl_rsa = zenglApi_AllocMem(VM_ARG, sizeof(MODULE_OPENSSL_RSA_KEY));
+	mod_openssl_rsa->is_public_key = (is_public ? ZL_EXP_TRUE : ZL_EXP_FALSE);
+	mod_openssl_rsa->rsa = rsa;
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
-	int ret_code = resource_list_set_member(&(my_data->resource_list), rsa, module_openssl_free_rsa_resource_callback);
+	int ret_code = resource_list_set_member(&(my_data->resource_list), mod_openssl_rsa, module_openssl_free_rsa_resource_callback);
 	if(ret_code != 0) {
 		zenglApi_Exit(VM_ARG, "opensslReadKey add resource to resource_list failed, resource_list_set_member error code:%d", ret_code);
 	}
-	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)rsa, 0);
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)mod_openssl_rsa, 0);
 }
 
 static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, const char * func_name,
@@ -124,7 +136,7 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 4)
-		zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, key, &result[, padding = 0]): integer", func_name);
+		zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, key, &result[, padding = 0[, decrypt_to_str = 1]]): integer", func_name);
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR && arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the first argument [data] of %s must be string or integer", func_name);
@@ -150,12 +162,23 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 	if(arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the third argument [key] of %s must be integer", func_name);
 	}
-	RSA * rsa = (RSA *)arg.val.integer;
+	MODULE_OPENSSL_RSA_KEY * mod_openssl_rsa = (MODULE_OPENSSL_RSA_KEY *)arg.val.integer;
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
-	if(!is_valid_rsa_key(&(my_data->resource_list), rsa)) {
+	if(!is_valid_rsa_key(&(my_data->resource_list), mod_openssl_rsa)) {
 		zenglApi_Exit(VM_ARG,"%s runtime error: invalid key", func_name);
 	}
-	int paddings[MOD_OPENSSL_PADDING_NUM] = {
+	if(is_public) {
+		if(!mod_openssl_rsa->is_public_key) {
+			zenglApi_Exit(VM_ARG,"%s runtime error: the key is not a public key", func_name);
+		}
+	}
+	else {
+		if(mod_openssl_rsa->is_public_key) {
+			zenglApi_Exit(VM_ARG,"%s runtime error: the key is not a private key", func_name);
+		}
+	}
+	RSA * rsa = mod_openssl_rsa->rsa;
+	int paddings[MODULE_OPENSSL_PADDING_NUM] = {
 		RSA_PKCS1_PADDING,       // 索引: 0
 		RSA_PKCS1_OAEP_PADDING,  // 索引: 1
 		RSA_SSLV23_PADDING,      // 索引: 2
@@ -168,8 +191,8 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 			zenglApi_Exit(VM_ARG,"the fifth argument [padding] of %s must be integer", func_name);
 		}
 		int padding_idx = (int)arg.val.integer;
-		if(padding_idx < 0 || padding_idx >= MOD_OPENSSL_PADDING_NUM) {
-			zenglApi_Exit(VM_ARG,"the fifth argument [padding] of %s is invalid, must be in [0, %d)", func_name, MOD_OPENSSL_PADDING_NUM);
+		if(padding_idx < 0 || padding_idx >= MODULE_OPENSSL_PADDING_NUM) {
+			zenglApi_Exit(VM_ARG,"the fifth argument [padding] of %s is invalid, must be in [0, %d)", func_name, MODULE_OPENSSL_PADDING_NUM);
 		}
 		padding = paddings[padding_idx];
 	}
@@ -206,7 +229,21 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 		set_arg_value(VM_ARG, 4, ZL_EXP_FAT_INT, NULL, (ZL_EXP_LONG)result);
 	}
 	else {
-		set_arg_value(VM_ARG, 4, ZL_EXP_FAT_STR, (ZL_EXP_CHAR *)result, 0);
+		int decrypt_to_str = ZL_EXP_TRUE;
+		if(argcount > 5) {
+			zenglApi_GetFunArg(VM_ARG,6,&arg);
+			if(arg.type != ZL_EXP_FAT_INT) {
+				zenglApi_Exit(VM_ARG,"the sixth argument [decrypt_to_str] of %s must be integer", func_name);
+			}
+			decrypt_to_str = (int)arg.val.integer;
+		}
+		if(decrypt_to_str) {
+			set_arg_value(VM_ARG, 4, ZL_EXP_FAT_STR, (ZL_EXP_CHAR *)result, 0);
+			zenglApi_FreeMem(VM_ARG, result);
+		}
+		else {
+			set_arg_value(VM_ARG, 4, ZL_EXP_FAT_INT, NULL, (ZL_EXP_LONG)result);
+		}
 	}
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)retval, 0);
 }

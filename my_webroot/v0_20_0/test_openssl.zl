@@ -3,6 +3,13 @@ def RSA_PUBLIC 1;
 def RSA_PRIVATE 0;
 def RSA_PKCS1_PADDING 0;
 
+def TRUE 1;
+def FALSE 0;
+
+def DUMP_CHAR 3;
+def DUMP_HEX 2;
+def DUMP_OCTAL 4;
+
 fun read_rsa_key(file, is_public, password = '')
 	ret = bltReadFile(file, &key_content, &file_size);
 	if(ret == 0)
@@ -20,7 +27,7 @@ fun read_rsa_key(file, is_public, password = '')
 	endif
 endfun
 
-fun encrypt_and_decrypt(pub_pri, str, key, p_key)
+fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE)
 	if(pub_pri == 'public')
 		enc_len = opensslPublicEncrypt(str, -1, key, &enc);
 	else
@@ -35,20 +42,27 @@ fun encrypt_and_decrypt(pub_pri, str, key, p_key)
 	bltWriteFile(file_name, enc, enc_len);
 	bltReadFile(file_name, &file_data, &file_size);
 	print file_name + ' - size:' + file_size;
-	print file_name + ' - data:' + file_data;
+	print file_name + ' - data:' + bltDumpPtrData(file_data, file_size, DUMP_HEX);
 
 	if(pub_pri == 'public')
-		dec_len = opensslPrivateDecrypt(enc, enc_len, p_key, &dec);
+		dec_len = opensslPrivateDecrypt(enc, enc_len, p_key, &dec, RSA_PKCS1_PADDING, decrypt_to_str);
 	else
-		dec_len = opensslPublicDecrypt(enc, enc_len, key, &dec, RSA_PKCS1_PADDING);
+		dec_len = opensslPublicDecrypt(enc, enc_len, key, &dec, RSA_PKCS1_PADDING, decrypt_to_str);
 	endif
 
 	if(dec_len == -1)
 		print pub_pri + ' decrypt failed';
 		bltExit();
 	endif
+	print 'decrypt_to_str: ' + decrypt_to_str;
 	print 'dec_len:' + dec_len;
-	print 'dec:' + dec;
+	if(decrypt_to_str)
+		print 'dec:' + dec;
+	else
+		print 'dec ptr:' + dec;
+		print 'dec ptr data:' + bltDumpPtrData(dec, dec_len, DUMP_CHAR);
+		bltFree(dec);
+	endif
 
 	bltFree(enc);
 endfun
@@ -59,4 +73,5 @@ p_aes_key = read_rsa_key('rsa_aes_private.key', RSA_PRIVATE, '111111');
 encrypt_and_decrypt('public', 'hello world!', key, p_key);
 print '\n=======================================\n';
 encrypt_and_decrypt('private', '!!! hello world! other test!!!', key, p_aes_key);
+encrypt_and_decrypt('private2', '!!! hello world! hahaha ~~~', key, p_aes_key, FALSE);
 

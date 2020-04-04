@@ -27,6 +27,11 @@ static void module_openssl_free_rsa_resource_callback(ZL_EXP_VOID * VM_ARG, void
 	zenglApi_FreeMem(VM_ARG, mod_openssl_rsa);
 }
 
+static void module_openssl_free_ptr_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
+{
+	zenglApi_FreeMem(VM_ARG, ptr);
+}
+
 static ZL_EXP_BOOL is_valid_rsa_key(RESOURCE_LIST * resource_list, void * key)
 {
 	int ret = resource_list_get_ptr_idx(resource_list, key, module_openssl_free_rsa_resource_callback);
@@ -225,8 +230,10 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 		free(err);
 		return ;
 	}
+	ZL_EXP_BOOL is_result_ptr = ZL_EXP_FALSE;
 	if(is_encrypt) {
 		set_arg_value(VM_ARG, 4, ZL_EXP_FAT_INT, NULL, (ZL_EXP_LONG)result);
+		is_result_ptr = ZL_EXP_TRUE;
 	}
 	else {
 		int decrypt_to_str = ZL_EXP_TRUE;
@@ -243,6 +250,13 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 		}
 		else {
 			set_arg_value(VM_ARG, 4, ZL_EXP_FAT_INT, NULL, (ZL_EXP_LONG)result);
+			is_result_ptr = ZL_EXP_TRUE;
+		}
+	}
+	if(is_result_ptr) {
+		int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list), result, retval, module_openssl_free_ptr_callback);
+		if(ret_set_ptr != 0) {
+			zenglApi_Exit(VM_ARG, "%s add pointer to pointer_list failed, pointer_list_set_member error code:%d", func_name, ret_set_ptr);
 		}
 	}
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)retval, 0);

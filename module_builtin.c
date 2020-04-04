@@ -720,7 +720,7 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount != 3 && argcount != 2)
-		zenglApi_Exit(VM_ARG,"usage: bltWriteFile(filename, [ptr|string], length) | bltWriteFile(filename, string)");
+		zenglApi_Exit(VM_ARG,"usage: bltWriteFile(filename, ptr|string, length) | bltWriteFile(filename, string)");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
 		zenglApi_Exit(VM_ARG,"the first argument of bltWriteFile must be string");
@@ -728,13 +728,20 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	char * filename = arg.val.str;
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
 	void * ptr = ZL_EXP_NULL;
+	int ptr_size = 0;
 	char * string = ZL_EXP_NULL;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	if(arg.type == ZL_EXP_FAT_STR) {
 		string = arg.val.str;
 		ptr = string;
 	}
 	else if(arg.type == ZL_EXP_FAT_INT) {
 		ptr = (void *)arg.val.integer;
+		int ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), ptr);
+		if(ptr_idx < 0) {
+			zenglApi_Exit(VM_ARG,"runtime error: the second argument [ptr] of bltWriteFile is invalid pointer");
+		}
+		ptr_size = my_data->pointer_list.list[ptr_idx].ptr_size;
 	}
 	else {
 		zenglApi_Exit(VM_ARG,"the second argument of bltWriteFile must be integer or string");
@@ -746,6 +753,12 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 			zenglApi_Exit(VM_ARG,"the third argument of bltWriteFile must be integer");
 		}
 		length = (int)arg.val.integer;
+		if(length < 0) {
+			zenglApi_Exit(VM_ARG,"runtime error: the third argument [length] of bltWriteFile is invalid");
+		}
+		if(ptr_size > 0 && length > ptr_size) {
+			length = ptr_size;
+		}
 	}
 	else if(string != ZL_EXP_NULL) {
 		length = strlen(string);
@@ -754,7 +767,6 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the length needed by bltWriteFile can't be detected");
 	}
 	char full_path[FULL_PATH_SIZE];
-	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	builtin_make_fullpath(full_path, filename, my_data);
 	FILE * fp = fopen(full_path, "wb");
 	if(fp != NULL) {
@@ -1848,8 +1860,13 @@ ZL_EXP_VOID module_builtin_free(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the first argument [ptr] of bltFree must be integer");
 	}
 	ZL_EXP_VOID * ptr = (ZL_EXP_VOID *)arg.val.integer;
-	if(ptr != NULL)
-		zenglApi_FreeMem(VM_ARG, ptr);
+	if(ptr != NULL) {
+		MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+		int ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), ptr);
+		if(ptr_idx >= 0) {
+			pointer_list_remove_member(VM_ARG, &(my_data->pointer_list), ptr, ZL_EXP_TRUE);
+		}
+	}
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
@@ -1995,7 +2012,7 @@ ZL_EXP_VOID module_builtin_dump_ptr_data(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcou
 		zenglApi_Exit(VM_ARG,"usage: bltDumpPtrData(ptr, ptr_data_len, format): string");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_INT && arg.type != ZL_EXP_FAT_STR) {
-		zenglApi_Exit(VM_ARG,"the second argument [ptr] of bltDumpPtrData must be integer or string");
+		zenglApi_Exit(VM_ARG,"the first argument [ptr] of bltDumpPtrData must be integer or string");
 	}
 	unsigned char * ptr = NULL;
 	ZL_EXP_BOOL is_ptr_str = ZL_EXP_FALSE;
@@ -2005,13 +2022,28 @@ ZL_EXP_VOID module_builtin_dump_ptr_data(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcou
 		ptr = (unsigned char *)arg.val.str;
 		is_ptr_str = ZL_EXP_TRUE;
 	}
+	int ptr_size = 0;
+	if(!is_ptr_str) {
+		MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+		int ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), ptr);
+		if(ptr_idx < 0) {
+			zenglApi_Exit(VM_ARG,"runtime error: the first argument [ptr] of bltDumpPtrData is invalid pointer");
+		}
+		ptr_size = my_data->pointer_list.list[ptr_idx].ptr_size;
+	}
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
 	if(arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the second argument [ptr_data_len] of bltDumpPtrData must be integer");
 	}
 	int ptr_data_len = (int)arg.val.integer;
-	if(is_ptr_str && ptr_data_len > strlen((char *)ptr)) {
-		ptr_data_len = strlen((char *)ptr);
+	if(ptr_data_len < 0)
+		ptr_data_len = 0;
+	if(is_ptr_str) {
+		if(ptr_data_len > strlen((char *)ptr))
+			ptr_data_len = strlen((char *)ptr);
+	}
+	else if(ptr_size > 0 && ptr_data_len > ptr_size) {
+		ptr_data_len = ptr_size;
 	}
 	zenglApi_GetFunArg(VM_ARG,3,&arg);
 	if(arg.type != ZL_EXP_FAT_INT) {

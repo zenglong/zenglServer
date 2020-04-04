@@ -205,6 +205,13 @@ static void st_curl_easy_cleanup_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 	}
 }
 
+static void st_curl_free_ptr_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
+{
+	if(ptr != NULL) {
+		zenglApi_FreeMem(VM_ARG, ptr);
+	}
+}
+
 /**
  * 通过资源列表，判断是否是有效的my_curl_handle_struct类型的指针
  */
@@ -588,6 +595,11 @@ ZL_EXP_VOID module_curl_easy_perform(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 				arg.val.integer = (ZL_EXP_LONG)chunk.memory;
 				zenglApi_SetFunArg(VM_ARG,4,&arg);
 				need_free = ZL_EXP_FALSE;
+				MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+				int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list), chunk.memory, (int)chunk.size, st_curl_free_ptr_callback);
+				if(ret_set_ptr != 0) {
+					zenglApi_Exit(VM_ARG, "curlEasyPerform add pointer to pointer_list failed, pointer_list_set_member error code:%d", ret_set_ptr);
+				}
 			}
 		}
 		if(need_free)

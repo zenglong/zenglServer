@@ -1858,6 +1858,8 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			my_data.response_header.count = my_data.response_header.size = 0;
 			my_data.resource_list.list = PTR_NULL;
 			my_data.resource_list.count = my_data.resource_list.size = 0;
+			my_data.pointer_list.list = NULL;
+			my_data.pointer_list.count = my_data.pointer_list.size = 0;
 			my_data.debug_info = PTR_NULL;
 			ZL_EXP_VOID * VM;
 			VM = zenglApi_Open();
@@ -2180,6 +2182,7 @@ static int main_run_cmd(char * run_cmd)
 				debug_exit(VM, &debug_info);
 
 			resource_list_remove_all_resources(VM, &(my_data.resource_list));
+			pointer_list_remove_all_ptrs(VM, &(my_data.pointer_list));
 			#ifdef USE_MAGICK
 				// 如果开启了magick模块，则通过export_magick_terminus将相关的资源释放掉
 				export_magick_terminus();

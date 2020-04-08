@@ -12,7 +12,7 @@
 
 #define POINTER_EXTEND_SIZE 10
 
-// 资源列表操作时，可能会返回的错误码
+// 指针列表操作时，可能会返回的错误码
 typedef enum _POINTER_LIST_ERRORS{
 	POINTER_LIST_ERR_INIT_PTR_NOT_NULL = 1,
 	POINTER_LIST_ERR_INIT_MALLOC_FAILED,

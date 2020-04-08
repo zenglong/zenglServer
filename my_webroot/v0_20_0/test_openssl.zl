@@ -6,9 +6,16 @@ def RSA_PKCS1_PADDING 0;
 def TRUE 1;
 def FALSE 0;
 
+def NULL 0;
+
 def DUMP_CHAR 3;
 def DUMP_HEX 2;
 def DUMP_OCTAL 4;
+
+fun exit(msg)
+	print msg;
+	bltExit();
+endfun
 
 fun read_rsa_key(file, is_public, password = '')
 	ret = bltReadFile(file, &key_content, &file_size);
@@ -19,11 +26,13 @@ fun read_rsa_key(file, is_public, password = '')
 		else
 			key = opensslReadKey(key_content, is_public);
 		endif
+		if(key == NULL)
+			exit('read key "'+ file +'" failed: ' + opensslGetError());
+		endif
 		print 'key:' + key;
 		return key;
 	else
-		print 'read '+file+' failed, maybe the file does not exists, or open failed.';
-		bltExit();
+		exit('read '+file+' failed, maybe the file does not exists, or open failed.');
 	endif
 endfun
 
@@ -34,25 +43,23 @@ fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE)
 		enc_len = opensslPrivateEncrypt(str, -1, p_key, &enc, RSA_PKCS1_PADDING);
 	endif	
 	if(enc_len == -1)
-		print pub_pri + ' encrypt failed';
-		bltExit();
+		exit(pub_pri + ' encrypt failed: ' + opensslGetError());
 	endif
 
 	file_name = pub_pri + '_enc.data';
 	bltWriteFile(file_name, enc, enc_len);
-	bltReadFile(file_name, &file_data, &file_size);
+	bltReadFile(file_name, &file_data, &file_size, &file_data_ptr);
 	print file_name + ' - size:' + file_size;
-	print file_name + ' - data:' + bltDumpPtrData(file_data, file_size, DUMP_HEX);
+	print file_name + ' - data:' + bltDumpPtrData(file_data_ptr, file_size, DUMP_HEX);
 
 	if(pub_pri == 'public')
-		dec_len = opensslPrivateDecrypt(enc, enc_len, p_key, &dec, RSA_PKCS1_PADDING, decrypt_to_str);
+		dec_len = opensslPrivateDecrypt(file_data_ptr, file_size, p_key, &dec, RSA_PKCS1_PADDING, decrypt_to_str);
 	else
-		dec_len = opensslPublicDecrypt(enc, enc_len, key, &dec, RSA_PKCS1_PADDING, decrypt_to_str);
+		dec_len = opensslPublicDecrypt(file_data_ptr, file_size, key, &dec, RSA_PKCS1_PADDING, decrypt_to_str);
 	endif
 
 	if(dec_len == -1)
-		print pub_pri + ' decrypt failed';
-		bltExit();
+		exit(pub_pri + ' decrypt failed: ' + opensslGetError());
 	endif
 	print 'decrypt_to_str: ' + decrypt_to_str;
 	print 'dec_len:' + dec_len;

@@ -1931,6 +1931,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 
 			pthread_mutex_unlock(&(my_thread_lock.lock));
 			resource_list_remove_all_resources(VM, &(my_data.resource_list));
+			pointer_list_remove_all_ptrs(VM, &(my_data.pointer_list));
 #ifdef USE_MAGICK
 			// 如果开启了magick模块，则通过export_magick_terminus将相关的资源释放掉
 			export_magick_terminus();

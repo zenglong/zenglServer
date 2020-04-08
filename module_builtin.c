@@ -544,6 +544,11 @@ static void builtin_html_escape_str(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * 
 	}
 }
 
+static void module_builtin_free_ptr_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
+{
+	zenglApi_FreeMem(VM_ARG, ptr);
+}
+
 /**
  * 用于检测模块函数的某个参数是否是引用类型，
  * arg_index表示需要检测第几个参数，当arg_index为1时，表示检测第一个参数，为2时表示检测第二个参数，以此类推，
@@ -1600,12 +1605,20 @@ ZL_EXP_VOID module_builtin_output_blob(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_Exit(VM_ARG,"the first argument [blob] of bltOutputBlob must be integer");
 	}
 	char * blob = (char *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	int ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), blob);
+	if(ptr_idx < 0) {
+		zenglApi_Exit(VM_ARG,"runtime error: the first argument [blob] of bltOutputBlob is invalid pointer");
+	}
+	int ptr_size = my_data->pointer_list.list[ptr_idx].ptr_size;
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
 	if(arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the second argument [length] of bltOutputBlob must be integer");
 	}
 	int length = arg.val.integer;
-	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(length > ptr_size) {
+		length = ptr_size;
+	}
 	dynamic_string_append(&my_data->response_body, blob, length, RESPONSE_BODY_STR_SIZE);
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, length, 0);
 }
@@ -1891,7 +1904,7 @@ ZL_EXP_VOID module_builtin_read_file(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 2)
-		zenglApi_Exit(VM_ARG,"usage: bltReadFile(filename, &content[, &size]): integer");
+		zenglApi_Exit(VM_ARG,"usage: bltReadFile(filename, &content[, &size[, &ptr]]): integer");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
 		zenglApi_Exit(VM_ARG,"the first argument [filename] of bltReadFile must be string");
@@ -1928,12 +1941,24 @@ ZL_EXP_VOID module_builtin_read_file(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	arg.type = ZL_EXP_FAT_STR;
 	arg.val.str = file_contents;
 	zenglApi_SetFunArg(VM_ARG,2,&arg);
+	ZL_EXP_BOOL need_ptr = ZL_EXP_TRUE;
 	if(argcount > 2) {
 		arg.type = ZL_EXP_FAT_INT;
 		arg.val.integer = file_size;
 		zenglApi_SetFunArg(VM_ARG,3,&arg);
+		if(argcount > 3) {
+			arg.type = ZL_EXP_FAT_INT;
+			arg.val.integer = (ZL_EXP_LONG)file_contents;
+			zenglApi_SetFunArg(VM_ARG,4,&arg);
+			int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list), file_contents, file_size, module_builtin_free_ptr_callback);
+			if(ret_set_ptr != 0) {
+				zenglApi_Exit(VM_ARG, "bltReadFile add pointer to pointer_list failed, pointer_list_set_member error code:%d", ret_set_ptr);
+			}
+			need_ptr = ZL_EXP_FALSE;
+		}
 	}
-	zenglApi_FreeMem(VM_ARG, file_contents);
+	if(need_ptr)
+		zenglApi_FreeMem(VM_ARG, file_contents);
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 

@@ -449,9 +449,13 @@ ZL_EXP_VOID module_magick_get_image_blob(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcoun
 	}
 	else {
 		write_to_server_log_pipe(WRITE_TO_PIPE, "[debug] MagickGetImageBlob: %x\n", output); // debug
-		int ret_code = resource_list_set_member(&(my_data->resource_list), output, st_magick_destroy_image_blob_callback);
+		/* int ret_code = resource_list_set_member(&(my_data->resource_list), output, st_magick_destroy_image_blob_callback);
 		if(ret_code != 0) {
 			zenglApi_Exit(VM_ARG, "magickGetImageBlob add resource to resource_list failed, resource_list_set_member error code:%d", ret_code);
+		} */
+		int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list), output, (int)length, st_magick_destroy_image_blob_callback);
+		if(ret_set_ptr != 0) {
+			zenglApi_Exit(VM_ARG, "magickGetImageBlob add pointer to pointer_list failed, pointer_list_set_member error code:%d", ret_set_ptr);
 		}
 		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)output, 0);
 	}

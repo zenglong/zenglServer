@@ -14,6 +14,7 @@
 #include <string.h>
 
 #define MODULE_OPENSSL_PADDING_NUM 4
+#define MODULE_OPENSSL_SIGN_TYPE 2
 
 typedef struct _MODULE_OPENSSL_RSA_KEY {
 	RSA * rsa;
@@ -273,6 +274,147 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)retval, 0);
 }
 
+static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const char * func_name,
+		ZL_EXP_BOOL is_sign)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	if(argcount < 5) {
+		if(is_sign)
+			zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, private_key, &sigret, &siglen[, type = 0]): integer", func_name);
+		else
+			zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, private_key, sigbuf, siglen[, type = 0]): integer", func_name);
+	}
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR && arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [data] of %s must be string or integer", func_name);
+	}
+	unsigned char * data = NULL;
+	ZL_EXP_BOOL is_data_str = ZL_EXP_FALSE;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	int data_ptr_size = 0;
+	if(arg.type == ZL_EXP_FAT_STR) {
+		data = (unsigned char *)arg.val.str;
+		is_data_str = ZL_EXP_TRUE;
+	}
+	else {
+		data = (unsigned char *)arg.val.integer;
+		int ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), data);
+		if(ptr_idx < 0) {
+			zenglApi_Exit(VM_ARG,"runtime error: the first argument [data] of %s is invalid pointer", func_name);
+		}
+		data_ptr_size = my_data->pointer_list.list[ptr_idx].ptr_size;
+	}
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the second argument [data_len] of %s must be integer", func_name);
+	}
+	int data_len = (int)arg.val.integer;
+	if(data_len < 0 && is_data_str) {
+		data_len = (int)strlen((char *)data);
+	}
+	if(data_ptr_size > 0 && data_len > data_ptr_size) {
+		data_len = data_ptr_size;
+	}
+	zenglApi_GetFunArg(VM_ARG,3,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the third argument [key] of %s must be integer", func_name);
+	}
+	MODULE_OPENSSL_RSA_KEY * mod_openssl_rsa = (MODULE_OPENSSL_RSA_KEY *)arg.val.integer;
+	if(!is_valid_rsa_key(&(my_data->resource_list), mod_openssl_rsa)) {
+		zenglApi_Exit(VM_ARG,"%s runtime error: invalid key", func_name);
+	}
+	if(is_sign) {
+		if(mod_openssl_rsa->is_public_key) {
+			zenglApi_Exit(VM_ARG,"%s runtime error: the key is not a private key", func_name);
+		}
+	}
+	else {
+		if(!mod_openssl_rsa->is_public_key) {
+			zenglApi_Exit(VM_ARG,"%s runtime error: the key is not a public key", func_name);
+		}
+	}
+	RSA * rsa = mod_openssl_rsa->rsa;
+	if(is_sign) {
+		detect_arg_is_address_type(VM_ARG, 4, &arg, "fourth", "sigret", func_name);
+		detect_arg_is_address_type(VM_ARG, 5, &arg, "fifth", "siglen", func_name);
+	}
+	int sign_types[MODULE_OPENSSL_SIGN_TYPE] = {
+		NID_sha,
+		NID_sha1
+	};
+	int sign_type = sign_types[0];
+	if(argcount > 5) {
+		zenglApi_GetFunArg(VM_ARG,6,&arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the sixth argument [type] of %s must be integer", func_name);
+		}
+		int sign_type_idx = (int)arg.val.integer;
+		if(sign_type_idx < 0 || sign_type_idx >= MODULE_OPENSSL_SIGN_TYPE) {
+			zenglApi_Exit(VM_ARG,"the sixth argument [type] of %s is invalid, must be in [0, %d)", func_name, MODULE_OPENSSL_SIGN_TYPE);
+		}
+		sign_type = sign_types[sign_type_idx];
+	}
+	if(is_sign) {
+		int rsa_len = RSA_size(rsa);
+		unsigned char * sigret = (unsigned char *)zenglApi_AllocMem(VM_ARG, rsa_len);
+		memset(sigret, 0, rsa_len);
+		unsigned int siglen = 0;
+		int retval = RSA_sign(sign_type, data, data_len, sigret, &siglen, rsa);
+		if(!retval) {
+			zenglApi_FreeMem(VM_ARG, sigret);
+			set_arg_value(VM_ARG, 4, ZL_EXP_FAT_INT, NULL, 0);
+			set_arg_value(VM_ARG, 5, ZL_EXP_FAT_INT, NULL, 0);
+			zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+		}
+		else {
+			set_arg_value(VM_ARG, 4, ZL_EXP_FAT_INT, NULL, (ZL_EXP_LONG)sigret);
+			set_arg_value(VM_ARG, 5, ZL_EXP_FAT_INT, NULL, (ZL_EXP_LONG)siglen);
+			int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list), sigret, siglen, module_openssl_free_ptr_callback);
+			if(ret_set_ptr != 0) {
+				zenglApi_Exit(VM_ARG, "%s add pointer to pointer_list failed, pointer_list_set_member error code:%d", func_name, ret_set_ptr);
+			}
+			zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 1, 0);
+		}
+	}
+	else {
+		zenglApi_GetFunArg(VM_ARG,4,&arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the fourth argument [sigbuf] of %s must be integer", func_name);
+		}
+		unsigned char * sigbuf = (unsigned char *)arg.val.integer;
+		int sigbuf_ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), sigbuf);
+		if(sigbuf_ptr_idx < 0) {
+			zenglApi_Exit(VM_ARG,"runtime error: the fourth argument [sigbuf] of %s is invalid pointer", func_name);
+		}
+		int sigbuf_ptr_size = my_data->pointer_list.list[sigbuf_ptr_idx].ptr_size;
+		zenglApi_GetFunArg(VM_ARG,5,&arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the fifth argument [siglen] of %s must be integer", func_name);
+		}
+		unsigned int siglen = (unsigned int)arg.val.integer;
+		if(sigbuf_ptr_size > 0 && siglen > sigbuf_ptr_size) {
+			siglen = sigbuf_ptr_size;
+		}
+		int retval = RSA_verify(sign_type, data, data_len, sigbuf, siglen, rsa);
+		if(!retval) {
+			zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+		}
+		else {
+			zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 1, 0);
+		}
+	}
+}
+
+ZL_EXP_VOID module_openssl_sign(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	common_sign_verify(VM_ARG, argcount, "opensslSign", ZL_EXP_TRUE);
+}
+
+ZL_EXP_VOID module_openssl_verify(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	common_sign_verify(VM_ARG, argcount, "opensslVerify", ZL_EXP_FALSE);
+}
+
 ZL_EXP_VOID module_openssl_public_encrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	common_encrypt_decrypt(VM_ARG, argcount, "opensslPublicEncrypt", ZL_EXP_TRUE, ZL_EXP_TRUE);
@@ -301,4 +443,6 @@ ZL_EXP_VOID module_openssl_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslPrivateDecrypt",module_openssl_private_decrypt);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslPrivateEncrypt",module_openssl_private_encrypt);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslPublicDecrypt",module_openssl_public_decrypt);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslSign",module_openssl_sign);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslVerify",module_openssl_verify);
 }

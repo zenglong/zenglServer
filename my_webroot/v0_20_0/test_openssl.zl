@@ -3,6 +3,8 @@ def RSA_PUBLIC 1;
 def RSA_PRIVATE 0;
 def RSA_PKCS1_PADDING 0;
 
+def RSA_SIGN_SHA1 1;
+
 def TRUE 1;
 def FALSE 0;
 
@@ -74,6 +76,23 @@ fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE)
 	bltFree(enc);
 endfun
 
+fun sign_verify(str, p_key, verify_str, key, print_sign = TRUE, sign_type = RSA_SIGN_SHA1)
+	ret = opensslSign(str, -1, p_key, &sign, &sign_len, sign_type);
+	if(!ret)
+		exit('sign failed: ' + opensslGetError());
+	endif
+
+	if(print_sign)
+		print 'sign len: ' + sign_len;
+		print 'sign data: ' + bltDumpPtrData(sign, sign_len, DUMP_HEX);
+	endif
+
+	ret = opensslVerify(verify_str, -1, key, sign, sign_len, sign_type);
+	print verify_str + ' - verify :' + (ret ? 'True' : 'False');
+
+	bltFree(sign);
+endfun
+
 key = read_rsa_key('rsa_public.key', RSA_PUBLIC);
 p_key = read_rsa_key('rsa_private.key', RSA_PRIVATE);
 p_aes_key = read_rsa_key('rsa_aes_private.key', RSA_PRIVATE, '111111');
@@ -81,4 +100,8 @@ encrypt_and_decrypt('public', 'hello world!', key, p_key);
 print '\n=======================================\n';
 encrypt_and_decrypt('private', '!!! hello world! other test!!!', key, p_aes_key);
 encrypt_and_decrypt('private2', '!!! hello world! hahaha ~~~', key, p_aes_key, FALSE);
+print '\n=======================================\n';
+sign_str = "hello world test sign!";
+sign_verify(sign_str, p_key, "hello world test sign!", key);
+sign_verify(sign_str, p_key, "hello world!", key, FALSE);
 

@@ -38,7 +38,13 @@ fun read_rsa_key(file, is_public, password = '')
 	endif
 endfun
 
+fun print_header()
+	print '\n=======================================\n';
+endfun
+
 fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE)
+	print_header();
+
 	if(pub_pri == 'public')
 		enc_len = opensslPublicEncrypt(str, -1, key, &enc);
 	else
@@ -77,6 +83,10 @@ fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE)
 endfun
 
 fun sign_verify(str, p_key, verify_str, key, print_sign = TRUE, sign_type = RSA_SIGN_SHA1)
+	if(print_sign)
+		print_header();
+	endif
+
 	ret = opensslSign(str, -1, p_key, &sign, &sign_len, sign_type);
 	if(!ret)
 		exit('sign failed: ' + opensslGetError());
@@ -96,11 +106,16 @@ endfun
 key = read_rsa_key('rsa_public.key', RSA_PUBLIC);
 p_key = read_rsa_key('rsa_private.key', RSA_PRIVATE);
 p_aes_key = read_rsa_key('rsa_aes_private.key', RSA_PRIVATE, '111111');
+
 encrypt_and_decrypt('public', 'hello world!', key, p_key);
-print '\n=======================================\n';
+
+encrypt_and_decrypt('private', '!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!', key, p_aes_key);
+
+encrypt_and_decrypt('public', 'hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!', key, p_key);
+
 encrypt_and_decrypt('private', '!!! hello world! other test!!!', key, p_aes_key);
 encrypt_and_decrypt('private2', '!!! hello world! hahaha ~~~', key, p_aes_key, FALSE);
-print '\n=======================================\n';
+
 sign_str = "hello world test sign!";
 sign_verify(sign_str, p_key, "hello world test sign!", key);
 sign_verify(sign_str, p_key, "hello world!", key, FALSE);

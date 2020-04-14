@@ -218,29 +218,85 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 		padding = paddings[padding_idx];
 	}
 	detect_arg_is_address_type(VM_ARG, 4, &arg, "fourth", "result", func_name);
-	int rsa_len = RSA_size(rsa);
-	unsigned char * result = (unsigned char *)zenglApi_AllocMem(VM_ARG, rsa_len);
-	memset(result, 0, rsa_len);
+	int rsa_size = RSA_size(rsa);
+	int data_blocks = 1;
+	int data_block_size = data_len;
+	int result_block_size = rsa_size;
+	if(data_len > 0) {
+		if(is_public && is_encrypt) {
+			switch(padding) {
+			case RSA_SSLV23_PADDING:
+			case RSA_PKCS1_PADDING:
+				data_block_size = rsa_size - 12;
+				break;
+			case RSA_PKCS1_OAEP_PADDING:
+				data_block_size = rsa_size - 42;
+				break;
+			case RSA_NO_PADDING:
+				data_block_size = rsa_size - 1;
+				break;
+			}
+			result_block_size = rsa_size;
+		}
+		else if(!is_public && !is_encrypt) {
+			data_block_size = rsa_size;
+			result_block_size = rsa_size - 1;
+		}
+		else if(!is_public && is_encrypt) {
+			data_block_size = rsa_size - 12;
+			result_block_size = rsa_size;
+		}
+		else {
+			data_block_size = rsa_size;
+			result_block_size = rsa_size - 12;
+		}
+		data_blocks = data_len / data_block_size;
+		if(data_blocks > 0) {
+			if(data_len % data_block_size > 0) {
+				data_blocks += 1;
+			}
+		}
+		else {
+			data_blocks = 1;
+		}
+	}
+	int result_size = data_blocks * result_block_size;
+	unsigned char * result = (unsigned char *)zenglApi_AllocMem(VM_ARG, result_size);
+	memset(result, 0, result_size);
 	int retval = 0;
-	if(is_public) {
-		if(is_encrypt) {
-			retval = RSA_public_encrypt(data_len,data,result,rsa,padding);
+	int i;
+	for(i = 0 ; i < data_blocks ; i++) {
+		int data_block_len = data_block_size;
+		if(data_len > 0) {
+			if(i == (data_blocks - 1)) {
+				data_block_len = data_len - (i * data_block_size);
+			}
+		}
+		else
+			data_block_len = 0;
+		int inner_retval = 0;
+		int data_step = i * data_block_size;
+		if(is_public) {
+			if(is_encrypt) {
+				inner_retval = RSA_public_encrypt(data_block_len,data + data_step,result + retval,rsa,padding);
+			}
+			else {
+				inner_retval = RSA_public_decrypt(data_block_len,data + data_step,result + retval,rsa,padding);
+			}
 		}
 		else {
-			retval = RSA_public_decrypt(data_len,data,result,rsa,padding);
+			if(is_encrypt) {
+				inner_retval = RSA_private_encrypt(data_block_len,data + data_step,result + retval,rsa,padding);
+			}
+			else {
+				inner_retval = RSA_private_decrypt(data_block_len,data + data_step,result + retval,rsa,padding);
+			}
 		}
-	}
-	else {
-		if(is_encrypt) {
-			retval = RSA_private_encrypt(data_len,data,result,rsa,padding);
+		if(inner_retval == -1) {
+			zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)inner_retval, 0);
+			return ;
 		}
-		else {
-			retval = RSA_private_decrypt(data_len,data,result,rsa,padding);
-		}
-	}
-	if(retval == -1) {
-		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)retval, 0);
-		return ;
+		retval += inner_retval;
 	}
 	ZL_EXP_BOOL is_result_ptr = ZL_EXP_FALSE;
 	if(is_encrypt) {

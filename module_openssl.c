@@ -14,7 +14,61 @@
 #include <string.h>
 
 #define MODULE_OPENSSL_PADDING_NUM 4
-#define MODULE_OPENSSL_SIGN_TYPE 2
+#define MODULE_OPENSSL_SIGN_TYPE 9
+
+#ifdef NID_sha
+	#define MOD_OPENSSL_NID_sha NID_sha
+#else
+	#define MOD_OPENSSL_NID_sha -1
+#endif
+
+#ifdef NID_sha1
+	#define MOD_OPENSSL_NID_sha1 NID_sha1
+#else
+	#define MOD_OPENSSL_NID_sha1 -1
+#endif
+
+#ifdef NID_ripemd160
+	#define MOD_OPENSSL_NID_ripemd160 NID_ripemd160
+#else
+	#define MOD_OPENSSL_NID_ripemd160 -1
+#endif
+
+#ifdef NID_md5
+	#define MOD_OPENSSL_NID_md5 NID_md5
+#else
+	#define MOD_OPENSSL_NID_md5 -1
+#endif
+
+#ifdef NID_md5_sha1
+	#define MOD_OPENSSL_NID_md5_sha1 NID_md5_sha1
+#else
+	#define MOD_OPENSSL_NID_md5_sha1 -1
+#endif
+
+#ifdef NID_sha256
+	#define MOD_OPENSSL_NID_sha256 NID_sha256
+#else
+	#define MOD_OPENSSL_NID_sha256 -1
+#endif
+
+#ifdef NID_sha256WithRSAEncryption
+	#define MOD_OPENSSL_NID_sha256WithRSAEncryption NID_sha256WithRSAEncryption
+#else
+	#define MOD_OPENSSL_NID_sha256WithRSAEncryption -1
+#endif
+
+#ifdef NID_sha512
+	#define MOD_OPENSSL_NID_sha512 NID_sha512
+#else
+	#define MOD_OPENSSL_NID_sha512 -1
+#endif
+
+#ifdef NID_sha512WithRSAEncryption
+	#define MOD_OPENSSL_NID_sha512WithRSAEncryption NID_sha512WithRSAEncryption
+#else
+	#define MOD_OPENSSL_NID_sha512WithRSAEncryption -1
+#endif
 
 typedef struct _MODULE_OPENSSL_RSA_KEY {
 	RSA * rsa;
@@ -148,7 +202,7 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 4)
-		zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, key, &result[, padding = 0[, decrypt_to_str = 1]]): integer", func_name);
+		zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, key, &result[, padding = 0[, decrypt_to_str = 1[, use_block = 0]]]): integer", func_name);
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR && arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the first argument [data] of %s must be string or integer", func_name);
@@ -222,7 +276,18 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 	int data_blocks = 1;
 	int data_block_size = data_len;
 	int result_block_size = rsa_size;
-	if(data_len > 0) {
+	ZL_EXP_BOOL use_block = ZL_EXP_FALSE;
+	if(argcount > 6) {
+		zenglApi_GetFunArg(VM_ARG,7,&arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the seventh argument [use_block] of %s must be integer", func_name);
+		}
+		if(arg.val.integer != 0)
+			use_block = ZL_EXP_TRUE;
+		else
+			use_block = ZL_EXP_FALSE;
+	}
+	if(data_len > 0 && use_block) {
 		if(is_public && is_encrypt) {
 			switch(padding) {
 			case RSA_SSLV23_PADDING:
@@ -395,20 +460,31 @@ static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const 
 		detect_arg_is_address_type(VM_ARG, 5, &arg, "fifth", "siglen", func_name);
 	}
 	int sign_types[MODULE_OPENSSL_SIGN_TYPE] = {
-		NID_sha,
-		NID_sha1
+		MOD_OPENSSL_NID_sha,                       // 索引: 0
+		MOD_OPENSSL_NID_sha1,                      // 索引: 1
+		MOD_OPENSSL_NID_ripemd160,                 // 索引: 2
+		MOD_OPENSSL_NID_md5,                       // 索引: 3
+		MOD_OPENSSL_NID_md5_sha1,                  // 索引: 4
+		MOD_OPENSSL_NID_sha256,                    // 索引: 5
+		MOD_OPENSSL_NID_sha256WithRSAEncryption,   // 索引: 6
+		MOD_OPENSSL_NID_sha512,                    // 索引: 7
+		MOD_OPENSSL_NID_sha512WithRSAEncryption    // 索引: 8
 	};
-	int sign_type = sign_types[0];
+	int sign_type_idx = 0;
+	int sign_type = sign_types[sign_type_idx];
 	if(argcount > 5) {
 		zenglApi_GetFunArg(VM_ARG,6,&arg);
 		if(arg.type != ZL_EXP_FAT_INT) {
 			zenglApi_Exit(VM_ARG,"the sixth argument [type] of %s must be integer", func_name);
 		}
-		int sign_type_idx = (int)arg.val.integer;
+		sign_type_idx = (int)arg.val.integer;
 		if(sign_type_idx < 0 || sign_type_idx >= MODULE_OPENSSL_SIGN_TYPE) {
 			zenglApi_Exit(VM_ARG,"the sixth argument [type] of %s is invalid, must be in [0, %d)", func_name, MODULE_OPENSSL_SIGN_TYPE);
 		}
 		sign_type = sign_types[sign_type_idx];
+	}
+	if(sign_type == -1) {
+		zenglApi_Exit(VM_ARG,"the sixth argument [type:%d] of %s is not supported", sign_type_idx, func_name);
 	}
 	if(is_sign) {
 		int rsa_len = RSA_size(rsa);

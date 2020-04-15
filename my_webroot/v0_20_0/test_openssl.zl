@@ -42,13 +42,17 @@ fun print_header()
 	print '\n=======================================\n';
 endfun
 
-fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE)
+fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE, use_block = FALSE)
 	print_header();
 
 	if(pub_pri == 'public')
-		enc_len = opensslPublicEncrypt(str, -1, key, &enc);
+		if(use_block)
+			enc_len = opensslPublicEncrypt(str, -1, key, &enc, RSA_PKCS1_PADDING, FALSE, use_block);
+		else
+			enc_len = opensslPublicEncrypt(str, -1, key, &enc);
+		endif
 	else
-		enc_len = opensslPrivateEncrypt(str, -1, p_key, &enc, RSA_PKCS1_PADDING);
+		enc_len = opensslPrivateEncrypt(str, -1, p_key, &enc, RSA_PKCS1_PADDING, FALSE, use_block);
 	endif	
 	if(enc_len == -1)
 		exit(pub_pri + ' encrypt failed: ' + opensslGetError());
@@ -61,9 +65,9 @@ fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE)
 	print file_name + ' - data:' + bltDumpPtrData(file_data_ptr, file_size, DUMP_HEX);
 
 	if(pub_pri == 'public')
-		dec_len = opensslPrivateDecrypt(file_data_ptr, file_size, p_key, &dec, RSA_PKCS1_PADDING, decrypt_to_str);
+		dec_len = opensslPrivateDecrypt(file_data_ptr, file_size, p_key, &dec, RSA_PKCS1_PADDING, decrypt_to_str, use_block);
 	else
-		dec_len = opensslPublicDecrypt(file_data_ptr, file_size, key, &dec, RSA_PKCS1_PADDING, decrypt_to_str);
+		dec_len = opensslPublicDecrypt(file_data_ptr, file_size, key, &dec, RSA_PKCS1_PADDING, decrypt_to_str, use_block);
 	endif
 
 	if(dec_len == -1)
@@ -109,9 +113,9 @@ p_aes_key = read_rsa_key('rsa_aes_private.key', RSA_PRIVATE, '111111');
 
 encrypt_and_decrypt('public', 'hello world!', key, p_key);
 
-encrypt_and_decrypt('private', '!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!', key, p_aes_key);
+encrypt_and_decrypt('private', '!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!!!! hello world! other test!!!', key, p_aes_key, TRUE, TRUE);
 
-encrypt_and_decrypt('public', 'hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!', key, p_key);
+encrypt_and_decrypt('public', 'hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!hello world!', key, p_key, TRUE, TRUE);
 
 encrypt_and_decrypt('private', '!!! hello world! other test!!!', key, p_aes_key);
 encrypt_and_decrypt('private2', '!!! hello world! hahaha ~~~', key, p_aes_key, FALSE);

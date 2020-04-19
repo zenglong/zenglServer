@@ -14,15 +14,28 @@ def DUMP_CHAR 3;
 def DUMP_HEX 2;
 def DUMP_OCTAL 4;
 
+if(bltIsRunInCmd())
+	bltSetImmediatePrint(TRUE);
+	print 'now in cmd';
+	is_cmd = TRUE;
+	br = '';
+else
+	is_cmd = FALSE;
+	br = '<br/>';
+	print 'now in website' + br;
+endif
+
 fun exit(msg)
-	print msg;
+	global is_cmd,br;
+	print msg + br;
 	bltExit();
 endfun
 
 fun read_rsa_key(file, is_public, password = '')
+	global is_cmd,br;
 	ret = bltReadFile(file, &key_content, &file_size);
 	if(ret == 0)
-		print file + ' file size: ' + file_size;
+		print file + ' file size: ' + file_size + br;
 		if(password)
 			key = opensslReadKey(key_content, is_public, password);
 		else
@@ -31,7 +44,7 @@ fun read_rsa_key(file, is_public, password = '')
 		if(key == NULL)
 			exit('read key "'+ file +'" failed: ' + opensslGetError());
 		endif
-		print 'key:' + key;
+		print 'key:' + key + br;
 		return key;
 	else
 		exit('read '+file+' failed, maybe the file does not exists, or open failed.');
@@ -39,10 +52,16 @@ fun read_rsa_key(file, is_public, password = '')
 endfun
 
 fun print_header()
-	print '\n=======================================\n';
+	global is_cmd,br;
+	if(is_cmd)
+		print '\n=======================================\n';
+	else
+		print br + '=======================================' + br + br;
+	endif
 endfun
 
 fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE, use_block = FALSE)
+	global is_cmd,br;
 	print_header();
 
 	if(pub_pri == 'public')
@@ -61,8 +80,8 @@ fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE, use_blo
 	file_name = pub_pri + '_enc.data';
 	bltWriteFile(file_name, enc, enc_len);
 	bltReadFile(file_name, &file_data, &file_size, &file_data_ptr);
-	print file_name + ' - size:' + file_size;
-	print file_name + ' - data:' + bltDumpPtrData(file_data_ptr, file_size, DUMP_HEX);
+	print file_name + ' - size:' + file_size + br;
+	print file_name + ' - data:' + bltDumpPtrData(file_data_ptr, file_size, DUMP_HEX) + br;
 
 	if(pub_pri == 'public')
 		dec_len = opensslPrivateDecrypt(file_data_ptr, file_size, p_key, &dec, RSA_PKCS1_PADDING, decrypt_to_str, use_block);
@@ -73,13 +92,13 @@ fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE, use_blo
 	if(dec_len == -1)
 		exit(pub_pri + ' decrypt failed: ' + opensslGetError());
 	endif
-	print 'decrypt_to_str: ' + decrypt_to_str;
-	print 'dec_len:' + dec_len;
+	print 'decrypt_to_str: ' + decrypt_to_str + br;
+	print 'dec_len:' + dec_len + br;
 	if(decrypt_to_str)
-		print 'dec:' + dec;
+		print 'dec:' + dec + br;
 	else
-		print 'dec ptr:' + dec;
-		print 'dec ptr data:' + bltDumpPtrData(dec, dec_len, DUMP_CHAR);
+		print 'dec ptr:' + dec + br;
+		print 'dec ptr data:' + bltDumpPtrData(dec, dec_len, DUMP_CHAR) + br;
 		bltFree(dec);
 	endif
 
@@ -87,6 +106,7 @@ fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE, use_blo
 endfun
 
 fun sign_verify(str, p_key, verify_str, key, print_sign = TRUE, sign_type = RSA_SIGN_SHA1)
+	global is_cmd,br;
 	if(print_sign)
 		print_header();
 	endif
@@ -97,12 +117,12 @@ fun sign_verify(str, p_key, verify_str, key, print_sign = TRUE, sign_type = RSA_
 	endif
 
 	if(print_sign)
-		print 'sign len: ' + sign_len;
-		print 'sign data: ' + bltDumpPtrData(sign, sign_len, DUMP_HEX);
+		print 'sign len: ' + sign_len + br;
+		print 'sign data: ' + bltDumpPtrData(sign, sign_len, DUMP_HEX) + br;
 	endif
 
 	ret = opensslVerify(verify_str, -1, key, sign, sign_len, sign_type);
-	print verify_str + ' - verify :' + (ret ? 'True' : 'False');
+	print verify_str + ' - verify :' + (ret ? 'True' : 'False') + br;
 
 	bltFree(sign);
 endfun

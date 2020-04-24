@@ -144,3 +144,5 @@ sign_str = "hello world test sign!";
 sign_verify(sign_str, p_key, "hello world test sign!", key);
 sign_verify(sign_str, p_key, "hello world!", key, FALSE);
 
+opensslFreeKey(key, p_key, p_aes_key);
+

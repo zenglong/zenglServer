@@ -13,68 +13,85 @@
 #include <openssl/err.h>
 #include <string.h>
 
+// rsa加密解密函数需要使用一个padding参数，目前模块函数暂时只支持4个padding值
 #define MODULE_OPENSSL_PADDING_NUM 4
+// 在执行rsa签名时需要使用一个type签名类型，目前模块函数暂时只支持9个签名类型
 #define MODULE_OPENSSL_SIGN_TYPE 9
 
+// 如果定义了NID_sha，就将NID_sha的值定义给MOD_OPENSSL_NID_sha，否则就将MOD_OPENSSL_NID_sha设置为-1，表示底层openssl库不支持该签名类型
 #ifdef NID_sha
 	#define MOD_OPENSSL_NID_sha NID_sha
 #else
 	#define MOD_OPENSSL_NID_sha -1
 #endif
 
+// 如果定义了NID_sha1，就将NID_sha1的值定义给MOD_OPENSSL_NID_sha1，否则就将MOD_OPENSSL_NID_sha1设置为-1，表示底层openssl库不支持该签名类型
 #ifdef NID_sha1
 	#define MOD_OPENSSL_NID_sha1 NID_sha1
 #else
 	#define MOD_OPENSSL_NID_sha1 -1
 #endif
 
+// 如果定义了NID_ripemd160，就将NID_ripemd160的值定义给MOD_OPENSSL_NID_ripemd160，否则就将MOD_OPENSSL_NID_ripemd160设置为-1，表示底层openssl库不支持该签名类型
 #ifdef NID_ripemd160
 	#define MOD_OPENSSL_NID_ripemd160 NID_ripemd160
 #else
 	#define MOD_OPENSSL_NID_ripemd160 -1
 #endif
 
+// 如果定义了NID_md5，就将NID_md5的值定义给MOD_OPENSSL_NID_md5，否则就将MOD_OPENSSL_NID_md5设置为-1，表示底层openssl库不支持该签名类型
 #ifdef NID_md5
 	#define MOD_OPENSSL_NID_md5 NID_md5
 #else
 	#define MOD_OPENSSL_NID_md5 -1
 #endif
 
+// 如果定义了NID_md5_sha1，就将NID_md5_sha1的值定义给MOD_OPENSSL_NID_md5_sha1，否则就将MOD_OPENSSL_NID_md5_sha1设置为-1，表示底层openssl库不支持该签名类型
 #ifdef NID_md5_sha1
 	#define MOD_OPENSSL_NID_md5_sha1 NID_md5_sha1
 #else
 	#define MOD_OPENSSL_NID_md5_sha1 -1
 #endif
 
+// 如果定义了NID_sha256，就将NID_sha256的值定义给MOD_OPENSSL_NID_sha256，否则就将MOD_OPENSSL_NID_sha256设置为-1，表示底层openssl库不支持该签名类型
 #ifdef NID_sha256
 	#define MOD_OPENSSL_NID_sha256 NID_sha256
 #else
 	#define MOD_OPENSSL_NID_sha256 -1
 #endif
 
+// 如果定义了NID_sha256WithRSAEncryption，就将NID_sha256WithRSAEncryption的值定义给MOD_OPENSSL_NID_sha256WithRSAEncryption，
+// 否则就将MOD_OPENSSL_NID_sha256WithRSAEncryption设置为-1，表示底层openssl库不支持该签名类型
 #ifdef NID_sha256WithRSAEncryption
 	#define MOD_OPENSSL_NID_sha256WithRSAEncryption NID_sha256WithRSAEncryption
 #else
 	#define MOD_OPENSSL_NID_sha256WithRSAEncryption -1
 #endif
 
+// 如果定义了NID_sha512，就将NID_sha512的值定义给MOD_OPENSSL_NID_sha512，否则就将MOD_OPENSSL_NID_sha512设置为-1，表示底层openssl库不支持该签名类型
 #ifdef NID_sha512
 	#define MOD_OPENSSL_NID_sha512 NID_sha512
 #else
 	#define MOD_OPENSSL_NID_sha512 -1
 #endif
 
+// 如果定义了NID_sha512WithRSAEncryption，就将NID_sha512WithRSAEncryption的值定义给MOD_OPENSSL_NID_sha512WithRSAEncryption，
+// 否则就将MOD_OPENSSL_NID_sha512WithRSAEncryption设置为-1，表示底层openssl库不支持该签名类型
 #ifdef NID_sha512WithRSAEncryption
 	#define MOD_OPENSSL_NID_sha512WithRSAEncryption NID_sha512WithRSAEncryption
 #else
 	#define MOD_OPENSSL_NID_sha512WithRSAEncryption -1
 #endif
 
+// 对RSA指针进行模块封装
 typedef struct _MODULE_OPENSSL_RSA_KEY {
-	RSA * rsa;
-	ZL_EXP_BOOL is_public_key;
+	RSA * rsa; // openssl底层库函数在进行加密解密，签名操作时所需要的RSA指针，通过读取RSA密钥key生成的指针
+	ZL_EXP_BOOL is_public_key; // 判断是公钥key生成的RSA指针，还是私钥key生成的
 } MODULE_OPENSSL_RSA_KEY;
 
+/**
+ * 在zengl脚本退出时，会自动调用下面这个回调函数，将分配过的rsa key资源给释放掉
+ */
 static void module_openssl_free_rsa_resource_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 {
 	MODULE_OPENSSL_RSA_KEY * mod_openssl_rsa = (MODULE_OPENSSL_RSA_KEY *)ptr;
@@ -82,11 +99,17 @@ static void module_openssl_free_rsa_resource_callback(ZL_EXP_VOID * VM_ARG, void
 	zenglApi_FreeMem(VM_ARG, mod_openssl_rsa);
 }
 
+/**
+ * 在zengl脚本退出时，会自动调用下面这个回调函数，将openssl模块函数分配过的指针给释放掉，使用bltFree释放指针时，也会调用这个函数来执行具体的释放操作
+ */
 static void module_openssl_free_ptr_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 {
 	zenglApi_FreeMem(VM_ARG, ptr);
 }
 
+/**
+ * openssl模块函数内部会通过此函数来判断，脚本提供的key参数是否是有效的rsa key
+ */
 static ZL_EXP_BOOL is_valid_rsa_key(RESOURCE_LIST * resource_list, void * key)
 {
 	int ret = resource_list_get_ptr_idx(resource_list, key, module_openssl_free_rsa_resource_callback);
@@ -131,6 +154,22 @@ static void set_arg_value(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_EXPORT_MOD_FUN
 	zenglApi_SetFunArg(VM_ARG,argnum,&arg);
 }
 
+/**
+ * opensslGetError模块函数，用于获取openssl操作失败时的出错信息
+ *
+ * 例如：
+	use builtin,openssl;
+	def NULL 0;
+
+	.............................. // 省略中间代码
+
+	key = opensslReadKey(key_content, is_public, password);
+	if(key == NULL)
+		exit('read key "'+ file +'" failed: ' + opensslGetError());
+	endif
+
+	上面代码片段中，如果opensslReadKey读取密钥key失败，则会通过opensslGetError来获取具体的错误信息，从而可以知道大概的出错原因
+ */
 ZL_EXP_VOID module_openssl_get_error(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -378,6 +417,7 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
 			decrypt_to_str = (int)arg.val.integer;
 		}
 		if(decrypt_to_str) {
+			result[retval] = '\0';
 			set_arg_value(VM_ARG, 4, ZL_EXP_FAT_STR, (ZL_EXP_CHAR *)result, 0);
 			zenglApi_FreeMem(VM_ARG, result);
 		}
@@ -567,6 +607,34 @@ ZL_EXP_VOID module_openssl_public_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 	common_encrypt_decrypt(VM_ARG, argcount, "opensslPublicDecrypt", ZL_EXP_TRUE, ZL_EXP_FALSE);
 }
 
+ZL_EXP_VOID module_openssl_free_key(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "opensslFreeKey";
+	if(argcount < 1) {
+		zenglApi_Exit(VM_ARG,"usage: %s(key...): integer", func_name);
+	}
+	int i;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	for(i = 1; i <= argcount; i++) {
+		zenglApi_GetFunArg(VM_ARG,i,&arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the %d argument of %s must be integer", i, func_name);
+		}
+		MODULE_OPENSSL_RSA_KEY * mod_openssl_rsa = (MODULE_OPENSSL_RSA_KEY *)arg.val.integer;
+		if(!is_valid_rsa_key(&(my_data->resource_list), mod_openssl_rsa)) {
+			zenglApi_Exit(VM_ARG,"runtime error: the %d argument of %s is invalid key", i, func_name);
+		}
+		module_openssl_free_rsa_resource_callback(VM_ARG, mod_openssl_rsa);
+		int ret_code = resource_list_remove_member(&(my_data->resource_list), mod_openssl_rsa); // 将释放掉的实例指针从资源列表中移除
+		if(ret_code != 0) {
+			zenglApi_Exit(VM_ARG, "%s remove resource from resource_list failed [the %d argument], resource_list_remove_member error code:%d",
+					func_name, i, ret_code);
+		}
+	}
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, i, 0);
+}
+
 ZL_EXP_VOID module_openssl_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 {
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslGetError",module_openssl_get_error);
@@ -577,4 +645,5 @@ ZL_EXP_VOID module_openssl_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslPublicDecrypt",module_openssl_public_decrypt);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslSign",module_openssl_sign);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslVerify",module_openssl_verify);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"opensslFreeKey",module_openssl_free_key);
 }

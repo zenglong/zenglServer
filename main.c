@@ -1930,7 +1930,9 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				debug_exit(VM, &debug_info);
 
 			pthread_mutex_unlock(&(my_thread_lock.lock));
+			// 移除所有的资源指针，并清理这些资源指针所占用的内存
 			resource_list_remove_all_resources(VM, &(my_data.resource_list));
+			// 移除所有的数据指针，并清理这些数据指针所占用的内存
 			pointer_list_remove_all_ptrs(VM, &(my_data.pointer_list));
 #ifdef USE_MAGICK
 			// 如果开启了magick模块，则通过export_magick_terminus将相关的资源释放掉
@@ -2182,7 +2184,9 @@ static int main_run_cmd(char * run_cmd)
 			if(config_remote_debug_enable)
 				debug_exit(VM, &debug_info);
 
+			// 移除所有的资源指针，并清理这些资源指针所占用的内存
 			resource_list_remove_all_resources(VM, &(my_data.resource_list));
+			// 移除所有的数据指针，并清理这些数据指针所占用的内存
 			pointer_list_remove_all_ptrs(VM, &(my_data.pointer_list));
 			#ifdef USE_MAGICK
 				// 如果开启了magick模块，则通过export_magick_terminus将相关的资源释放掉

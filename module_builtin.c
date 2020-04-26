@@ -1888,6 +1888,7 @@ ZL_EXP_VOID module_builtin_free(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * 该模块函数的第一个参数filename表示需要读取的文件的文件名，该文件名是一个相对于当前主执行脚本的路径，
  * 第二个&content参数必须是引用类型，用于存储读取的文件内容，
  * 第三个&size参数是可选的，当提供了该参数时，也必须是引用类型，用于存储文件的字节大小，
+ * 第四个&ptr参数也是可选的，当提供了该参数时，也必须是引用类型，用于存储数据指针，该指针指向了文件内容对应的二进制数据(通常用于图像文件，加密数据文件等，这些文件的内容是一些二进制数据)
  * 该模块函数如果执行成功会返回整数0，执行失败则返回小于0的值，当返回值为-1时表示文件不存在，返回值为-2时表示无法打开文件，
  * 例如：
 	use builtin;
@@ -2030,6 +2031,34 @@ ZL_EXP_VOID module_builtin_sleep(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
 }
 
+/**
+ * bltDumpPtrData模块函数，以十进制，十六进制，八进制等形式显示出指针所指向的二进制数据
+ * 第一个ptr必须是整数类型的数据指针，每个数据指针(和资源指针不同)都会记录在内部的pointer_list列表中，不在该列表中的指针都是无效的数据指针
+ * 第二个参数ptr_data_len必须是整数类型，表示需要将该指针所指向的多少字节的数据给显示出来，每个数据指针所指向的数据都有一个尺寸，超出尺寸的数据不会被显示出来
+ * 第三个参数format也必须是整数类型，表示以什么格式来显示二进制数据
+ *  - 当format为0时，表示以十进制整数显示出来，可能是负数
+ *  - 当format为1时，表示以十进制无符号整数显示出来，没有负数
+ *  - 当format为2时，表示以十六进制格式显示出来
+ *  - 当format为3时，表示以ASCII字符形式显示出来
+ *  - 当format为4时，表示以八进制格式显示出来
+ *
+ * 例如：
+	use builtin;
+	def DUMP_HEX 2;
+
+	........................ // 省略中间代码
+
+	bltReadFile('private_enc.data', &file_data, &file_size, &file_data_ptr);
+	print file_name + ' - size:' + file_size;
+	print file_name + ' - data:' + bltDumpPtrData(file_data_ptr, file_size, DUMP_HEX);
+
+	上面代码片段，将文件数据读取出来，并将file_data_ptr设置为指向这些数据的指针，最后通过bltDumpPtrData根据file_data_ptr指针，将这些数据以十六进制格式显示出来
+
+	以上代码片段的执行结果类似如下所示：
+
+	private_enc.data - size:1024
+	private_enc.data - data:C4 CC 02 82 F3 2D 83 F6 B7 40 4F EC 38 03 82 54 65 63 AD FE 0C 8D AF 82 98 A7 7C 79 EE ......................
+ */
 ZL_EXP_VOID module_builtin_dump_ptr_data(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

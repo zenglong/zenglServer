@@ -77,7 +77,7 @@ typedef struct _MAIN_DATA{
 	DYNAMIC_STRING response_body;    // zengl脚本的输出内容会先追加到response_body动态字符串中，最后在脚本结束时，再将该动态字符串作为响应主体反馈给客户端
 	DYNAMIC_STRING response_header;  // zengl脚本中设置的响应头信息
 	RESOURCE_LIST resource_list; // 资源列表中存储了在脚本退出时，需要自动清理的资源，例如mysql数据库连接资源，mysql查询结果相关的资源等等
-	POINTER_LIST pointer_list;
+	POINTER_LIST pointer_list;   // 指针列表中包含了在脚本退出时，需要自动清理的数据指针，这些指针指向的数据通常是一些二进制数据，例如：图像文件的数据，加密的数据等
 	char * full_path; // 当前执行脚本的路径信息
 	DEBUG_INFO * debug_info; // 调试相关的结构体指针，该指针对应的结构体中包含了连接套接字等
 } MAIN_DATA;

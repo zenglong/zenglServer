@@ -14,6 +14,7 @@ def DUMP_CHAR 3;
 def DUMP_HEX 2;
 def DUMP_OCTAL 4;
 
+// 判断是命令行模式，还是普通的web模式，如果是普通的web模式，则将br设置为<br/>即html格式的换行标签
 if(bltIsRunInCmd())
 	bltSetImmediatePrint(TRUE);
 	print 'now in cmd';
@@ -25,12 +26,14 @@ else
 	print 'now in website' + br;
 endif
 
+// 退出脚本并打印相应的信息
 fun exit(msg)
 	global is_cmd,br;
 	print msg + br;
 	bltExit();
 endfun
 
+// 从文件中读取rsa密钥key，并返回密钥key相关的资源指针，is_public表示读取的是公钥还是私钥，password表示密钥密码(如果密钥经过了加密处理，则需要提供相关的密码)
 fun read_rsa_key(file, is_public, password = '')
 	global is_cmd,br;
 	ret = bltReadFile(file, &key_content, &file_size);
@@ -51,6 +54,7 @@ fun read_rsa_key(file, is_public, password = '')
 	endif
 endfun
 
+// 打印分隔符
 fun print_header()
 	global is_cmd,br;
 	if(is_cmd)
@@ -60,6 +64,7 @@ fun print_header()
 	endif
 endfun
 
+// 当pub_pri为public时，执行公钥加密，私钥解密，否则执行私钥加密，公钥解密
 fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE, use_block = FALSE)
 	global is_cmd,br;
 	print_header();
@@ -105,6 +110,7 @@ fun encrypt_and_decrypt(pub_pri, str, key, p_key, decrypt_to_str = TRUE, use_blo
 	bltFree(enc);
 endfun
 
+// 执行RSA签名和验签操作
 fun sign_verify(str, p_key, verify_str, key, print_sign = TRUE, sign_type = RSA_SIGN_SHA1)
 	global is_cmd,br;
 	if(print_sign)
@@ -127,9 +133,12 @@ fun sign_verify(str, p_key, verify_str, key, print_sign = TRUE, sign_type = RSA_
 	bltFree(sign);
 endfun
 
+// 下面读取公钥key，私钥key以及加密的私钥key
 key = read_rsa_key('rsa_public.key', RSA_PUBLIC);
 p_key = read_rsa_key('rsa_private.key', RSA_PRIVATE);
 p_aes_key = read_rsa_key('rsa_aes_private.key', RSA_PRIVATE, '111111');
+
+// 下面通过encrypt_and_decrypt测试RSA加密解密
 
 encrypt_and_decrypt('public', 'hello world!', key, p_key);
 
@@ -140,9 +149,11 @@ encrypt_and_decrypt('public', 'hello world!hello world!hello world!hello world!h
 encrypt_and_decrypt('private', '!!! hello world! other test!!!', key, p_aes_key);
 encrypt_and_decrypt('private2', '!!! hello world! hahaha ~~~', key, p_aes_key, FALSE);
 
+// 下面通过sign_verify测试RSA签名和验签
 sign_str = "hello world test sign!";
 sign_verify(sign_str, p_key, "hello world test sign!", key);
 sign_verify(sign_str, p_key, "hello world!", key, FALSE);
 
+// 释放掉密钥key
 opensslFreeKey(key, p_key, p_aes_key);
 

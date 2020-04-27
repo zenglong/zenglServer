@@ -198,7 +198,7 @@ redis module is enabled!!!
 
 如果是centos系统，则可以通过 yum install openssl openssl-devel 来安装相关的底层库。
 
-要同时使用mysql，magick，pcre，curl，redis，以及curl模块，可以使用 make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes USE_REDIS=yes USE_OPENSSL=yes 命令：
+要同时使用mysql，magick，pcre，curl，redis，以及openssl模块，可以使用 make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes USE_REDIS=yes USE_OPENSSL=yes 命令：
 
 ```
 [root@localhost zenglServerTest]# make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes USE_REDIS=yes USE_OPENSSL=yes

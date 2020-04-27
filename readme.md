@@ -188,6 +188,32 @@ redis module is enabled!!!
 [root@localhost zenglServerTest]# 
 ```
 
+### 开启openssl模块
+
+从v0.20.0版本开始，在编译时，可以添加openssl模块，从而可以执行RSA加密，解密，签名，验签之类的操作。只要在make命令后面加入USE_OPENSSL=yes即可。
+
+当然，要使用openssl模块，前提是系统中安装了底层的openssl开发库。
+
+如果是ubuntu系统，可以通过 sudo apt-get install openssl libssl-dev 来安装openssl相关的库和开发头文件等。
+
+如果是centos系统，则可以通过 yum install openssl openssl-devel 来安装相关的底层库。
+
+要同时使用mysql，magick，pcre，curl，redis，以及curl模块，可以使用 make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes USE_REDIS=yes USE_OPENSSL=yes 命令：
+
+```
+[root@localhost zenglServerTest]# make USE_MYSQL=yes USE_MAGICK=6 USE_PCRE=yes USE_CURL=yes USE_REDIS=yes USE_OPENSSL=yes
+............................................................
+gcc -g3 -ggdb -O0 -std=c99 main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c zlsrv_setproctitle.c pointer.c main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zlsrv_setproctitle.h pointer.h module_mysql.c module_mysql.h  module_magick.c module_magick.h module_pcre.c module_pcre.h module_curl.c module_curl.h module_redis.c module_redis.h module_openssl.c module_openssl.h zengl/linux/zengl_exportfuns.h  -o zenglServer zengl/linux/libzengl.a crustache/libcrustache.a   -lpthread -lm -DUSE_MYSQL `mysql_config --cflags --libs`  -D USE_MAGICK=6 `pkg-config --cflags --libs Wand` -DUSE_PCRE `pcre-config --cflags --libs` -DUSE_CURL `curl-config --cflags --libs` -DUSE_REDIS `pkg-config --cflags --libs hiredis` -DUSE_OPENSSL `pkg-config --cflags --libs openssl`
+
+mysql module is enabled!!!
+magick module is enabled!!!
+pcre module is enabled!!!
+curl module is enabled!!!
+redis module is enabled!!!
+openssl module is enabled!!!
+[root@localhost zenglServerTest]# 
+```
+
 ### 自定义URL_PATH_SIZE和FULL_PATH_SIZE宏对应的值
 
 从v0.17.0版本开始，在编译时，可以自定义main.h头文件中的URL_PATH_SIZE和FULL_PATH_SIZE宏对应的值，只要在make命令后面加入URL_PATH_SIZE=xxx和FULL_PATH_SIZE=xxx即可(xxx表示需要自定义的数值)：

@@ -33,8 +33,8 @@ int pointer_list_get_ptr_idx(POINTER_LIST * pointer_list, void * ptr);
 /**
  * 向指针列表中添加成员
  * ptr参数表示数据相关的指针，如果ptr数据指针没有在脚本中被手动清理的话(通过bltFree内建模块函数)，
- * ptr_size参数表示该数据指针所指向的二进制数据的实际的字节大小
  * 那么在脚本退出时，就会自动调用destroy_callback回调函数去释放ptr数据指针所占用的内存空间
+ * ptr_size参数表示该数据指针所指向的二进制数据的实际的字节大小
  */
 int pointer_list_set_member(POINTER_LIST * pointer_list, void * ptr, int ptr_size, PointerDestroyCallBack destroy_callback);
 

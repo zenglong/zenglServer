@@ -78,6 +78,7 @@ struct _my_multipart_data {
 	my_multipart_alloc part_alloc;
 	ZL_EXP_VOID * VM_ARG;
 	ZENGL_EXPORT_MEMBLOCK * memblock;
+	MAIN_DATA * my_data;
 };
 
 typedef struct _my_multipart_data my_multipart_data;
@@ -507,6 +508,17 @@ static int on_multipart_data_end(multipart_parser * p)
 			arg.type = ZL_EXP_FAT_INT;
 			arg.val.integer = (ZL_EXP_LONG)data->part.content_length;
 			zenglApi_SetMemBlockByHashKey(VM_ARG, &file_memblock, "length", &arg);
+
+			// 将文件内容指针加入指针列表，使其成为有效的数据指针，其他需要时用指针的模块函数，就不会报无效的指针的错误了
+			MAIN_DATA * my_data = data->my_data;
+			int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list),
+					data->part.content,
+					data->part.content_length,
+					NULL);
+			if(ret_set_ptr != 0) {
+				zenglApi_Exit(VM_ARG, "rqtGetBodyAsArray add pointer to pointer_list failed, pointer_list_set_member error code:%d", ret_set_ptr);
+			}
+
 			data->part_alloc.name = multipart_alloc_zlmem(VM_ARG, data->part_alloc.name, data->part.name_length + 1);
 			//strncpy(data->part_alloc.name, data->part.name, data->part.name_length);
 			//data->part_alloc.name[data->part.name_length] = '\0';
@@ -819,6 +831,7 @@ ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 							my_multipart_data my_mp_data = {0};
 							my_mp_data.VM_ARG = VM_ARG;
 							my_mp_data.memblock = &my_data->body_memblock;
+							my_mp_data.my_data = my_data;
 							multipart_parser_set_data(parser, &my_mp_data);
 							multipart_parser_execute(parser, q, q_len);
 							multipart_free_all_zlmem(parser);

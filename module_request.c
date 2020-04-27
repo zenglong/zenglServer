@@ -509,7 +509,7 @@ static int on_multipart_data_end(multipart_parser * p)
 			arg.val.integer = (ZL_EXP_LONG)data->part.content_length;
 			zenglApi_SetMemBlockByHashKey(VM_ARG, &file_memblock, "length", &arg);
 
-			// 将文件内容指针加入指针列表，使其成为有效的数据指针，其他需要时用指针的模块函数，就不会报无效的指针的错误了
+			// 将文件内容指针加入指针列表，使其成为有效的数据指针，其他需要使用指针的模块函数，就不会报无效的指针的错误了
 			MAIN_DATA * my_data = data->my_data;
 			int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list),
 					data->part.content,

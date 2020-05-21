@@ -18,6 +18,7 @@
 #include "crustache/crustache.h"
 #include "crustache/buffer.h"
 #include "md5.h"
+#include "base64.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -2136,6 +2137,63 @@ ZL_EXP_VOID module_builtin_dump_ptr_data(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcou
 		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "", 0, 0);
 }
 
+ZL_EXP_VOID module_builtin_base64_encode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltBase64Encode";
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(data[, data_len = -1]): string", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR && arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [data] of %s must be string or integer", func_name);
+	}
+	unsigned char * data = NULL;
+	ZL_EXP_BOOL is_data_str = ZL_EXP_FALSE;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	int data_ptr_size = 0;
+	if(arg.type == ZL_EXP_FAT_STR) {
+		data = (unsigned char *)arg.val.str;
+		is_data_str = ZL_EXP_TRUE;
+	}
+	else {
+		data = (unsigned char *)arg.val.integer;
+		int ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), data);
+		if(ptr_idx < 0) {
+			zenglApi_Exit(VM_ARG,"runtime error: the first argument [data] of %s is invalid pointer", func_name);
+		}
+		data_ptr_size = my_data->pointer_list.list[ptr_idx].ptr_size;
+	}
+	int data_len = -1;
+	if(argcount > 1) {
+		zenglApi_GetFunArg(VM_ARG,2,&arg);
+		if(arg.type != ZL_EXP_FAT_INT) {
+			zenglApi_Exit(VM_ARG,"the second argument [data_len] of %s must be integer", func_name);
+		}
+		data_len = (int)arg.val.integer;
+	}
+	if(data_len < 0) {
+		if(is_data_str) {
+			data_len = (int)strlen((char *)data);
+		}
+		else {
+			data_len = data_ptr_size;
+		}
+	}
+	if(data_ptr_size > 0 && data_len > data_ptr_size) {
+		data_len = data_ptr_size;
+	}
+	if(data_len > 0) {
+		unsigned int encode_len = b64e_size(data_len) + 1;
+		unsigned char * encode_str = malloc((sizeof(char) * encode_len));
+		encode_len = b64_encode(data, (unsigned int)data_len, encode_str);
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, (char *)encode_str, 0, 0);
+		free(encode_str);
+	}
+	else {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "", 0, 0);
+	}
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -2174,4 +2232,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSetImmediatePrint",module_builtin_set_immediate_print);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSleep",module_builtin_sleep);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltDumpPtrData",module_builtin_dump_ptr_data);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltBase64Encode",module_builtin_base64_encode);
 }

@@ -1,0 +1,3 @@
+use builtin;
+
+print bltBase64Encode("hello world");

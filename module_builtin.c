@@ -572,6 +572,23 @@ void st_detect_arg_is_address_type(ZL_EXP_VOID * VM_ARG,
 }
 
 /**
+ * 将模块函数argnum位置对应的参数设置为指定的值
+ */
+static void st_set_arg_value(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_EXPORT_MOD_FUN_ARG_TYPE arg_type,
+		ZL_EXP_CHAR * arg_str_val, ZL_EXP_LONG arg_int_val)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	arg.type = arg_type;
+	if(arg_type == ZL_EXP_FAT_STR) {
+		arg.val.str = arg_str_val;
+	}
+	else if(arg_type == ZL_EXP_FAT_INT) {
+		arg.val.integer = arg_int_val;
+	}
+	zenglApi_SetFunArg(VM_ARG,argnum,&arg);
+}
+
+/**
  * bltIterArray模块函数，用于对数组成员进行迭代操作
  * 例如：
  * test['name'] = 'zengl';
@@ -2194,6 +2211,52 @@ ZL_EXP_VOID module_builtin_base64_encode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcou
 	}
 }
 
+ZL_EXP_VOID module_builtin_base64_decode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltBase64Decode";
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: %s(data, &result[, decode_to_str = 0]): integer", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [data] of %s must be string", func_name);
+	}
+	unsigned char * data = (unsigned char *)arg.val.str;
+	int data_len = (int)strlen((char *)data);
+	if(data_len > 0) {
+		st_detect_arg_is_address_type(VM_ARG, 2, &arg, "second argument [&result]", func_name);
+		int result_size = b64d_size(data_len);
+		unsigned char * result = (unsigned char *)zenglApi_AllocMem(VM_ARG, (sizeof(char) * result_size) +1);
+		memset(result, 0, ((sizeof(char) * result_size) +1));
+		int result_len = b64_decode(data, (unsigned int)data_len, result);
+		int decode_to_str = 0;
+		if(argcount > 2) {
+			zenglApi_GetFunArg(VM_ARG,3,&arg);
+			if(arg.type != ZL_EXP_FAT_INT) {
+				zenglApi_Exit(VM_ARG,"the third argument [decode_to_str] of %s must be integer", func_name);
+			}
+			decode_to_str = (int)arg.val.integer;
+		}
+		if(decode_to_str) {
+			st_set_arg_value(VM_ARG, 2, ZL_EXP_FAT_STR, (char *)result, 0);
+			zenglApi_FreeMem(VM_ARG, result);
+		}
+		else {
+			st_set_arg_value(VM_ARG, 2, ZL_EXP_FAT_INT, NULL, (ZL_EXP_LONG)result);
+			MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+			int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list), result, result_len, module_builtin_free_ptr_callback);
+			if(ret_set_ptr != 0) {
+				zenglApi_Exit(VM_ARG, "%s add pointer to pointer_list failed, pointer_list_set_member error code:%d", func_name, ret_set_ptr);
+			}
+		}
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, result_len, 0);
+	}
+	else {
+		st_set_arg_value(VM_ARG, 2, ZL_EXP_FAT_INT, NULL, 0);
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+	}
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -2233,4 +2296,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSleep",module_builtin_sleep);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltDumpPtrData",module_builtin_dump_ptr_data);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltBase64Encode",module_builtin_base64_encode);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltBase64Decode",module_builtin_base64_decode);
 }

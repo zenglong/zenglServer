@@ -1,3 +1,10 @@
 use builtin;
+def TRUE 1;
 
-print bltBase64Encode("hello world");
+encode_str = bltBase64Encode("hello world");
+print encode_str;
+
+decode_len = bltBase64Decode(encode_str, &decode, TRUE);
+print 'decode_len: ' + decode_len;
+print 'decode: ' + decode;
+

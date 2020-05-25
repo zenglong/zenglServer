@@ -1,0 +1,64 @@
+use builtin,openssl;
+def RSA_PUBLIC 1;
+def RSA_PRIVATE 0;
+def RSA_PKCS1_PADDING 0;
+
+def TRUE 1;
+def FALSE 0;
+
+def NULL 0;
+
+def DUMP_HEX 2;
+
+if(bltIsRunInCmd())
+	bltSetImmediatePrint(TRUE);
+	print 'now in cmd';
+	is_cmd = TRUE;
+	br = '\n';
+else
+	is_cmd = FALSE;
+	br = '<br/><br/>';
+	print 'now in website' + br;
+endif
+
+fun exit(msg)
+	global is_cmd,br;
+	print msg + br;
+	bltExit();
+endfun
+
+fun read_rsa_key(file, is_public, password = '')
+	global is_cmd,br;
+	ret = bltReadFile(file, &key_content, &file_size);
+	if(ret == 0)
+		// print file + ' file size: ' + file_size + br;
+		if(password)
+			key = opensslReadKey(key_content, is_public, password);
+		else
+			key = opensslReadKey(key_content, is_public);
+		endif
+		if(key == NULL)
+			exit('read key "'+ file +'" failed: ' + opensslGetError());
+		endif
+		// print 'key:' + key + br;
+		return key;
+	else
+		exit('read '+file+' failed, maybe the file does not exists, or open failed.');
+	endif
+endfun
+
+key = read_rsa_key('rsa_public.key', RSA_PUBLIC);
+p_key = read_rsa_key('rsa_private.key', RSA_PRIVATE);
+
+print 'source string:' + (src_str = "hello world! I'm a programmer!") + br;
+enc_len = opensslPrivateEncrypt(src_str, -1, p_key, &enc);
+print 'encrypt: ' + bltDumpPtrData(enc, enc_len, DUMP_HEX) + br;
+print 'encrypt base64 encode: ' + (encode = bltBase64Encode(enc)) + br;
+
+decode_len = bltBase64Decode(encode, &decode);
+print 'decode_len: ' + decode_len + br;
+print 'decode: ' + bltDumpPtrData(decode, decode_len, DUMP_HEX) + br;
+
+dec_len = opensslPublicDecrypt(decode, decode_len, key, &dec, RSA_PKCS1_PADDING, TRUE);
+print 'decrypt string: ' + dec + br;
+

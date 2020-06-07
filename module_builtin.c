@@ -2154,6 +2154,47 @@ ZL_EXP_VOID module_builtin_dump_ptr_data(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcou
 		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, "", 0, 0);
 }
 
+/**
+ * bltBase64Encode模块函数，对数据进行base64编码
+ * 第一个参数data必须是字符串，或者是整数类型的数据指针
+ * 第二个参数data_len是可选参数，当提供了该参数时，必须是整数类型，表示需要编码的data数据的尺寸大小，默认值是-1，表示自动检测data的尺寸大小
+ * 返回值是将data数据经过了base64编码后的字符串
+ * 例如：
+	use builtin;
+	def TRUE 1;
+
+	encode_str = bltBase64Encode("hello world");
+	print encode_str;
+
+	上面脚本使用bltBase64Encode来对hello world字符串进行base64编码
+
+	use builtin;
+	def TRUE 1;
+
+	encode_str = bltBase64Encode("hello world", 4);
+	print encode_str;
+
+	上面代码片段，在提供了第二个参数4后，就只会对hello world的前4个字符进行base64编码
+
+	use builtin,openssl;
+
+	def RSA_PUBLIC 1;
+	def RSA_PRIVATE 0;
+
+	def DUMP_HEX 2;
+
+	...................................................
+
+	key = read_rsa_key('rsa_public.key', RSA_PUBLIC);
+	p_key = read_rsa_key('rsa_private.key', RSA_PRIVATE);
+
+	print 'source string:' + (src_str = "hello world! I'm a programmer!") + br;
+	enc_len = opensslPrivateEncrypt(src_str, -1, p_key, &enc);
+	print 'encrypt: ' + bltDumpPtrData(enc, enc_len, DUMP_HEX) + br;
+	print 'encrypt base64 encode: ' + (encode = bltBase64Encode(enc)) + br;
+
+	以上代码片段，通过将数据指针enc传递给bltBase64Encode，从而对openssl加密后的二进制数据进行base64编码
+ */
 ZL_EXP_VOID module_builtin_base64_encode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -2211,6 +2252,53 @@ ZL_EXP_VOID module_builtin_base64_encode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcou
 	}
 }
 
+/**
+ * bltBase64Decode模块函数，对数据进行base64解码
+ * 第一个参数data表示需要解码的base64编码，必须是字符串类型
+ * 第二个参数result必须是引用类型，用于存储base64解码后的结果
+ * 第三个参数decode_to_str是可选的，必须是整数类型，表示是否将第二个result参数转为字符串类型，默认为0表示不转为字符串，因此，默认情况下，result存储的会是整数类型的数据指针
+ * 	如果decode_to_str的值为1则result存储的会是字符串类型的结果
+ * 返回值表示result结果的字节长度
+ * 例如：
+	use builtin;
+	def TRUE 1;
+
+	encode_str = bltBase64Encode("hello world");
+	print encode_str;
+
+	decode_len = bltBase64Decode(encode_str, &decode, TRUE);
+	print 'decode_len: ' + decode_len;
+	print 'decode: ' + decode;
+
+	上面代码片段先将hello world字符串进行base64编码，接着通过bltBase64Decode模块函数将编码的字符串进行解码，同时将解码的结果转为字符串类型(通过将第三个参数设置为1)
+
+	use builtin,openssl;
+	def RSA_PUBLIC 1;
+	def RSA_PRIVATE 0;
+	def RSA_PKCS1_PADDING 0;
+
+	def DUMP_HEX 2;
+
+	.................................................................
+
+	key = read_rsa_key('rsa_public.key', RSA_PUBLIC);
+	p_key = read_rsa_key('rsa_private.key', RSA_PRIVATE);
+
+	print 'source string:' + (src_str = "hello world! I'm a programmer!") + br;
+	enc_len = opensslPrivateEncrypt(src_str, -1, p_key, &enc);
+	print 'encrypt: ' + bltDumpPtrData(enc, enc_len, DUMP_HEX) + br;
+	print 'encrypt base64 encode: ' + (encode = bltBase64Encode(enc)) + br;
+
+	decode_len = bltBase64Decode(encode, &decode);
+	print 'decode_len: ' + decode_len + br;
+	print 'decode: ' + bltDumpPtrData(decode, decode_len, DUMP_HEX) + br;
+
+	dec_len = opensslPublicDecrypt(decode, decode_len, key, &dec, RSA_PKCS1_PADDING, TRUE);
+	print 'decrypt string: ' + dec + br;
+
+	以上代码片段先将openssl加密后的二进制数据进行base64编码，接着通过bltBase64Decode将编码数据进行解码，从而获取到原始的加密二进制数据，最后通过openssl模块函数
+	将二进制数据解密为原始的字符串值
+ */
 ZL_EXP_VOID module_builtin_base64_decode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

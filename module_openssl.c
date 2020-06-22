@@ -7,6 +7,7 @@
 
 #include "main.h"
 #include "module_openssl.h"
+#include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 #include <openssl/bio.h>
@@ -87,6 +88,7 @@
 typedef struct _MODULE_OPENSSL_RSA_KEY {
 	RSA * rsa; // openssl底层库函数在进行加密解密，签名操作时所需要的RSA指针，通过读取RSA密钥key生成的指针
 	ZL_EXP_BOOL is_public_key; // 判断是公钥key生成的RSA指针，还是私钥key生成的
+	EVP_PKEY * evp_key;
 } MODULE_OPENSSL_RSA_KEY;
 
 /**
@@ -95,7 +97,8 @@ typedef struct _MODULE_OPENSSL_RSA_KEY {
 static void module_openssl_free_rsa_resource_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 {
 	MODULE_OPENSSL_RSA_KEY * mod_openssl_rsa = (MODULE_OPENSSL_RSA_KEY *)ptr;
-	RSA_free(mod_openssl_rsa->rsa);
+	// RSA_free(mod_openssl_rsa->rsa);
+	EVP_PKEY_free(mod_openssl_rsa->evp_key);
 	zenglApi_FreeMem(VM_ARG, mod_openssl_rsa);
 }
 
@@ -152,6 +155,37 @@ static void set_arg_value(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_EXPORT_MOD_FUN
 		arg.val.integer = arg_int_val;
 	}
 	zenglApi_SetFunArg(VM_ARG,argnum,&arg);
+}
+
+/**
+ * 以下代码参考自php的openssl扩展：https://github.com/php/php-src/blob/master/ext/openssl/openssl.c
+ */
+static EVP_MD * st_get_evp_md_from_algo(int algo)
+{
+	EVP_MD *mdtype;
+
+	switch (algo) {
+	case MOD_OPENSSL_NID_sha1:
+		mdtype = (EVP_MD *) EVP_sha1();
+		break;
+	case MOD_OPENSSL_NID_ripemd160:
+		mdtype = (EVP_MD *) EVP_ripemd160();
+		break;
+	case MOD_OPENSSL_NID_md5:
+		mdtype = (EVP_MD *) EVP_md5();
+		break;
+	case MOD_OPENSSL_NID_sha256:
+		mdtype = (EVP_MD *) EVP_sha256();
+		break;
+	case MOD_OPENSSL_NID_sha512:
+		mdtype = (EVP_MD *) EVP_sha512();
+		break;
+	default:
+		return NULL;
+		break;
+	}
+
+	return mdtype;
 }
 
 /**
@@ -279,6 +313,8 @@ ZL_EXP_VOID module_openssl_read_key(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	MODULE_OPENSSL_RSA_KEY * mod_openssl_rsa = zenglApi_AllocMem(VM_ARG, sizeof(MODULE_OPENSSL_RSA_KEY));
 	mod_openssl_rsa->is_public_key = (is_public ? ZL_EXP_TRUE : ZL_EXP_FALSE);
 	mod_openssl_rsa->rsa = rsa;
+	mod_openssl_rsa->evp_key = EVP_PKEY_new();
+	EVP_PKEY_assign_RSA(mod_openssl_rsa->evp_key, rsa);
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	int ret_code = resource_list_set_member(&(my_data->resource_list), mod_openssl_rsa, module_openssl_free_rsa_resource_callback);
 	if(ret_code != 0) {
@@ -745,7 +781,7 @@ static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const 
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 5) {
 		if(is_sign)
-			zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, private_key, &sigret, &siglen[, type = 0]): integer", func_name);
+			zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, private_key, &sigret, &siglen[, type = 0[, use_evp = 0]]): integer", func_name);
 		else
 			zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, public_key, sigbuf, siglen[, type = 0]): integer", func_name);
 	}
@@ -799,6 +835,7 @@ static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const 
 		}
 	}
 	RSA * rsa = mod_openssl_rsa->rsa;
+	EVP_PKEY * evp_key = mod_openssl_rsa->evp_key;
 	if(is_sign) {
 		detect_arg_is_address_type(VM_ARG, 4, &arg, "fourth", "sigret", func_name);
 		detect_arg_is_address_type(VM_ARG, 5, &arg, "fifth", "siglen", func_name);
@@ -816,6 +853,8 @@ static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const 
 	};
 	int sign_type_idx = 0;
 	int sign_type = sign_types[sign_type_idx];
+	ZL_EXP_BOOL use_evp = ZL_EXP_FALSE;
+	EVP_MD * mdtype = NULL;
 	if(argcount > 5) {
 		zenglApi_GetFunArg(VM_ARG,6,&arg);
 		if(arg.type != ZL_EXP_FAT_INT) {
@@ -826,16 +865,47 @@ static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const 
 			zenglApi_Exit(VM_ARG,"the sixth argument [type] of %s is invalid, must be in [0, %d)", func_name, MODULE_OPENSSL_SIGN_TYPE);
 		}
 		sign_type = sign_types[sign_type_idx];
+		if(argcount > 6) {
+			zenglApi_GetFunArg(VM_ARG,7,&arg);
+			if(arg.type != ZL_EXP_FAT_INT) {
+				zenglApi_Exit(VM_ARG,"the seventh argument [use_evp] of %s must be integer", func_name);
+			}
+			int arg_use_evp = (int)arg.val.integer;
+			use_evp = (arg_use_evp == 0) ? ZL_EXP_FALSE : ZL_EXP_TRUE;
+		}
+		if(use_evp) {
+			mdtype = st_get_evp_md_from_algo(sign_type);
+			if(mdtype == NULL) {
+				zenglApi_Exit(VM_ARG,"the sixth argument [type] of %s is not supported when use evp", func_name, MODULE_OPENSSL_SIGN_TYPE);
+			}
+		}
 	}
 	if(sign_type == -1) {
 		zenglApi_Exit(VM_ARG,"the sixth argument [type:%d] of %s is not supported", sign_type_idx, func_name);
 	}
 	if(is_sign) {
-		int rsa_len = RSA_size(rsa);
+		int rsa_len = 0;
+		if(use_evp)
+			rsa_len = EVP_PKEY_size(evp_key);
+		else
+			rsa_len = RSA_size(rsa);
 		unsigned char * sigret = (unsigned char *)zenglApi_AllocMem(VM_ARG, rsa_len);
 		memset(sigret, 0, rsa_len);
 		unsigned int siglen = 0;
-		int retval = RSA_sign(sign_type, data, data_len, sigret, &siglen, rsa);
+		EVP_MD_CTX * md_ctx = NULL;
+		int retval = 0;
+		if(use_evp) {
+			md_ctx = EVP_MD_CTX_create();
+			if (md_ctx != NULL &&
+						EVP_SignInit(md_ctx, mdtype) &&
+						EVP_SignUpdate(md_ctx, data, data_len) &&
+						EVP_SignFinal(md_ctx, sigret, &siglen, evp_key)) {
+				retval = 1;
+			}
+			EVP_MD_CTX_destroy(md_ctx);
+		} else {
+			retval = RSA_sign(sign_type, data, data_len, sigret, &siglen, rsa);
+		}
 		if(!retval) {
 			zenglApi_FreeMem(VM_ARG, sigret);
 			set_arg_value(VM_ARG, 4, ZL_EXP_FAT_INT, NULL, 0);

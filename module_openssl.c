@@ -783,7 +783,7 @@ static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const 
 		if(is_sign)
 			zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, private_key, &sigret, &siglen[, type = 0[, use_evp = 0]]): integer", func_name);
 		else
-			zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, public_key, sigbuf, siglen[, type = 0]): integer", func_name);
+			zenglApi_Exit(VM_ARG,"usage: %s(data, data_len, public_key, sigbuf, siglen[, type = 0[, use_evp = 0]]): integer", func_name);
 	}
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR && arg.type != ZL_EXP_FAT_INT) {
@@ -902,7 +902,9 @@ static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const 
 						EVP_SignFinal(md_ctx, sigret, &siglen, evp_key)) {
 				retval = 1;
 			}
-			EVP_MD_CTX_destroy(md_ctx);
+			if(md_ctx != NULL) {
+				EVP_MD_CTX_destroy(md_ctx);
+			}
 		} else {
 			retval = RSA_sign(sign_type, data, data_len, sigret, &siglen, rsa);
 		}
@@ -941,12 +943,27 @@ static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const 
 		if(sigbuf_ptr_size > 0 && siglen > sigbuf_ptr_size) {
 			siglen = sigbuf_ptr_size;
 		}
-		int retval = RSA_verify(sign_type, data, data_len, sigbuf, siglen, rsa);
-		if(!retval) {
-			zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
-		}
-		else {
-			zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 1, 0);
+		if(use_evp) {
+			EVP_MD_CTX * md_ctx = NULL;
+			int err = -1;
+			md_ctx = EVP_MD_CTX_create();
+			if (md_ctx != NULL &&
+					EVP_VerifyInit (md_ctx, mdtype) &&
+					EVP_VerifyUpdate (md_ctx, data, data_len)) {
+				err = EVP_VerifyFinal(md_ctx, sigbuf, siglen, evp_key);
+			}
+			if(md_ctx != NULL) {
+				EVP_MD_CTX_destroy(md_ctx);
+			}
+			zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, err, 0);
+		} else {
+			int retval = RSA_verify(sign_type, data, data_len, sigbuf, siglen, rsa);
+			if(!retval) {
+				zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+			}
+			else {
+				zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 1, 0);
+			}
 		}
 	}
 }

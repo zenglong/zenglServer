@@ -1,0 +1,55 @@
+use builtin,openssl;
+
+def RSA_PUBLIC 1;
+def RSA_PRIVATE 0;
+
+def RSA_SIGN_SHA256 5;
+
+def USE_EVP 1;
+
+if(bltIsRunInCmd())
+	bltSetImmediatePrint(TRUE);
+	print 'now in cmd';
+	is_cmd = TRUE;
+	br = '';
+else
+	is_cmd = FALSE;
+	br = '<br/>';
+	print 'now in website' + br;
+endif
+
+fun exit(msg)
+	global br;
+	print msg + br;
+	bltExit();
+endfun
+
+data = 'app_id=2016091900545093&auth_app_id=2016091900545093&body=22222222&buyer_id=2088102176456923&buyer_pay_amount=0.02&charset=UTF-8&fund_bill_list=[{"amount":"0.02","fundChannel":"ALIPAYACCOUNT"}]&gmt_create=2020-06-23 15:04:58&gmt_payment=2020-06-23 15:05:08&invoice_amount=0.02&notify_id=2020062300222150509056920506849611&notify_time=2020-06-23 15:05:09&notify_type=trade_status_sync&out_trade_no=20206231433219992&point_amount=0.00&receipt_amount=0.02&seller_id=2088102176283310&subject=测试3&total_amount=0.02&trade_no=2020062322001456920500948453&trade_status=TRADE_SUCCESS&version=1.0';
+
+sign_encode = 'L4aS8dVsAvELSNalnbdwT8nsJ0ezzx77EdaArzx1MuGOniG3aWcIcO7pLERjAOJ2SDEv8vzOEY2Y8RkkjJ/LyaK22JZRSNJhav9oh+GCla36PcsPmV/sl6bQj1HwUD16l0LVijyv4BNECxw5ag5Bl6Y4bkDh/4/7mmlhMOGXSP2RAwi9Shzb49DAGg9URnHudIbPLiLv4NLXAcBq+7w8UqHOpTRWDIWPpsVmlyeWW7dRhTGmBtuWTeidNLkaw6o0zUD5BsH0/ilniP0iAlt3NZaft+GadjpN5JFuMA9cWcbFHd9VAfuxrV/imyWhH7lUz/1LMq77ckB4rYjXc3HApg==';
+
+key_content = '-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0rXS+ruraZ8cs2S+8oL3
+GgSM/irvgFouV8edPLArAEHKIpho9R80JuyIWKWaptTnpb6MJZhPOdPCvekjo70y
+KVK+X6nzZTSwHDDHzJucUqXU4CKqW6D7b+A+T2a92mv1GG3f7A3KlAw8C5bEbnWk
+C1hd4br2gLI4JkPJ/qVEHPstwa1Qdo+J3TKH9RzFj5cUkcN7Tq+POmSiTEwZCC1/
+nmlXQQxuNiecNPIz7r1smBjI31WPwb+FcSrYdGXEQCFfaw1+VjXIldOYmoezaqQL
+yeMYIBP0ANOCwuwitUvYRrYn0w97qVi6nkOQ89FXtAOIrVKGHd7NrHDBKVJC0NPC
+bQIDAQAB
+-----END PUBLIC KEY-----';
+
+key = opensslReadKey(key_content, RSA_PUBLIC);
+if(key == NULL)
+	exit('read key failed: ' + opensslGetError());
+endif
+
+sign_len = bltBase64Decode(sign_encode, &sign);
+
+ret = opensslVerify(data, -1, key, sign, sign_len, RSA_SIGN_SHA256, USE_EVP);
+print ret;
+if(ret < 0)
+	exit('opensslVerify failed: ' + opensslGetError());
+endif
+
+print 'verify :' + (ret > 0 ? 'True' : 'False') + br;
+

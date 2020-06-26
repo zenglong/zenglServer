@@ -2345,6 +2345,39 @@ ZL_EXP_VOID module_builtin_base64_decode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcou
 	}
 }
 
+ZL_EXP_VOID module_builtin_url_encode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltUrlEncode";
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(str): str", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [str] of %s must be string", func_name);
+	}
+	char * str = (char *)arg.val.str;
+	int str_len = (int)strlen(str);
+	int encode_size = sizeof(char) * str_len * 3 + 1;
+	char * encode_str = (char *)zenglApi_AllocMem(VM_ARG, encode_size);
+	memset(encode_str, 0, encode_size);
+	const char * hex = "0123456789ABCDEF";
+	int pos = 0;
+	for (int i = 0; i < str_len; i++) {
+		if (('a' <= str[i] && str[i] <= 'z')
+			|| ('A' <= str[i] && str[i] <= 'Z')
+			|| ('0' <= str[i] && str[i] <= '9')) {
+				encode_str[pos++] = str[i];
+			} else {
+				encode_str[pos++] = '%';
+				encode_str[pos++] = hex[str[i] >> 4];
+				encode_str[pos++] = hex[str[i] & 15];
+			}
+	}
+	encode_str[pos] = '\0';
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, encode_str, 0, 0);
+	zenglApi_FreeMem(VM_ARG, encode_str);
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -2385,4 +2418,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltDumpPtrData",module_builtin_dump_ptr_data);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltBase64Encode",module_builtin_base64_encode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltBase64Decode",module_builtin_base64_decode);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUrlEncode",module_builtin_url_encode);
 }

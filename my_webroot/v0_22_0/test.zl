@@ -1,4 +1,4 @@
-use builtin,request,openssl;
+use builtin,request,openssl,curl;
 
 def RSA_PUBLIC 1;
 def RSA_PRIVATE 0;
@@ -35,13 +35,22 @@ for(i=0;bltIterArray(body_array,&i,&k,&v);)
 	print k +": " + v + br;
 endfor
 
-biz_content_arr['product_code'] = 'FAST_INSTANT_TRADE_PAY';
-biz_content_arr['body'] = body_array['body'];
-biz_content_arr['subject'] = body_array['subject'];
-biz_content_arr['total_amount'] = body_array['total_amount'];
-biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
-biz_content = bltJsonEncode(biz_content_arr);
+action = bltStr(&body_array['action']);
+if(action == 'query')
+	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
+	biz_content_arr['trade_no'] = body_array['trade_no'];
+	method = 'alipay.trade.query';
+	use_curl = TRUE;
+else
+	biz_content_arr['product_code'] = 'FAST_INSTANT_TRADE_PAY';
+	biz_content_arr['body'] = body_array['body'];
+	biz_content_arr['subject'] = body_array['subject'];
+	biz_content_arr['total_amount'] = body_array['total_amount'];
+	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
+	method = 'alipay.trade.page.pay';
+endif
 
+biz_content = bltJsonEncode(biz_content_arr);
 print 'biz_content:' + biz_content + br;
 
 config['app_id'] = '';
@@ -59,11 +68,11 @@ params['app_id'] = config['app_id'];
 params['biz_content'] = biz_content;
 params['charset'] = 'UTF-8';
 params['format'] = 'json';
-params['method'] = 'alipay.trade.page.pay';
+params['method'] = method;
 params['notify_url'] = config['notify_url'];
 params['return_url'] = config['return_url'];
 params['sign_type'] = config['sign_type'];
-params['timestamp'] = '2020-06-22 04:15:55';
+params['timestamp'] = bltDate('%Y-%m-%d %H:%M:%S');
 params['version'] = '1.0';
 
 str_to_be_signed = '';
@@ -93,5 +102,43 @@ endif
 sign_encode = bltBase64Encode(sign);
 
 print 'sign_encode:' + sign_encode + br;
+
+params['sign'] = sign_encode;
+
+if(use_curl)
+	curl_handle = curlEasyInit();
+	curlEasySetopt(curl_handle, 'URL', config['gateway_url'] + "?charset=" + params['charset']);
+	curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
+	curlEasySetopt(curl_handle, 'SSL_VERIFYPEER', FALSE);
+	curlEasySetopt(curl_handle, 'TIMEOUT', 30);
+	submit_post = '';
+	for(i=0;bltIterArray(params,&i,&k,&v);)
+		submit_post += k + '=' + bltUrlEncode(v);
+		if(i < bltCount(params))
+			submit_post += '&';
+		endif
+	endfor
+	curlEasySetopt(curl_handle, 'POSTFIELDS', submit_post);
+	ret = curlEasyPerform(curl_handle, &content);
+	if(ret == 0)
+		print content + br;
+		con_decode = bltJsonDecode(content);
+		for(j=0;bltIterArray(con_decode[0],&j,&inner_k,&inner_v);)
+			print ' -- ' + inner_k +": " + inner_v + br;
+		endfor
+	else
+		print 'curl error: ' + curlEasyStrError(ret);
+	endif
+	curlEasyCleanup(curl_handle);
+else
+	submit_html = "<div><form id='alipaysubmit' name='alipaysubmit' action='" + config['gateway_url'] + "?charset=" + params['charset'] + "' method='POST'>\n";
+	for(i=0;bltIterArray(params,&i,&k,&v);)
+		v = bltStrReplace(v, "'", "&apos;");
+		submit_html += "<div><input name='" + k + "' value='" + v + "'/></div>\n";
+	endfor
+	submit_html += "<div><input type='submit' value='ok'></div>\n</form></div>";
+	// submit_html += "<script>document.forms['alipaysubmit'].submit();</script>";
+	print submit_html;
+endif
 
 print '</body></html>';

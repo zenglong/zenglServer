@@ -15,5 +15,22 @@
 	<div><input id="body" name="body" /></div>
 	<div><input name="sb" value="提交" type="submit"></div>
 </form>
+<script language="javascript">
+function GetDateNow() {
+	var vNow = new Date();
+	var sNow = "";
+	sNow += String(vNow.getFullYear());
+	sNow += String(vNow.getMonth() + 1);
+	sNow += String(vNow.getDate());
+	sNow += String(vNow.getHours());
+	sNow += String(vNow.getMinutes());
+	sNow += String(vNow.getSeconds());
+	sNow += String(vNow.getMilliseconds());
+	document.getElementById("out_trade_no").value =  sNow;
+	document.getElementById("subject").value = "测试";
+	document.getElementById("total_amount").value = "0.01";
+}
+GetDateNow();
+</script>
 </body>
 </html>

@@ -1,0 +1,24 @@
+<html>
+<head>
+	<meta http-equiv="content-type" content="text/html;charset=utf-8" />
+	<title>支付宝电脑端退款测试</title>
+</head>
+<body>
+<form action="test.zl" method=post target="_blank">
+	<div>商户订单号</div>
+	<div><input id="out_trade_no" name="out_trade_no" /></div>
+	<div>支付宝交易号</div>
+	<div><input id="trade_no" name="trade_no" /></div>
+	<div>退款金额</div>
+	<div><input id="refund_amount" name="refund_amount" /></div>
+	<div>退款原因</div>
+	<div><input id="refund_reason" name="refund_reason" /></div>
+	<div>退款请求号</div>
+	<div><input id="out_request_no" name="out_request_no" /></div>
+	<input type="hidden" name="action" value="refund" />
+	<div><input name="sb" value="退款" type="submit"></div>
+	<div style="color:red;margin-top:10px"><span>注意：如是部分退款，则参数退款请求号（out_request_no）必传。</span></div>
+	<div style="color:red;margin-top:10px"><span>商户订单号与支付宝交易号二选一，如果您点击“退款”按钮，即表示您同意该次的执行操作。</span></div>
+</form>
+</body>
+</html>

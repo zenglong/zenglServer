@@ -36,11 +36,27 @@ for(i=0;bltIterArray(body_array,&i,&k,&v);)
 endfor
 
 action = bltStr(&body_array['action']);
+use_curl = TRUE;
 if(action == 'query')
 	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
 	biz_content_arr['trade_no'] = body_array['trade_no'];
 	method = 'alipay.trade.query';
-	use_curl = TRUE;
+elif(action == 'refund')
+	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
+	biz_content_arr['trade_no'] = body_array['trade_no'];
+	biz_content_arr['refund_amount'] = body_array['refund_amount'];
+	biz_content_arr['refund_reason'] = body_array['refund_reason'];
+	biz_content_arr['out_request_no'] = body_array['out_request_no'];
+	method = 'alipay.trade.refund';
+elif(action == 'refund_query')
+	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
+	biz_content_arr['trade_no'] = body_array['trade_no'];
+	biz_content_arr['out_request_no'] = body_array['out_request_no'];
+	method = 'alipay.trade.fastpay.refund.query';
+elif(action == 'close')
+	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
+	biz_content_arr['trade_no'] = body_array['trade_no'];
+	method = 'alipay.trade.close';
 else
 	biz_content_arr['product_code'] = 'FAST_INSTANT_TRADE_PAY';
 	biz_content_arr['body'] = body_array['body'];
@@ -48,10 +64,11 @@ else
 	biz_content_arr['total_amount'] = body_array['total_amount'];
 	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
 	method = 'alipay.trade.page.pay';
+	use_curl = FALSE;
 endif
 
 biz_content = bltJsonEncode(biz_content_arr);
-print 'biz_content:' + biz_content + br;
+print 'biz_content:' + biz_content + br + br;
 
 config['app_id'] = '';
 config['notify_url'] = 'http://domain_url/notify_url.php';
@@ -63,7 +80,7 @@ config['merchant_private_key'] = '';
 
 config['alipay_public_key'] = '';
 
-params['alipay_sdk'] = 'alipay-sdk-php-20161101';
+params['alipay_sdk'] = 'alipay-sdk-zengl-20200627';
 params['app_id'] = config['app_id'];
 params['biz_content'] = biz_content;
 params['charset'] = 'UTF-8';
@@ -85,7 +102,7 @@ for(i=0;bltIterArray(params,&i,&k,&v);)
 	endif
 endfor
 
-print 'str_to_be_signed:' + bltHtmlEscape(str_to_be_signed) + br;
+print 'str_to_be_signed:' + bltHtmlEscape(str_to_be_signed) + br + br;
 
 key_content = config['merchant_private_key'];
 key = opensslReadKey(key_content, RSA_PRIVATE);
@@ -101,7 +118,7 @@ endif
 
 sign_encode = bltBase64Encode(sign);
 
-print 'sign_encode:' + sign_encode + br;
+print 'sign_encode:' + sign_encode + br + br;
 
 params['sign'] = sign_encode;
 

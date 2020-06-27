@@ -1,0 +1,20 @@
+<html>
+<head>
+	<meta http-equiv="content-type" content="text/html;charset=utf-8" />
+	<title>支付宝电脑端退款查询测试</title>
+</head>
+<body>
+<form action="test.zl" method=post target="_blank">
+	<div>商户订单号</div>
+	<div><input id="out_trade_no" name="out_trade_no" /></div>
+	<div>支付宝交易号</div>
+	<div><input id="trade_no" name="trade_no" /></div>
+	<div>退款请求号</div>
+	<div><input id="out_request_no" name="out_request_no" /></div>
+	<input type="hidden" name="action" value="refund_query" />
+	<div><input name="sb" value="退款查询" type="submit"></div>
+	<div style="color:red;margin-top:10px"><span>注意：退款请求号值（必传，退款时传的值，如果退款时没传则无法查询）商户订单号和支付宝交易号不能同时为空。 trade_no、  out_trade_no如果同时存在优先取trade_no</span></div>
+	<div style="color:red;margin-top:10px"><span>商户订单号与支付宝交易号二选一，如果您点击“退款查询”按钮，即表示您同意该次的执行操作。</span></div>
+</form>
+</body>
+</html>

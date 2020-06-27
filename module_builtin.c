@@ -2365,12 +2365,15 @@ ZL_EXP_VOID module_builtin_url_encode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	for (int i = 0; i < str_len; i++) {
 		if (('a' <= str[i] && str[i] <= 'z')
 			|| ('A' <= str[i] && str[i] <= 'Z')
-			|| ('0' <= str[i] && str[i] <= '9')) {
+			|| ('0' <= str[i] && str[i] <= '9')
+			|| str[i] == '.' || str[i] == '-' || str[i] == '*' || str[i] == '_') {
 				encode_str[pos++] = str[i];
-			} else {
+			} else if (str[i] == ' ') {
+				encode_str[pos++] = '+';
+			}else {
 				encode_str[pos++] = '%';
-				encode_str[pos++] = hex[str[i] >> 4];
-				encode_str[pos++] = hex[str[i] & 15];
+				encode_str[pos++] = hex[(unsigned char)str[i] >> 4];
+				encode_str[pos++] = hex[(unsigned char)str[i] & 0xF];
 			}
 	}
 	encode_str[pos] = '\0';

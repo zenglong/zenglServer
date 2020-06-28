@@ -1,0 +1,21 @@
+use builtin,request,openssl,curl;
+
+inc 'config.zl';
+inc 'func.zl';
+
+body_array = rqtGetBodyAsArray();
+
+sort_body_arr = sort_array(body_array);
+
+sign = sort_body_arr['sign'];
+bltUnset(&sort_body_arr['sign'], &sort_body_arr['sign_type']);
+
+data = get_sign_data(sort_body_arr);
+
+ret = check_sign(config['alipay_public_key'], data, sign);
+
+if(ret)
+	print 'success';
+else
+	print 'fail';
+endif

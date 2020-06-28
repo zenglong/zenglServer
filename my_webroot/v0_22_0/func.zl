@@ -1,0 +1,61 @@
+def RSA_PUBLIC 1;
+def RSA_PRIVATE 0;
+
+def USE_EVP 1;
+
+def RSA_SIGN_SHA256 5;
+
+def TRUE 1;
+def FALSE 0;
+
+def NULL 0;
+
+fun exit(msg)
+	print msg;
+	bltExit();
+endfun
+
+fun sort_array(params)
+	sort_params = bltArray();
+	while(bltCount(params) > 0)
+		min_k = '';
+		for(i=0;bltIterArray(params,&i,&k,&v);)
+			if(min_k == '' || min_k > k)
+				min_k = k;
+			endif
+		endfor
+		sort_params[min_k] = params[min_k];
+		bltUnset(&params[min_k]);
+	endwhile
+	return sort_params;
+endfun
+
+fun get_sign_data(sort_params)
+	str_to_be_signed = '';
+
+	for(i=0;bltIterArray(sort_params,&i,&k,&v);)
+		if(i == 1)
+			str_to_be_signed += k + '=' + v;
+		else
+			str_to_be_signed += '&' + k + '=' + v;
+		endif
+	endfor
+	return str_to_be_signed;
+endfun
+
+fun check_sign(key_content, data, sign_encode)
+	key = opensslReadKey(key_content, RSA_PUBLIC);
+	if(key == NULL)
+		exit('read key failed: ' + opensslGetError());
+	endif
+
+	sign_len = bltBase64Decode(sign_encode, &sign);
+
+	ret = opensslVerify(data, -1, key, sign, sign_len, RSA_SIGN_SHA256, USE_EVP);
+
+	if(ret < 0)
+		exit('opensslVerify failed: ' + opensslGetError());
+	endif
+
+	return (ret > 0 ? TRUE : FALSE);
+endfun

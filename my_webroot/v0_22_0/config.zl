@@ -1,0 +1,7 @@
+config['app_id'] = '';
+config['notify_url'] = 'http://domain_url/v0_22_0/notify_url.zl';
+config['return_url'] = 'http://domain_url/v0_22_0/return_url.zl';
+config['sign_type'] = 'RSA2';
+config['gateway_url'] = 'https://openapi.alipaydev.com/gateway.do';
+config['merchant_private_key'] = '';
+config['alipay_public_key'] = '';

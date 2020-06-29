@@ -1,4 +1,4 @@
-use builtin,request,openssl,curl;
+use builtin,request,openssl,curl,pcre;
 
 inc 'config.zl';
 inc 'func.zl';
@@ -12,13 +12,14 @@ bltUnset(&sort_query_array['sign'], &sort_query_array['sign_type']);
 
 data = get_sign_data(sort_query_array);
 
-ret = check_sign(config['alipay_public_key'], data, sign);
+key_content = add_key_header_footer(config['alipay_public_key'], 64, '-----BEGIN PUBLIC KEY-----', '-----END PUBLIC KEY-----');
+ret = check_sign(key_content, data, sign);
 
 print '<!Doctype html>';
 print '<html><head><meta http-equiv="content-type" content="text/html;charset=utf-8" /></head><body>';
 
 if(ret)
-	print '验证成功<br />支付宝交易号：' + sort_query_array['trade_no'];
+	print '验证成功!<br />支付宝交易号：' + sort_query_array['trade_no'];
 else
 	print '验证失败';
 endif

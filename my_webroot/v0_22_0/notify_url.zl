@@ -1,4 +1,4 @@
-use builtin,request,openssl,curl;
+use builtin,request,openssl,curl,pcre;
 
 inc 'config.zl';
 inc 'func.zl';
@@ -12,7 +12,8 @@ bltUnset(&sort_body_arr['sign'], &sort_body_arr['sign_type']);
 
 data = get_sign_data(sort_body_arr);
 
-ret = check_sign(config['alipay_public_key'], data, sign);
+key_content = add_key_header_footer(config['alipay_public_key'], 64, '-----BEGIN PUBLIC KEY-----', '-----END PUBLIC KEY-----');
+ret = check_sign(key_content, data, sign);
 
 if(ret)
 	print 'success';

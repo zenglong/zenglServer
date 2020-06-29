@@ -11,8 +11,21 @@ def FALSE 0;
 def NULL 0;
 
 fun exit(msg)
-	print msg;
+	global br, gl_use_html;
+	if(gl_use_html)
+		print msg + br;
+		print '</body></html>';
+	else
+		print msg;
+	endif
 	bltExit();
+endfun
+
+fun print_msg(msg)
+	global immediate_pay;
+	if(!immediate_pay)
+		print msg;
+	endif
 endfun
 
 fun sort_array(params)
@@ -41,6 +54,17 @@ fun get_sign_data(sort_params)
 		endif
 	endfor
 	return str_to_be_signed;
+endfun
+
+fun add_key_header_footer(key_content, break_num, header, footer)
+	key_content_len = bltStrLen(key_content);
+	replace = header + '\n' + pcreReplace('(.{'+break_num+'})', '{1}\n', key_content);
+	if(key_content_len % break_num == 0)
+		replace += footer;
+	else
+		replace += '\n' + footer;
+	endif
+	return replace;
 endfun
 
 fun check_sign(key_content, data, sign_encode)

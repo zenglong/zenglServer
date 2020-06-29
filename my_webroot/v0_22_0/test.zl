@@ -1,25 +1,9 @@
-use builtin,request,openssl,curl;
+use builtin,request,openssl,curl,pcre;
 
 inc 'config.zl';
+inc 'func.zl';
 
-def RSA_PUBLIC 1;
-def RSA_PRIVATE 0;
-
-def USE_EVP 1;
-
-def RSA_SIGN_SHA256 5;
-
-def TRUE 1;
-def FALSE 0;
-
-def NULL 0;
-
-fun exit(msg)
-	global is_cmd,br;
-	print msg + br;
-	print '</body></html>';
-	bltExit();
-endfun
+gl_use_html = TRUE;
 
 print '<!Doctype html>';
 print '<html><head><meta http-equiv="content-type" content="text/html;charset=utf-8" /></head><body>';
@@ -29,12 +13,17 @@ if(bltIsRunInCmd())
 else
 	is_cmd = FALSE;
 	br = '<br/>';
-	print 'now in website' + br;
 endif
 
 body_array = rqtGetBodyAsArray();
+
+immediate_pay = FALSE;
+if(bltStr(&body_array['sb']) == '测试立即付款')
+	immediate_pay = TRUE;
+endif
+
 for(i=0;bltIterArray(body_array,&i,&k,&v);)
-	print k +": " + v + br;
+	print_msg(k +": " + v + br);
 endfor
 
 action = bltStr(&body_array['action']);
@@ -70,7 +59,7 @@ else
 endif
 
 biz_content = bltJsonEncode(biz_content_arr);
-print 'biz_content:' + biz_content + br + br;
+print_msg('biz_content:' + biz_content + br + br);
 
 params['biz_content'] = biz_content;
 params['method'] = method;
@@ -84,37 +73,18 @@ params['sign_type'] = config['sign_type'];
 params['notify_url'] = config['notify_url'];
 params['return_url'] = config['return_url'];
 
-sort_params = bltArray();
-while(bltCount(params) > 0)
-	min_k = '';
-	for(i=0;bltIterArray(params,&i,&k,&v);)
-		if(min_k == '' || min_k > k)
-			min_k = k;
-		endif
-	endfor
-	sort_params[min_k] = params[min_k];
-	bltUnset(&params[min_k]);
-endwhile
+sort_params =  sort_array(params);
 
-str_to_be_signed = '';
+str_to_be_signed = get_sign_data(sort_params);
 
-for(i=0;bltIterArray(sort_params,&i,&k,&v);)
-	if(i == 1)
-		str_to_be_signed += k + '=' + v;
-	else
-		str_to_be_signed += '&' + k + '=' + v;
-	endif
-endfor
+print_msg('str_to_be_signed:' + bltHtmlEscape(str_to_be_signed) + br + br);
 
-print 'str_to_be_signed:' + bltHtmlEscape(str_to_be_signed) + br + br;
-
-key_content = config['merchant_private_key'];
+key_content = add_key_header_footer(config['merchant_private_key'], 64, '-----BEGIN RSA PRIVATE KEY-----', '-----END RSA PRIVATE KEY-----');
 key = opensslReadKey(key_content, RSA_PRIVATE);
 if(key == NULL)
 	exit('read key failed: ' + opensslGetError());
 endif
 
-// ret = opensslSign(str_to_be_signed, -1, key, &sign, &sign_len, RSA_SIGN_SHA256);
 ret = opensslSign(str_to_be_signed, -1, key, &sign, &sign_len, RSA_SIGN_SHA256, USE_EVP);
 if(!ret)
 	exit('sign failed: ' + opensslGetError());
@@ -122,7 +92,7 @@ endif
 
 sign_encode = bltBase64Encode(sign);
 
-print 'sign_encode:' + sign_encode + br + br;
+print_msg('sign_encode:' + sign_encode + br + br);
 
 sort_params['sign'] = sign_encode;
 
@@ -152,13 +122,21 @@ if(use_curl)
 	endif
 	curlEasyCleanup(curl_handle);
 else
-	submit_html = "<div><form id='alipaysubmit' name='alipaysubmit' action='" + config['gateway_url'] + "?charset=" + sort_params['charset'] + "' method='POST'>\n";
+	if(immediate_pay)
+		hidden_style = " style = 'display:none;'";
+	else
+		hidden_style = '';
+	endif
+	submit_html = "<div"+hidden_style+"><form id='alipaysubmit' name='alipaysubmit' action='" + 
+			config['gateway_url'] + "?charset=" + sort_params['charset'] + "' method='POST'>\n";
 	for(i=0;bltIterArray(sort_params,&i,&k,&v);)
 		v = bltStrReplace(v, "'", "&apos;");
 		submit_html += "<div><input name='" + k + "' value='" + v + "'/></div>\n";
 	endfor
 	submit_html += "<div><input type='submit' value='ok'></div>\n</form></div>";
-	// submit_html += "<script>document.forms['alipaysubmit'].submit();</script>";
+	if(immediate_pay)
+		submit_html += "<div>正在跳转到支付宝支付页面...</div><script>document.forms['alipaysubmit'].submit();</script>";
+	endif
 	print submit_html;
 endif
 

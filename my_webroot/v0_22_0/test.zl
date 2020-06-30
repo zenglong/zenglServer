@@ -101,6 +101,7 @@ if(use_curl)
 	curlEasySetopt(curl_handle, 'URL', config['gateway_url'] + "?charset=" + sort_params['charset']);
 	curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
 	curlEasySetopt(curl_handle, 'SSL_VERIFYPEER', FALSE);
+	curlEasySetopt(curl_handle, 'SSL_VERIFYHOST', FALSE);
 	curlEasySetopt(curl_handle, 'TIMEOUT', 30);
 	submit_post = '';
 	for(i=0;bltIterArray(sort_params,&i,&k,&v);)

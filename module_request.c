@@ -83,6 +83,13 @@ struct _my_multipart_data {
 
 typedef struct _my_multipart_data my_multipart_data;
 
+static char * url_decode(char * dest, char * src, int src_len);
+
+char * gl_request_url_decode(char * dest, char * src, int src_len)
+{
+	return url_decode(dest, src, src_len);
+}
+
 /**
  * 对src字符串参数进行url解码，并存储到dest目标字符串中
  * 例如：%E7%A8%8B%E5%BA%8F%E5%91%98 解码后对应的就是UTF8编码的字符串“程序员”

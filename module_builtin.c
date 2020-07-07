@@ -8,6 +8,7 @@
 #include "main.h"
 #include "module_builtin.h"
 #include "module_session.h"
+#include "module_request.h"
 /**
  * zenglServer通过crustache第三方库来解析mustache模板
  * crustache的github地址：https://github.com/vmg/crustache
@@ -2381,6 +2382,26 @@ ZL_EXP_VOID module_builtin_url_encode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_FreeMem(VM_ARG, encode_str);
 }
 
+ZL_EXP_VOID module_builtin_url_decode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltUrlDecode";
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(str): str", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [str] of %s must be string", func_name);
+	}
+	char * str = (char *)arg.val.str;
+	int str_len = (int)strlen(str);
+	int decode_size = sizeof(char) * str_len + 1;
+	char * decode_str = (char *)zenglApi_AllocMem(VM_ARG, decode_size);
+	memset(decode_str, 0, decode_size);
+	gl_request_url_decode(decode_str, str, str_len);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, decode_str, 0, 0);
+	zenglApi_FreeMem(VM_ARG, decode_str);
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -2422,4 +2443,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltBase64Encode",module_builtin_base64_encode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltBase64Decode",module_builtin_base64_decode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUrlEncode",module_builtin_url_encode);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUrlDecode",module_builtin_url_decode);
 }

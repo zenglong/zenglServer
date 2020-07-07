@@ -1,0 +1,7 @@
+use builtin;
+
+str = 'hello world!世界你好！ 我是zengl!';
+
+print '\nurl encode:' + (enc_str = bltUrlEncode(str));
+
+print '\nurl decode:' + bltUrlDecode(enc_str) + '\n';

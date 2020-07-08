@@ -19,9 +19,13 @@ print '<!Doctype html>';
 print '<html><head><meta http-equiv="content-type" content="text/html;charset=utf-8" /></head><body>';
 
 if(ret)
-	print '验证成功!<br />支付宝交易号：' + sort_query_array['trade_no'];
+	retval = '验证成功!<br />支付宝交易号：' + sort_query_array['trade_no'];
 else
-	print '验证失败';
+	retval = '验证失败';
 endif
 
-print '</body></html>';
+bltWriteFile('return_url.log', bltDate('%Y-%m-%d %H:%M:%S') + '\nquery string:' + bltUrlDecode(rqtGetQueryAsString()) 
+		+ '\n\ndata: ' + data + '\n\nsign: ' + sign + '\n\nretval: ' + retval);
+
+print retval + '\n</body></html>';
+

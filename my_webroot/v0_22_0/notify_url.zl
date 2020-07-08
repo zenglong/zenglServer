@@ -16,7 +16,13 @@ key_content = add_key_header_footer(config['alipay_public_key'], 64, '-----BEGIN
 ret = check_sign(key_content, data, sign);
 
 if(ret)
-	print 'success';
+	retval = 'success';
 else
-	print 'fail';
+	retval = 'fail';
 endif
+
+bltWriteFile('notify_url.log', bltDate('%Y-%m-%d %H:%M:%S') + '\nbody: ' + bltUrlDecode(rqtGetBody())
+	 + '\n\ndata: ' + data + '\n\nsign: ' + sign + '\n\nretval: ' + retval);
+
+bltOutputBlob(retval, -1);
+

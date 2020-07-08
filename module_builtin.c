@@ -1618,24 +1618,37 @@ ZL_EXP_VOID module_builtin_output_blob(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 2)
-		zenglApi_Exit(VM_ARG,"usage: bltOutputBlob(blob, length)");
+		zenglApi_Exit(VM_ARG,"usage: bltOutputBlob(blob|str, length)");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
-	if(arg.type != ZL_EXP_FAT_INT) {
-		zenglApi_Exit(VM_ARG,"the first argument [blob] of bltOutputBlob must be integer");
+	if(arg.type != ZL_EXP_FAT_INT && arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [blob|str] of bltOutputBlob must be integer or string");
 	}
-	char * blob = (char *)arg.val.integer;
+	ZL_EXP_BOOL is_blob_ptr = ZL_EXP_TRUE;
+	char * blob = NULL;
+	if(arg.type == ZL_EXP_FAT_INT)
+		blob = (char *)arg.val.integer;
+	else {
+		blob = arg.val.str;
+		is_blob_ptr = ZL_EXP_FALSE;
+	}
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
-	int ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), blob);
-	if(ptr_idx < 0) {
-		zenglApi_Exit(VM_ARG,"runtime error: the first argument [blob] of bltOutputBlob is invalid pointer");
+	int ptr_size = 0;
+	if(is_blob_ptr) {
+		int ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), blob);
+		if(ptr_idx < 0) {
+			zenglApi_Exit(VM_ARG,"runtime error: the first argument [blob] of bltOutputBlob is invalid pointer");
+		}
+		ptr_size = my_data->pointer_list.list[ptr_idx].ptr_size;
 	}
-	int ptr_size = my_data->pointer_list.list[ptr_idx].ptr_size;
+	else {
+		ptr_size = (int)strlen(blob);
+	}
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
 	if(arg.type != ZL_EXP_FAT_INT) {
 		zenglApi_Exit(VM_ARG,"the second argument [length] of bltOutputBlob must be integer");
 	}
 	int length = arg.val.integer;
-	if(length > ptr_size) {
+	if(length < 0 || length > ptr_size) {
 		length = ptr_size;
 	}
 	dynamic_string_append(&my_data->response_body, blob, length, RESPONSE_BODY_STR_SIZE);

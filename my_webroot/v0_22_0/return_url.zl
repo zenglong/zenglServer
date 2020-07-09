@@ -8,18 +8,26 @@ query_array = rqtGetQuery();
 sort_query_array = sort_array(query_array);
 
 sign = sort_query_array['sign'];
-bltUnset(&sort_query_array['sign'], &sort_query_array['sign_type']);
 
-data = get_sign_data(sort_query_array);
+bltUnset(&sort_query_array['sign']);
+data_no_sign = get_sign_data(sort_query_array);
+
+bltUnset(&sort_query_array['sign_type']);
+data_no_sign_and_type = get_sign_data(sort_query_array);
 
 key_content = add_key_header_footer(config['alipay_public_key'], 64, '-----BEGIN PUBLIC KEY-----', '-----END PUBLIC KEY-----');
-ret = check_sign(key_content, data, sign);
+ret = check_sign(key_content, data_no_sign_and_type, sign);
+check_type = '(去除了sign和sign_type的签名验证)';
+if(!ret)
+	ret = check_sign(key_content, data_no_sign, sign);
+	check_type = '(只去除了sign的签名验证)';
+endif
 
 print '<!Doctype html>';
 print '<html><head><meta http-equiv="content-type" content="text/html;charset=utf-8" /></head><body>';
 
 if(ret)
-	retval = '验证成功!<br />支付宝交易号：' + sort_query_array['trade_no'];
+	retval = '验证成功! ' + check_type + '<br />支付宝交易号：' + sort_query_array['trade_no'];
 else
 	retval = '验证失败';
 endif

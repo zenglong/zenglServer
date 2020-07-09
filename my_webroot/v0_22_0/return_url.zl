@@ -33,7 +33,9 @@ else
 endif
 
 bltWriteFile('return_url.log', bltDate('%Y-%m-%d %H:%M:%S') + '\nquery string:' + bltUrlDecode(rqtGetQueryAsString()) 
-		+ '\n\ndata: ' + data + '\n\nsign: ' + sign + '\n\nretval: ' + retval);
+		+ '\n\ndata_no_sign_and_type: ' + data_no_sign_and_type
+		+ '\n\ndata_no_sign: ' + data_no_sign
+		+ '\n\nsign: ' + sign + '\n\nretval: ' + retval);
 
 print retval + '\n</body></html>';
 

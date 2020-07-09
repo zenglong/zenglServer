@@ -113,11 +113,29 @@ if(use_curl)
 	curlEasySetopt(curl_handle, 'POSTFIELDS', submit_post);
 	ret = curlEasyPerform(curl_handle, &content);
 	if(ret == 0)
-		print content + br;
+		print 'curl response content: ' + content + br;
 		con_decode = bltJsonDecode(content);
-		for(j=0;bltIterArray(con_decode[0],&j,&inner_k,&inner_v);)
-			print ' -- ' + inner_k +": " + inner_v + br;
-		endfor
+		method_response = bltStrReplace(method, '.', '_') + '_response';
+		print 'method_response: ' + method_response + br + br;
+		response_sign = con_decode['sign'];
+		print 'response_sign: ' + response_sign + br + br;
+		match_ret = pcreMatch('^{"'+method_response+'":(.*?),"sign":.*?$', content, &results);
+		if(match_ret)
+			response_data = results[1];
+		else
+			response_data = '';
+		endif
+		print 'response_data: ' + (response_data != '' ? response_data : '没有匹配到需要验签的数据') + br + br;
+		key_pub_content = add_key_header_footer(config['alipay_public_key'], 64, '-----BEGIN PUBLIC KEY-----', '-----END PUBLIC KEY-----');
+		ret = check_sign(key_pub_content, response_data, response_sign);
+		if(ret)
+			print '验签成功,格式化数据如下：' + br;
+			for(j=0;bltIterArray(con_decode[method_response],&j,&inner_k,&inner_v);)
+				print ' -- ' + inner_k +": " + inner_v + br;
+			endfor
+		else
+			print '验签失败';
+		endif
 	else
 		print 'curl error: ' + curlEasyStrError(ret);
 	endif

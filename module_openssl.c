@@ -701,6 +701,10 @@ static void common_encrypt_decrypt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount, con
  *  无论底层库是否支持这些签名类型，也无论底层库中这些签名类型实际的宏值是多少，type值与签名类型的对应关系都不会变，也就是说
  *  当type为1时，它始终表示 NID_sha1 的签名类型，如果底层库不支持该类型的话，模块函数也会反馈相应的错误提示
  *  type是可选参数，默认值是0，也就是 NID_sha 签名类型
+ * 第七个参数use_evp也是可选参是，当提供了此参数时，必须是整数类型，表示在进行签名和验签时是否使用EVP_为前缀的底层库函数进行签名操作
+ *  use_evp的默认值是0，表示使用默认的 RSA_sign 和 RSA_verify 的底层库函数来完成签名和验签操作
+ *  当use_evp的值不为0时，则表示使用 EVP_SignFinal 和 EVP_VerifyFinal 的底层库函数来完成签名和验签操作
+ *  当需要进行支付宝签名和验签时，需要使用EVP_为前缀的底层库函数来执行相关的底层操作，php语言的签名和验签的底层库函数也是用的EVP_为前缀的库函数
  *
  * 例如：
 	use builtin,openssl;
@@ -973,6 +977,7 @@ static void common_sign_verify(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount, const 
  *
  * 模块函数版本历史：
  *  - v0.20.0版本新增此模块函数
+ *  - v0.22.0版本增加了use_evp的可选参数
  */
 ZL_EXP_VOID module_openssl_sign(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
@@ -984,6 +989,7 @@ ZL_EXP_VOID module_openssl_sign(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  *
  * 模块函数版本历史：
  *  - v0.20.0版本新增此模块函数
+ *  - v0.22.0版本增加了use_evp的可选参数
  */
 ZL_EXP_VOID module_openssl_verify(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {

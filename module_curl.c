@@ -343,6 +343,7 @@ ZL_EXP_VOID module_curl_easy_cleanup(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * 'USERAGENT'：需要设置的用户代理
  * 'FOLLOWLOCATION'：当抓取到重定向页面时，是否进行重定向操作
  * 'SSL_VERIFYPEER'：是否校验SSL证书
+ * 'SSL_VERIFYHOST'：是否校验当前的域名与证书中的CN(common name)字段是不是匹配
  * 'TIMEOUT': 设置超时时间
  * 'COOKIEFILE': 设置需要读cookie的文件名，当需要发送cookie信息时，curl会读取该文件，并将其中的cookie作为请求发送出去
  * 'COOKIEJAR': 设置需要写入cookie的文件名，当curl获取到的响应头中包含了设置cookie的信息时，会将这些cookie写入到指定的文件
@@ -366,6 +367,8 @@ ZL_EXP_VOID module_curl_easy_cleanup(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * 当第二个参数是'VERBOSE'时，选项值必须是整数类型，表示是否输出详细的连接信息，默认是0，即不输出连接信息，如果要输出连接信息，可以将选项值设置为1
  * 当第二个参数是'FOLLOWLOCATION'时，选项值必须是整数类型，表示是否进行重定向操作，默认是0，即不进行重定向，需要进行重定向的，可以将选项值设置为1
  * 当第二个参数是'SSL_VERIFYPEER'时，选项值必须是整数类型，表示是否校验SSL证书，默认是1，即需要进行校验，如果不需要校验，可以将选项值设置为0
+ * 第第二个参数是'SSL_VERIFYHOST'时，选项值必须是整数类型，表示是否校验当前的域名与证书中的CN(common name)字段是不是匹配，
+ * 		SSL_VERIFYHOST的默认值是2(不是1，1在早期版本中只是用于调试，后面的版本已经去掉了1这个值)，表示需要进行校验，如果不需要校验，可以将选项值设置为0
  * 当第二个参数是'TIMEOUT'时，选项值必须是整数类型，表示需要设置的超时时间
  *
  * 和'URL'，'USERAGENT'，'FOLLOWLOCATION'，'SSL_VERIFYPEER'，'TIMEOUT'选项相关的例子，请参考curlEasyPerform模块函数的注释部分
@@ -378,6 +381,11 @@ ZL_EXP_VOID module_curl_easy_cleanup(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  *
  * 该模块函数最终会通过curl_easy_setopt库函数去执行具体的操作，
  * 该库函数的官方地址为：https://curl.haxx.se/libcurl/c/curl_easy_setopt.html
+ *
+ * 模块函数版本历史：
+ *  - v0.15.0版本新增此模块函数
+ *  - v0.16.0版本增加了COOKIEFILE，COOKIEJAR，COOKIE，PROXY，POSTFIELDS，VERBOSE以及STDERR选项
+ *  - v0.22.0版本增加了SSL_VERIFYHOST选项
  */
 ZL_EXP_VOID module_curl_easy_setopt(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {

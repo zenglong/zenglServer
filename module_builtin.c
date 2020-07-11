@@ -1607,12 +1607,27 @@ ZL_EXP_VOID module_builtin_file_exists(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 /**
  * bltOutputBlob模块函数，直接将二进制数据输出到客户端
  * 该模块函数的第一个参数blob为字节指针，指向需要输出的二进制数据。第二个参数length表示二进制数据的字节大小
+ *  从v0.22.0版本开始，第一个参数blob还可以是字符串类型，如果是字符串类型，则会将字符串输出到客户端，之前版本一直用print指令输出字符串到客户端，但是
+ *  print指令会在末尾自动添加换行符，而bltOutputBlob模块函数在输出字符串到客户端时，只会原样输出字符串信息，不会在后面加换行符之类的
+ *
  * 例如：
  * output = magickGetImageBlob(wand, &length); // 获取图像的二进制数据
  * rqtSetResponseHeader("Content-Type: image/" + magickGetImageFormat(wand));
  * bltOutputBlob(output, length); // 输出二进制数据
+ *
  * 上面代码片段中，先通过magickGetImageBlob获取图像的二进制数据和二进制数据的长度(以字节为单位的大小)，
  * 接着就可以通过bltOutputBlob模块函数将图像的二进制数据输出到客户端
+ *
+ * use builtin;
+ * retval = 'success';
+ * bltOutputBlob(retval, -1);
+ *
+ * 上面代码片段会将retval对应的字符串'success'输出到客户端，并且不会在末尾加换行符，也就是将参数原样输出
+ * 当第二个参数小于0时，例如上面设置的-1时，该模块函数会自动根据第一个参数的长度来进行输出
+ *
+ * 模块函数版本历史：
+ *  - v0.12.0版本新增此模块函数
+ *  - v0.22.0版本中第一个参数可以是字符串类型，此外，当第二个参数小于0时，会自动判断第一个参数的长度
  */
 ZL_EXP_VOID module_builtin_output_blob(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
@@ -2359,6 +2374,26 @@ ZL_EXP_VOID module_builtin_base64_decode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcou
 	}
 }
 
+/**
+ * bltUrlEncode模块函数，对字符串参数进行url编码
+ * 第一个参数str表示需要进行url编码的字符串
+ * 返回值是将str参数经过url编码后的结果字符串
+ * 例如：
+	use builtin;
+
+	str = 'hello world!世界你好！ 我是zengl!';
+
+	print '\nurl encode:' + (enc_str = bltUrlEncode(str));
+
+	上面代码片段会将str变量对应的字符串'hello world!世界你好！ 我是zengl!'进行url编码，并将编码后的结果打印出来，执行结果如下：
+
+	url encode:hello+world%21%E4%B8%96%E7%95%8C%E4%BD%A0%E5%A5%BD%EF%BC%81+%E6%88%91%E6%98%AFzengl%21
+
+	url编码时，a-zA-Z0-9以及. - * _会保持不变，空格符会转为+号，其他字符会转为%加字节值的ASCII形式，例如0xE4字节会转为%E4等
+
+	模块函数版本历史：
+	 - v0.22.0版本新增此模块函数
+ */
 ZL_EXP_VOID module_builtin_url_encode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -2395,6 +2430,28 @@ ZL_EXP_VOID module_builtin_url_encode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_FreeMem(VM_ARG, encode_str);
 }
 
+/**
+ * bltUrlDecode模块函数，将参数进行url解码
+ * 第一个参数str必须是字符串类型，表示经过了url编码的字符串
+ * 返回值是将参数str经过url解码后的字符串
+ * 示例：
+	use builtin;
+
+	str = 'hello world!世界你好！ 我是zengl!';
+
+	print '\nurl encode:' + (enc_str = bltUrlEncode(str));
+
+	print '\nurl decode:' + bltUrlDecode(enc_str) + '\n';
+
+	上面代码片段会先将字符串'hello world!世界你好！ 我是zengl!'进行url编码，再将其解码，并将编解码的结果打印出来，执行结果如下：
+
+	url encode:hello+world%21%E4%B8%96%E7%95%8C%E4%BD%A0%E5%A5%BD%EF%BC%81+%E6%88%91%E6%98%AFzengl%21
+
+	url decode:hello world!世界你好！ 我是zengl!
+
+	模块函数版本历史：
+	 - v0.22.0版本新增此模块函数
+ */
 ZL_EXP_VOID module_builtin_url_decode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

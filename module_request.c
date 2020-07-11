@@ -85,6 +85,9 @@ typedef struct _my_multipart_data my_multipart_data;
 
 static char * url_decode(char * dest, char * src, int src_len);
 
+/**
+ * 将request模块中的静态函数url_decode转为全局C函数，方便其他C模块直接调用
+ */
 char * gl_request_url_decode(char * dest, char * src, int src_len)
 {
 	return url_decode(dest, src, src_len);

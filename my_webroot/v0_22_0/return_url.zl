@@ -3,19 +3,26 @@ use builtin,request,openssl,curl,pcre;
 inc 'config.zl';
 inc 'func.zl';
 
+// 获取支付宝返回到商家页面时传递的http请求参数数组
 query_array = rqtGetQuery();
 
+// 通过sort_array脚本函数(在func.zl脚本中定义)，将query_array请求参数数组的成员，按照key(键名)的ASCII码序从小到大进行排序
 sort_query_array = sort_array(query_array);
 
+// 请求参数中的sign是支付宝生成的base64格式的签名
 sign = sort_query_array['sign'];
 
+// 支付宝返回到商家时生成的sign签名，是没有包含sign字段的，因此，验签时也要去除这个字段
 bltUnset(&sort_query_array['sign']);
 data_no_sign = get_sign_data(sort_query_array);
 
+// 支付宝返回到商家时生成的sign签名，还有可能是没有包含sign_type字段的，因此，可以对去除了sign和sign_type的签名，以及上面只去除了sign的签名进行双重验证，只要有一个验证通过就行
 bltUnset(&sort_query_array['sign_type']);
 data_no_sign_and_type = get_sign_data(sort_query_array);
 
+// 通过add_key_header_footer脚本函数(也定义在func.zl脚本中)，将支付宝公钥转为openssl密钥格式
 key_content = add_key_header_footer(config['alipay_public_key'], 64, '-----BEGIN PUBLIC KEY-----', '-----END PUBLIC KEY-----');
+// 通过check_sign脚本函数(也定义在func.zl脚本中)，使用支付宝公钥进行验签
 ret = check_sign(key_content, data_no_sign_and_type, sign);
 check_type = '(去除了sign和sign_type的签名验证)';
 if(!ret)
@@ -32,10 +39,12 @@ else
 	retval = '验证失败';
 endif
 
+// 将支付宝传递过来的相关信息写入return_url.log日志文件中，方便调试开发
 bltWriteFile('return_url.log', bltDate('%Y-%m-%d %H:%M:%S') + '\nquery string:' + bltUrlDecode(rqtGetQueryAsString()) 
 		+ '\n\ndata_no_sign_and_type: ' + data_no_sign_and_type
 		+ '\n\ndata_no_sign: ' + data_no_sign
 		+ '\n\nsign: ' + sign + '\n\nretval: ' + retval);
 
+// 将验证成功，或验证失败的信息反馈给客户端
 print retval + '\n</body></html>';
 

@@ -1,5 +1,7 @@
 use builtin,request,openssl,curl,pcre;
 
+// 通过本脚本实现支付宝的电脑端付款，交易查询，退款，退款查询以及交易关闭的后端处理
+
 inc 'config.zl';
 inc 'func.zl';
 
@@ -17,6 +19,7 @@ endif
 
 body_array = rqtGetBodyAsArray();
 
+// 如果选择了立即付款，就设置immediate_pay变量为TRUE，这样在付款时，就不会输出调试信息，而是会直接跳转到支付宝的支付页面
 immediate_pay = FALSE;
 if(bltStr(&body_array['sb']) == '测试立即付款')
 	immediate_pay = TRUE;
@@ -27,11 +30,19 @@ for(i=0;bltIterArray(body_array,&i,&k,&v);)
 endfor
 
 action = bltStr(&body_array['action']);
+// 除了支付宝付款操作是跳转到支付宝的支付页面外，其他的像交易查询，退款之类的操作，则都会使用curl库直接请求支付宝的网关来完成相关的操作
 use_curl = TRUE;
+/**
+ * 根据前端页面提交的action来判断需要执行什么操作，例如，当action为query时表示需要执行的是交易查询操作等
+ * 然后根据需要执行的操作，来设置biz_content_arr数组的成员值(该数组中包含了前端提交过来的out_trade_no商户订单号，total_amount付款金额等信息)
+ * 以及设置method变量，该变量存储了需要传递给支付宝网关的方法名，例如，交易查询操作时，method方法名会是 alipay.trade.query
+ */
+// action等于query表示执行交易查询操作
 if(action == 'query')
 	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
 	biz_content_arr['trade_no'] = body_array['trade_no'];
 	method = 'alipay.trade.query';
+// action等于refund表示执行退款操作
 elif(action == 'refund')
 	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
 	biz_content_arr['trade_no'] = body_array['trade_no'];
@@ -39,15 +50,18 @@ elif(action == 'refund')
 	biz_content_arr['refund_reason'] = body_array['refund_reason'];
 	biz_content_arr['out_request_no'] = body_array['out_request_no'];
 	method = 'alipay.trade.refund';
+// action等于refund_query表示执行退款查询操作
 elif(action == 'refund_query')
 	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
 	biz_content_arr['trade_no'] = body_array['trade_no'];
 	biz_content_arr['out_request_no'] = body_array['out_request_no'];
 	method = 'alipay.trade.fastpay.refund.query';
+// action等于close表示执行交易关闭操作
 elif(action == 'close')
 	biz_content_arr['out_trade_no'] = body_array['out_trade_no'];
 	biz_content_arr['trade_no'] = body_array['trade_no'];
 	method = 'alipay.trade.close';
+// 没传action，则表示执行付款操作
 else
 	biz_content_arr['product_code'] = 'FAST_INSTANT_TRADE_PAY';
 	biz_content_arr['body'] = body_array['body'];
@@ -58,9 +72,11 @@ else
 	use_curl = FALSE;
 endif
 
+// 将biz_content_arr转为json字符串，该json字符串会作为请求参数传递给支付宝网关
 biz_content = bltJsonEncode(biz_content_arr);
 print_msg('biz_content:' + biz_content + br + br);
 
+// 设置params数组，该数组里的成员值会转为http请求参数传递给支付宝网关
 params['biz_content'] = biz_content;
 params['method'] = method;
 params['alipay_sdk'] = 'alipay-sdk-zengl-20200627';
@@ -73,45 +89,63 @@ params['sign_type'] = config['sign_type'];
 params['notify_url'] = config['notify_url'];
 params['return_url'] = config['return_url'];
 
+// 通过sort_array脚本函数(在func.zl脚本中定义)，将params请求参数数组，按照key(键名)的ASCII码序从小到大进行排序
 sort_params =  sort_array(params);
 
+// 通过get_sign_data脚本函数(也定义在func.zl脚本中)，将sort_params排序过的请求参数数组，
+// 转为需要签名的字符串，数组成员之间通过&符号连接，每个成员的key(键名)和对应的值之间用=号连接
 str_to_be_signed = get_sign_data(sort_params);
 
+// 在非立即付款操作下，将需要签名的字符串信息打印出来
 print_msg('str_to_be_signed:' + bltHtmlEscape(str_to_be_signed) + br + br);
 
+// 通过add_key_header_footer脚本函数(也定义在func.zl脚本中)，将支付宝的商户私钥转为openssl密钥格式
 key_content = add_key_header_footer(config['merchant_private_key'], 64, '-----BEGIN RSA PRIVATE KEY-----', '-----END RSA PRIVATE KEY-----');
+// 根据openssl格式的商户私钥，读取该私钥，并返回相应的密钥key指针，该key会用于下面的签名操作
 key = opensslReadKey(key_content, RSA_PRIVATE);
 if(key == NULL)
 	exit('read key failed: ' + opensslGetError());
 endif
 
+// 使用SHA256的RSA签名类型(也就是支付宝所要求的RSA2的签名方式)，以及使用EVP_为前缀的底层库函数进行签名操作，得到的签名二进制数据存放在sign变量中
 ret = opensslSign(str_to_be_signed, -1, key, &sign, &sign_len, RSA_SIGN_SHA256, USE_EVP);
 if(!ret)
 	exit('sign failed: ' + opensslGetError());
 endif
 
+// 将签名二进制数据转为base64编码格式，这样签名数据就能以字符串的形式通过http请求传递给支付宝网关
 sign_encode = bltBase64Encode(sign);
 
+// 在非立即付款操作下，将base64编码的签名打印出来
 print_msg('sign_encode:' + sign_encode + br + br);
 
+// 将base64编码的签名设置到sort_params请求参数数组中
 sort_params['sign'] = sign_encode;
 
+// 如果是交易查询，退款，退款查询以及交易关闭的操作，则会通过curl直接请求支付宝网关来完成相关的操作
 if(use_curl)
 	curl_handle = curlEasyInit();
+	// 根据config配置(定义在config.zl脚本中)里的gateway_url支付宝网关地址，来设置curl的目标url地址
 	curlEasySetopt(curl_handle, 'URL', config['gateway_url'] + "?charset=" + sort_params['charset']);
 	curlEasySetopt(curl_handle, 'FOLLOWLOCATION', TRUE);
+	// 不校验SSL证书
 	curlEasySetopt(curl_handle, 'SSL_VERIFYPEER', FALSE);
+	// 不校验域名与证书中的CN(common name)字段是不是匹配
 	curlEasySetopt(curl_handle, 'SSL_VERIFYHOST', FALSE);
 	curlEasySetopt(curl_handle, 'TIMEOUT', 30);
 	submit_post = '';
+	// 将sort_params请求参数数组里的成员经过url编码后，转为&符号连接的url格式
 	for(i=0;bltIterArray(sort_params,&i,&k,&v);)
 		submit_post += k + '=' + bltUrlEncode(v);
 		if(i < bltCount(sort_params))
 			submit_post += '&';
 		endif
 	endfor
+	// 将上面得到的url格式的请求参数，设置到curl的POSTFIELDS选项，以作为curl的post请求参数
 	curlEasySetopt(curl_handle, 'POSTFIELDS', submit_post);
+	// 通过curl向支付宝网关发送post请求
 	ret = curlEasyPerform(curl_handle, &content);
+	// 如果ret返回值为0，就说明curl执行成功，则将支付宝网关返回的数据显示出来，同时对支付宝网关的返回数据进行验签操作，判断数据是不是没有被中间节点修改过
 	if(ret == 0)
 		print 'curl response content: ' + content + br;
 		con_decode = bltJsonDecode(content);
@@ -140,6 +174,7 @@ if(use_curl)
 		print 'curl error: ' + curlEasyStrError(ret);
 	endif
 	curlEasyCleanup(curl_handle);
+// 如果是支付宝付款操作，则直接跳转到支付宝的支付页面
 else
 	if(immediate_pay)
 		hidden_style = " style = 'display:none;'";

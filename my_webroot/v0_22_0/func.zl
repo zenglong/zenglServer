@@ -10,6 +10,7 @@ def FALSE 0;
 
 def NULL 0;
 
+// 当出错时，打印错误信息，并退出脚本
 fun exit(msg)
 	global br, gl_use_html;
 	if(gl_use_html)
@@ -21,6 +22,7 @@ fun exit(msg)
 	bltExit();
 endfun
 
+// 如果是立即支付方式，则不显示调试信息，直接跳转到支付宝支付页面
 fun print_msg(msg)
 	global immediate_pay;
 	if(!immediate_pay)
@@ -28,6 +30,7 @@ fun print_msg(msg)
 	endif
 endfun
 
+// 将需要签名的数组里的成员，按照key(键名)的ASCII码序从小到大进行排序
 fun sort_array(params)
 	sort_params = bltArray();
 	while(bltCount(params) > 0)
@@ -43,6 +46,7 @@ fun sort_array(params)
 	return sort_params;
 endfun
 
+// 将签名数组转为需要签名的字符串，数组成员之间通过&符号连接，每个成员的key(键名)和对应的值之间用=号连接
 fun get_sign_data(sort_params)
 	str_to_be_signed = '';
 
@@ -56,6 +60,7 @@ fun get_sign_data(sort_params)
 	return str_to_be_signed;
 endfun
 
+// 将支付宝的密钥转为openssl密钥格式
 fun add_key_header_footer(key_content, break_num, header, footer)
 	key_content_len = bltStrLen(key_content);
 	replace = header + '\n' + pcreReplace('(.{'+break_num+'})', '{1}\n', key_content);
@@ -67,6 +72,7 @@ fun add_key_header_footer(key_content, break_num, header, footer)
 	return replace;
 endfun
 
+// 使用支付宝公钥进行验签
 fun check_sign(key_content, data, sign_encode)
 	key = opensslReadKey(key_content, RSA_PUBLIC);
 	if(key == NULL)

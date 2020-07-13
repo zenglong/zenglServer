@@ -3,26 +3,38 @@ use builtin,request,openssl,curl,pcre;
 inc 'config.zl';
 inc 'func.zl';
 
+// 获取支付宝异步通知的post请求数组
 body_array = rqtGetBodyAsArray();
 
+// 通过sort_array脚本函数(在func.zl脚本中定义)，将body_array请求数组的成员，按照key(键名)的ASCII码序从小到大进行排序
 sort_body_arr = sort_array(body_array);
 
+// post请求参数中的sign是支付宝生成的base64格式的签名
 sign = sort_body_arr['sign'];
+// 将请求数组中的sign和sign_type成员去掉，因为支付宝异步通知时生成的sign签名，是没有包含sign和sign_type字段的，因此，验签时也要去除这两个字段
 bltUnset(&sort_body_arr['sign'], &sort_body_arr['sign_type']);
 
+// 通过get_sign_data脚本函数(也定义在func.zl脚本中)，将sort_body_arr排序过的post请求参数数组，
+// 转为需要进行验签的字符串，数组成员之间通过&符号连接，每个成员的key(键名)和对应的值之间用=号连接
 data = get_sign_data(sort_body_arr);
 
+// 通过add_key_header_footer脚本函数(也定义在func.zl脚本中)，将支付宝公钥转为openssl密钥格式
 key_content = add_key_header_footer(config['alipay_public_key'], 64, '-----BEGIN PUBLIC KEY-----', '-----END PUBLIC KEY-----');
+// 通过check_sign脚本函数(也定义在func.zl脚本中)，使用支付宝公钥进行验签
 ret = check_sign(key_content, data, sign);
 
 if(ret)
+	// 验签成功，则返回success
 	retval = 'success';
 else
+	// 验签失败，则返回fail
 	retval = 'fail';
 endif
 
+// 将签名之类的信息写入notify_url.log日志文件中，方便调试开发
 bltWriteFile('notify_url.log', bltDate('%Y-%m-%d %H:%M:%S') + '\nbody: ' + bltUrlDecode(rqtGetBody())
 	 + '\n\ndata: ' + data + '\n\nsign: ' + sign + '\n\nretval: ' + retval);
 
+// 通过bltOutputBlob模块函数输出success或fail，和print指令相比，该模块函数不会在末尾添加换行符，只会原样输出字符串信息
 bltOutputBlob(retval, -1);
 

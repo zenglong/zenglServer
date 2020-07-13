@@ -1,7 +1,14 @@
+// 支付宝的APPID(发起请求的应用ID)
 config['app_id'] = '';
+// 支付完成后的异步通知地址，必须是外网可以访问到的地址
 config['notify_url'] = 'http://domain_url/v0_22_0/notify_url.zl';
+// 支付完成后跳转返回到商家的地址
 config['return_url'] = 'http://domain_url/v0_22_0/return_url.zl';
+// 签名方式，目前测试脚本只支持最新的RSA2方式，所以不需要修改
 config['sign_type'] = 'RSA2';
+// 支付宝网关，沙箱的网关地址和正式环境的网关地址不同
 config['gateway_url'] = 'https://openapi.alipaydev.com/gateway.do';
+// 商户私钥
 config['merchant_private_key'] = '';
+// 支付宝公钥
 config['alipay_public_key'] = '';

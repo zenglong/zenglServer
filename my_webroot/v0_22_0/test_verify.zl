@@ -1,5 +1,7 @@
 use builtin,openssl,pcre;
 
+// 本测试脚本仅用于测试opensslVerify模块函数使用use_evp参数时，能否对支付宝的签名数据进行验签操作
+
 def RSA_PUBLIC 1;
 def RSA_PRIVATE 0;
 
@@ -24,6 +26,7 @@ fun exit(msg)
 	bltExit();
 endfun
 
+// 将支付宝的密钥转为openssl密钥格式
 fun add_key_header_footer(key_content, break_num, header, footer)
 	key_content_len = bltStrLen(key_content);
 	replace = header + '\n' + pcreReplace('(.{'+break_num+'})', '{1}\n', key_content);
@@ -35,26 +38,34 @@ fun add_key_header_footer(key_content, break_num, header, footer)
 	return replace;
 endfun
 
+// 测试用的支付宝异步通知时的待验签的数据
 data = 'app_id=2016091900545093&auth_app_id=2016091900545093&body=22222222&buyer_id=2088102176456923&buyer_pay_amount=0.02&charset=UTF-8&fund_bill_list=[{"amount":"0.02","fundChannel":"ALIPAYACCOUNT"}]&gmt_create=2020-06-23 15:04:58&gmt_payment=2020-06-23 15:05:08&invoice_amount=0.02&notify_id=2020062300222150509056920506849611&notify_time=2020-06-23 15:05:09&notify_type=trade_status_sync&out_trade_no=20206231433219992&point_amount=0.00&receipt_amount=0.02&seller_id=2088102176283310&subject=测试3&total_amount=0.02&trade_no=2020062322001456920500948453&trade_status=TRADE_SUCCESS&version=1.0';
 
+// 与上面的待验签数据相对应的base64编码格式的签名
 sign_encode = 'L4aS8dVsAvELSNalnbdwT8nsJ0ezzx77EdaArzx1MuGOniG3aWcIcO7pLERjAOJ2SDEv8vzOEY2Y8RkkjJ/LyaK22JZRSNJhav9oh+GCla36PcsPmV/sl6bQj1HwUD16l0LVijyv4BNECxw5ag5Bl6Y4bkDh/4/7mmlhMOGXSP2RAwi9Shzb49DAGg9URnHudIbPLiLv4NLXAcBq+7w8UqHOpTRWDIWPpsVmlyeWW7dRhTGmBtuWTeidNLkaw6o0zUD5BsH0/ilniP0iAlt3NZaft+GadjpN5JFuMA9cWcbFHd9VAfuxrV/imyWhH7lUz/1LMq77ckB4rYjXc3HApg==';
 
+// 用于执行验签操作的支付宝公钥
 key_content = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0rXS+ruraZ8cs2S+8oL3GgSM/irvgFouV8edPLArAEHKIpho9R80JuyIWKWaptTnpb6MJZhPOdPCvekjo70yKVK+X6nzZTSwHDDHzJucUqXU4CKqW6D7b+A+T2a92mv1GG3f7A3KlAw8C5bEbnWkC1hd4br2gLI4JkPJ/qVEHPstwa1Qdo+J3TKH9RzFj5cUkcN7Tq+POmSiTEwZCC1/nmlXQQxuNiecNPIz7r1smBjI31WPwb+FcSrYdGXEQCFfaw1+VjXIldOYmoezaqQLyeMYIBP0ANOCwuwitUvYRrYn0w97qVi6nkOQ89FXtAOIrVKGHd7NrHDBKVJC0NPCbQIDAQAB';
 
+// 通过add_key_header_footer脚本函数，将支付宝公钥转为openssl密钥格式
 key_content = add_key_header_footer(key_content, 64, '-----BEGIN PUBLIC KEY-----', '-----END PUBLIC KEY-----');
 
+// 根据openssl格式的支付宝公钥，得到密钥key指针
 key = opensslReadKey(key_content, RSA_PUBLIC);
 if(key == NULL)
 	exit('read key failed: ' + opensslGetError());
 endif
 
+// 将base64编码的签名进行base64解码
 sign_len = bltBase64Decode(sign_encode, &sign);
 
+// 使用use_evp参数，通过opensslVerify对支付宝的待验签数据进行验签操作
 ret = opensslVerify(data, -1, key, sign, sign_len, RSA_SIGN_SHA256, USE_EVP);
 print ret;
 if(ret < 0)
 	exit('opensslVerify failed: ' + opensslGetError());
 endif
 
+// 验签成功则打印True，验签失败则打印False
 print 'verify :' + (ret > 0 ? 'True' : 'False') + br;
 

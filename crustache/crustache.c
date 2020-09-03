@@ -316,18 +316,18 @@ find_mustache(
 	if (mst_start == NULL)
 		return 0; /* no mustaches found */
 
-	mst_end = railgun(
+	/* mst_end = railgun(
 		buffer + i, size - i,
 		template->mustache_close.chars,
-		template->mustache_close.size);
+		template->mustache_close.size); */
 
-	if (mst_end == mst_start) {
+	// if (mst_end == mst_start) {
 		mst_end = railgun(
 			mst_start + template->mustache_open.size,
 			buffer + size - (template->mustache_open.size + mst_start),
 			template->mustache_close.chars,
 			template->mustache_close.size);
-	}
+	// }
 
 	if (mst_end == NULL || mst_end < mst_start) {
 		template->error_pos = mst_end ? (mst_end - buffer) : (mst_start - buffer);

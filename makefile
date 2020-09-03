@@ -79,7 +79,7 @@ zenglServer: $(SRCS) zengl/linux/libzengl.a crustache/libcrustache.a
 zengl/linux/libzengl.a: zengl/linux/zengl_exportfuns.h
 	cd zengl/linux && $(MAKE) libzengl.a
 
-crustache/libcrustache.a: module_builtin.h common_header.h crustache/crustache.h
+crustache/libcrustache.a: module_builtin.h common_header.h crustache/crustache.h crustache/buffer.h crustache/houdini.h crustache/html_unescape.h crustache/stack.h crustache/crustache.c crustache/buffer.c crustache/houdini_html.c crustache/stack.c
 	cd crustache && $(MAKE) libcrustache.a
 
 clean:

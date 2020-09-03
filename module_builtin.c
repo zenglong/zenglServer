@@ -431,6 +431,8 @@ static void builtin_write_array_to_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STR
 				}
 				process_count++;
 				break;
+			default: // 如果是其他类型，例如NONE成员(没有被赋值初始化过的成员)，则跳过不处理
+				continue;
 			}
 			switch(mblk_val.type)
 			{

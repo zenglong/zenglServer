@@ -50,6 +50,9 @@ static int builtin_crustache__partial(ZL_EXP_VOID * VM_ARG, crustache_template *
 // 判断是否初始化过随机种子，如果没有初始化过，则进行初始化
 static __thread ZL_EXP_BOOL st_is_init_rand_seed = ZL_EXP_FALSE;
 
+static char st_trim_mask[256];
+static ZL_EXP_BOOL st_trim_mask_init = ZL_EXP_FALSE;
+
 /**
  * crustache第三方库在解析mustache模板时，会调用的回调函数(回调函数定义在builtin模块中)
  */
@@ -2474,6 +2477,80 @@ ZL_EXP_VOID module_builtin_url_decode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_FreeMem(VM_ARG, decode_str);
 }
 
+ZL_EXP_VOID module_builtin_trim(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltTrim";
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(str[, chars = ' \t\n\r\v'[, mode = 3]]): str", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [str] of %s must be string", func_name);
+	}
+	char * str = (char *)arg.val.str;
+	int str_len = strlen(str);
+	char * chars = " \t\n\r\v";
+	int chars_len = strlen(chars);
+	int mode = 3;
+	if(argcount > 1) {
+		zenglApi_GetFunArg(VM_ARG,2,&arg);
+		if(arg.type != ZL_EXP_FAT_STR) {
+			zenglApi_Exit(VM_ARG,"the second argument [chars] of %s must be string", func_name);
+		}
+		chars = (char *)arg.val.str;
+		chars_len = strlen(chars);
+		if(argcount > 2) {
+			zenglApi_GetFunArg(VM_ARG,3,&arg);
+			if(arg.type != ZL_EXP_FAT_INT) {
+				zenglApi_Exit(VM_ARG,"the third argument [mode] of %s must be integer", func_name);
+			}
+			mode = (int)arg.val.integer;
+		}
+	}
+	char * start = str;
+	char * end = (str_len > 0) ? (str + str_len) : str;
+	if (chars_len <= 0) {
+		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, str, 0, 0);
+		return;
+	}
+	if(!st_trim_mask_init) {
+		memset(st_trim_mask, 0, 256);
+		st_trim_mask_init = ZL_EXP_TRUE;
+	}
+	unsigned char c;
+	for(int i = 0; i < chars_len ;i++) {
+		c = (unsigned char)chars[i];
+		st_trim_mask[c] = 1;
+	}
+
+	if(mode & 1) {
+		while(start != end) {
+			if(st_trim_mask[(unsigned char)*start])
+				start++;
+			else
+				break;
+		}
+	}
+	if(mode & 2) {
+		while(start != end) {
+			if(st_trim_mask[(unsigned char)*(end-1)])
+				end--;
+			else
+				break;
+		}
+	}
+
+	for(int i = 0; i < chars_len ;i++) {
+		c = (unsigned char)chars[i];
+		st_trim_mask[c] = 0;
+	}
+
+	char orig_end_char = *end;
+	*end = '\0';
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, start, 0, 0);
+	*end = orig_end_char;
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -2516,4 +2593,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltBase64Decode",module_builtin_base64_decode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUrlEncode",module_builtin_url_encode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUrlDecode",module_builtin_url_decode);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltTrim",module_builtin_trim);
 }

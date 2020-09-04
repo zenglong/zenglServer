@@ -1,0 +1,19 @@
+use builtin;
+def TRIM_LEFT 1;
+def TRIM_RIGHT 2;
+def TRIM_BOTH 3;
+
+test = '  
+	hello world !!!!!   	
+  ';
+
+print 'test: ' + test;
+print '----------------------------------------';
+print '[bltTrim(test)]: ' + '[' + bltTrim(test) + ']';
+print '----------------------------------------';
+print "[bltTrim(test, ' \\n\\t', TRIM_LEFT)]: " + '[' + bltTrim(test, ' \n\t', TRIM_LEFT) + ']';
+print '----------------------------------------';
+print "[bltTrim(test, ' \\n\\t', TRIM_RIGHT)]: " + '[' + bltTrim(test, ' \n\t', TRIM_RIGHT) + ']';
+print '----------------------------------------';
+print '[bltTrim("  hahahaha~~~~  ", \' \', TRIM_BOTH)]: ' + '[' + bltTrim("  hahahaha~~~~  ", ' ', TRIM_BOTH) + ']';
+print '----------------------------------------';

@@ -1,8 +1,8 @@
 CC = gcc
 CFLAGS = -g3 -ggdb -O0 -std=c99
 LIB_FLAG = -lpthread -lm
-SRCS := main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c zlsrv_setproctitle.c pointer.c base64.c
-SRCS += main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zlsrv_setproctitle.h pointer.h base64.h
+SRCS := main.c http_parser.c module_request.c module_builtin.c module_session.c dynamic_string.c multipart_parser.c resources.c client_socket_list.c json.c randutils.c md5.c debug.c zlsrv_setproctitle.c pointer.c base64.c fatal_error_callback.c
+SRCS += main.h http_parser.h common_header.h module_request.h module_builtin.h module_session.h dynamic_string.h multipart_parser.h resources.h client_socket_list.h json.h randutils.h md5.h debug.h zlsrv_setproctitle.h pointer.h base64.h fatal_error_callback.h
 ifeq ($(USE_MYSQL),yes)
 	SRCS += module_mysql.c module_mysql.h 
 	MYSQL_FLAG = -DUSE_MYSQL `mysql_config --cflags --libs` 

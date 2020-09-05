@@ -37,6 +37,7 @@
 #endif
 #include "debug.h" // debug.h头文件中包含远程调试相关的结构体和函数的定义
 #include "md5.h"
+#include "fatal_error_callback.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1905,7 +1906,12 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			if(zenglApi_Run(VM, full_path) == -1) //编译执行zengl脚本
 			{
 				// 如果执行失败，则显示错误信息，并抛出500内部错误给客户端
-				write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run <%s> failed: %s\n",full_path, zenglApi_GetErrorString(VM));
+				char * fata_error_str = zenglApi_GetErrorString(VM);
+				write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run <%s> failed: %s\n",full_path, fata_error_str);
+				if(fatal_error_callback_exec(VM, full_path, fata_error_str) == -1) {
+					write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run fatal error callback of <%s> failed: %s\n",
+							full_path, zenglApi_GetErrorString(VM));
+				}
 				client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 500 Internal Server Error\r\n", 36);
 				dynamic_string_append(&my_data.response_body, "500 Internal Server Error", 25, 200);
 				status_code = 500;
@@ -1924,6 +1930,8 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				else
 					is_custom_status_code = ZL_EXP_TRUE; // 用户自定义了http状态码
 			}
+
+			fata_error_free_all_ptrs();
 
 			// 如果开启了远程调试，则在关闭zengl虚拟机之前，需要通过debug_exit函数来关闭掉打开的调试套接字，以及释放掉分配过的动态字符串资源
 			if(config_remote_debug_enable)

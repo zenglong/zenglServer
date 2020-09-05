@@ -1,0 +1,9 @@
+use builtin;
+
+fun fatal_error(error)
+	print ' hahaha fatal error:' + error;
+endfun
+
+bltFatalErrorCallback('fatal_error');
+
+a = bltTestHa();

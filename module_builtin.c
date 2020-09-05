@@ -20,6 +20,7 @@
 #include "crustache/buffer.h"
 #include "md5.h"
 #include "base64.h"
+#include "fatal_error_callback.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -2551,6 +2552,36 @@ ZL_EXP_VOID module_builtin_trim(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	*end = orig_end_char;
 }
 
+ZL_EXP_VOID module_builtin_fatal_error_callback(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltFatalErrorCallback";
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(function_name[, class_name])", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [function_name] of %s must be string", func_name);
+	}
+	char * function_name = (char *)arg.val.str;
+	if(strlen(function_name) == 0) {
+		zenglApi_Exit(VM_ARG,"the first argument [function_name] of %s can't be empty", func_name);
+	}
+	fatal_error_set_function_name(function_name);
+	char * class_name = NULL;
+	if(argcount > 1) {
+		zenglApi_GetFunArg(VM_ARG,2,&arg);
+		if(arg.type != ZL_EXP_FAT_STR) {
+			zenglApi_Exit(VM_ARG,"the second argument [class_name] of %s must be string", func_name);
+		}
+		class_name = (char *)arg.val.str;
+		if(strlen(class_name) == 0) {
+			zenglApi_Exit(VM_ARG,"the second argument [class_name] of %s can't be empty", func_name);
+		}
+		fatal_error_set_class_name(class_name);
+	}
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -2594,4 +2625,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUrlEncode",module_builtin_url_encode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUrlDecode",module_builtin_url_decode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltTrim",module_builtin_trim);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltFatalErrorCallback",module_builtin_fatal_error_callback);
 }

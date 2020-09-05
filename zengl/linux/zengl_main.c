@@ -64,6 +64,7 @@ ZL_VOID zengl_exit(ZL_VOID * VM_ARG,ZENGL_ERRORNO errorno, ...)
 	 */
 	if(compile->source.file != ZL_NULL) {
 		ZENGL_SYS_FILE_CLOSE(compile->source.file);
+		compile->source.file = ZL_NULL;
 	}
 	if(VM->errorno == ZL_NO_ERR_SUCCESS)
 		ZENGL_SYS_JMP_LONGJMP_TO(compile->jumpBuffer, 1);

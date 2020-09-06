@@ -1936,6 +1936,8 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 
 			fata_error_free_all_ptrs();
 
+			builtin_module_terminus();
+
 			// 如果开启了远程调试，则在关闭zengl虚拟机之前，需要通过debug_exit函数来关闭掉打开的调试套接字，以及释放掉分配过的动态字符串资源
 			if(config_remote_debug_enable)
 				debug_exit(VM, &debug_info);
@@ -2203,6 +2205,8 @@ static int main_run_cmd(char * run_cmd)
 			}
 
 			fata_error_free_all_ptrs();
+
+			builtin_module_terminus();
 
 			// 如果开启了远程调试，则在关闭zengl虚拟机之前，需要通过debug_exit函数来关闭掉打开的调试套接字，以及释放掉分配过的动态字符串资源
 			if(config_remote_debug_enable)

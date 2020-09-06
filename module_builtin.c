@@ -82,6 +82,11 @@ static void builtin_init_rand_seed()
 	}
 }
 
+void builtin_module_terminus()
+{
+	st_write_file_mode = WRITE_FILE_MODE_WRITE;
+}
+
 /**
  * 根据当前执行脚本的目录路径，加上filename文件名，来生成可以被fopen等C库函数使用的路径
  */

@@ -1906,11 +1906,14 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			if(zenglApi_Run(VM, full_path) == -1) //编译执行zengl脚本
 			{
 				// 如果执行失败，则显示错误信息，并抛出500内部错误给客户端
-				char * fata_error_str = zenglApi_GetErrorString(VM);
-				write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run <%s> failed: %s\n",full_path, fata_error_str);
-				if(fatal_error_callback_exec(VM, full_path, fata_error_str) == -1) {
+				fatal_error_set_error_string(zenglApi_GetErrorString(VM));
+				if(fatal_error_callback_exec(VM, full_path, fatal_error_get_error_string()) == -1) {
 					write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run fatal error callback of <%s> failed: %s\n",
 							full_path, zenglApi_GetErrorString(VM));
+				}
+				else {
+					write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run <%s> failed: %s\n",
+							full_path, fatal_error_get_error_string());
 				}
 				client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 500 Internal Server Error\r\n", 36);
 				dynamic_string_append(&my_data.response_body, "500 Internal Server Error", 25, 200);
@@ -2179,14 +2182,27 @@ static int main_run_cmd(char * run_cmd)
 			if(zenglApi_Run(VM, full_path) == -1) //编译执行zengl脚本
 			{
 				// 如果执行失败，则显示错误信息，并抛出500内部错误给客户端
-				write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run <%s> failed: %s\n",full_path, zenglApi_GetErrorString(VM));
-				printf("zengl run <%s> failed: %s\n",full_path, zenglApi_GetErrorString(VM));
+				fatal_error_set_error_string(zenglApi_GetErrorString(VM));
+				if(fatal_error_callback_exec(VM, full_path, fatal_error_get_error_string()) == -1) {
+					write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run fatal error callback of <%s> failed: %s\n",
+							full_path, zenglApi_GetErrorString(VM));
+					printf("zengl run fatal error callback of <%s> failed: %s\n",full_path, zenglApi_GetErrorString(VM));
+				}
+				else {
+					write_to_server_log_pipe(WRITE_TO_PIPE_, "zengl run <%s> failed: %s\n",
+							full_path, fatal_error_get_error_string());
+					if(fatal_error_get_default_cmd_action()) {
+						printf("zengl run <%s> failed: %s\n",full_path, fatal_error_get_error_string());
+					}
+				}
 			}
 			else {
 				// 如果开启了编译缓存，那么在没有重利用缓存数据时(例如缓存文件不存在，或者原脚本内容发生的改变等)，就生成新的缓存数据，并将其写入缓存文件中
 				if(config_zengl_cache_enable && !is_reuse_cache)
 					main_write_zengl_cache_to_file(VM, cache_path);
 			}
+
+			fata_error_free_all_ptrs();
 
 			// 如果开启了远程调试，则在关闭zengl虚拟机之前，需要通过debug_exit函数来关闭掉打开的调试套接字，以及释放掉分配过的动态字符串资源
 			if(config_remote_debug_enable)

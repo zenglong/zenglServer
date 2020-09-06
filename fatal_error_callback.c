@@ -13,6 +13,8 @@
 
 static char * call_function_name = NULL;
 static char * call_class_name = NULL;
+static char * st_fatal_error_string = NULL;
+static int st_default_cmd_action = 1;
 
 static char * fatal_error_copy_string(char * from, char * to)
 {
@@ -38,6 +40,26 @@ void fatal_error_set_class_name(char * class_name)
 	call_class_name = fatal_error_copy_string(class_name, call_class_name);
 }
 
+void fatal_error_set_error_string(char * error_string)
+{
+	st_fatal_error_string = fatal_error_copy_string(error_string, st_fatal_error_string);
+}
+
+char * fatal_error_get_error_string()
+{
+	return st_fatal_error_string;
+}
+
+void fatal_error_set_default_cmd_action(int default_cmd_action)
+{
+	st_default_cmd_action = default_cmd_action;
+}
+
+int fatal_error_get_default_cmd_action()
+{
+	return st_default_cmd_action;
+}
+
 int fatal_error_callback_exec(ZL_EXP_VOID * VM, char * script_file, char * fatal_error)
 {
 	if(call_function_name == NULL) {
@@ -61,4 +83,9 @@ void fata_error_free_all_ptrs()
 		free(call_class_name);
 		call_class_name = NULL;
 	}
+	if(st_fatal_error_string != NULL) {
+		free(st_fatal_error_string);
+		st_fatal_error_string = NULL;
+	}
+	st_default_cmd_action = 1;
 }

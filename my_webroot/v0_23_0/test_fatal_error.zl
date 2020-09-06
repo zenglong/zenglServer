@@ -1,9 +1,15 @@
 use builtin;
+def WRITE_MODE 1;
+def APPEND_MODE 2;
+def TRUE 1;
+def FALSE 0;
 
 fun fatal_error(error)
-	print ' hahaha fatal error:' + error;
+	print ' hahaha fatal error [' + bltDate('%Y-%m-%d %H:%M:%S') + ']: ' + error;
+	bltSetWriteFileMode(APPEND_MODE);
+	bltWriteFile('fatal_error.log', bltDate('%Y-%m-%d %H:%M:%S') + ' - ' + error + '\n');
 endfun
 
-bltFatalErrorCallback('fatal_error');
+bltFatalErrorCallback('fatal_error', '', FALSE);
 
 a = bltTestHa();

@@ -36,6 +36,9 @@
 #define MODULE_BUILTIN_DUMP_CHAR 3
 #define MODULE_BUILTIN_DUMP_OCTAL 4
 
+#define WRITE_FILE_MODE_WRITE 1
+#define WRITE_FILE_MODE_APPEND 2
+
 static int builtin_crustache__context_get(
 		ZL_EXP_VOID * VM_ARG,
 		builtin_mustache_context * new_context,
@@ -53,6 +56,8 @@ static __thread ZL_EXP_BOOL st_is_init_rand_seed = ZL_EXP_FALSE;
 
 static char st_trim_mask[256];
 static ZL_EXP_BOOL st_trim_mask_init = ZL_EXP_FALSE;
+
+static int st_write_file_mode = WRITE_FILE_MODE_WRITE;
 
 /**
  * crustache第三方库在解析mustache模板时，会调用的回调函数(回调函数定义在builtin模块中)
@@ -798,7 +803,11 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	}
 	char full_path[FULL_PATH_SIZE];
 	builtin_make_fullpath(full_path, filename, my_data);
-	FILE * fp = fopen(full_path, "wb");
+	FILE * fp = NULL;
+	if(st_write_file_mode == WRITE_FILE_MODE_APPEND)
+		fp = fopen(full_path, "ab");
+	else
+		fp = fopen(full_path, "wb");
 	if(fp != NULL) {
 		size_t retval = fwrite(ptr, 1, length, fp);
 		fclose(fp);
@@ -807,6 +816,21 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	else { // 如果打开文件失败，则将错误记录到日志中
 		zenglApi_Exit(VM_ARG,"bltWriteFile <%s> failed [%d] %s", full_path, errno, strerror(errno));
 	}
+}
+
+ZL_EXP_VOID module_builtin_set_write_file_mode(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltSetWriteFileMode";
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(mode)", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	st_write_file_mode = (int)arg.val.integer;
+	if(st_write_file_mode != WRITE_FILE_MODE_WRITE && st_write_file_mode != WRITE_FILE_MODE_APPEND) {
+		zenglApi_Exit(VM_ARG,"the first argument mode of %s must be %d(for write mode) or %d(for append mode)",
+				func_name, WRITE_FILE_MODE_WRITE, WRITE_FILE_MODE_APPEND);
+	}
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
 /*bltExit模块函数，直接退出zengl脚本*/
@@ -2557,7 +2581,7 @@ ZL_EXP_VOID module_builtin_fatal_error_callback(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	const char * func_name = "bltFatalErrorCallback";
 	if(argcount < 1)
-		zenglApi_Exit(VM_ARG,"usage: %s(function_name[, class_name])", func_name);
+		zenglApi_Exit(VM_ARG,"usage: %s(function_name[, class_name[, default_cmd_action]])", func_name);
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
 		zenglApi_Exit(VM_ARG,"the first argument [function_name] of %s must be string", func_name);
@@ -2574,10 +2598,16 @@ ZL_EXP_VOID module_builtin_fatal_error_callback(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT
 			zenglApi_Exit(VM_ARG,"the second argument [class_name] of %s must be string", func_name);
 		}
 		class_name = (char *)arg.val.str;
-		if(strlen(class_name) == 0) {
-			zenglApi_Exit(VM_ARG,"the second argument [class_name] of %s can't be empty", func_name);
+		if(strlen(class_name) > 0) {
+			fatal_error_set_class_name(class_name);
 		}
-		fatal_error_set_class_name(class_name);
+		if(argcount > 2) {
+			zenglApi_GetFunArg(VM_ARG,3,&arg);
+			if(arg.type != ZL_EXP_FAT_INT) {
+				zenglApi_Exit(VM_ARG,"the third argument [default_cmd_action] of %s must be integer", func_name);
+			}
+			fatal_error_set_default_cmd_action((int)arg.val.integer);
+		}
 	}
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
@@ -2591,6 +2621,7 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUnset",zenglApiBMF_unset);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltIterArray",module_builtin_iterate_array);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltWriteFile",module_builtin_write_file);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSetWriteFileMode",module_builtin_set_write_file_mode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltExit",module_builtin_exit);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltMustacheFileRender",module_builtin_mustache_file_render);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltJsonDecode",module_builtin_json_decode);

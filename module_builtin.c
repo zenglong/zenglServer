@@ -57,8 +57,6 @@ static __thread ZL_EXP_BOOL st_is_init_rand_seed = ZL_EXP_FALSE;
 static char st_trim_mask[256];
 static ZL_EXP_BOOL st_trim_mask_init = ZL_EXP_FALSE;
 
-static int st_write_file_mode = WRITE_FILE_MODE_WRITE;
-
 /**
  * crustache第三方库在解析mustache模板时，会调用的回调函数(回调函数定义在builtin模块中)
  */
@@ -80,11 +78,6 @@ static void builtin_init_rand_seed()
 		srand((unsigned int)rawtime);
 		st_is_init_rand_seed = ZL_EXP_TRUE;
 	}
-}
-
-void builtin_module_terminus()
-{
-	st_write_file_mode = WRITE_FILE_MODE_WRITE;
 }
 
 /**
@@ -759,11 +752,12 @@ check_index:
 ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
-	if(argcount != 3 && argcount != 2)
-		zenglApi_Exit(VM_ARG,"usage: bltWriteFile(filename, ptr|string, length) | bltWriteFile(filename, string)");
+	const char * func_name = "bltWriteFile";
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: %s(filename, ptr|string[, length[, mode]])", func_name);
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	if(arg.type != ZL_EXP_FAT_STR) {
-		zenglApi_Exit(VM_ARG,"the first argument of bltWriteFile must be string");
+		zenglApi_Exit(VM_ARG,"the first argument of %s must be string", func_name);
 	}
 	char * filename = arg.val.str;
 	zenglApi_GetFunArg(VM_ARG,2,&arg);
@@ -772,44 +766,47 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	char * string = ZL_EXP_NULL;
 	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
 	if(arg.type == ZL_EXP_FAT_STR) {
-		string = arg.val.str;
-		ptr = string;
+		ptr = arg.val.str;
+		ptr_size = strlen(arg.val.str);
 	}
 	else if(arg.type == ZL_EXP_FAT_INT) {
 		ptr = (void *)arg.val.integer;
 		int ptr_idx = pointer_list_get_ptr_idx(&(my_data->pointer_list), ptr);
 		if(ptr_idx < 0) {
-			zenglApi_Exit(VM_ARG,"runtime error: the second argument [ptr] of bltWriteFile is invalid pointer");
+			zenglApi_Exit(VM_ARG,"runtime error: the second argument [ptr] of %s is invalid pointer", func_name);
 		}
 		ptr_size = my_data->pointer_list.list[ptr_idx].ptr_size;
 	}
 	else {
-		zenglApi_Exit(VM_ARG,"the second argument of bltWriteFile must be integer or string");
+		zenglApi_Exit(VM_ARG,"the second argument [ptr|string] of %s must be integer or string", func_name);
 	}
-	int length = 0;
-	if(argcount == 3) {
+	int length = ptr_size;
+	int write_mode = WRITE_FILE_MODE_WRITE;
+	if(argcount > 2) {
 		zenglApi_GetFunArg(VM_ARG,3,&arg);
 		if(arg.type != ZL_EXP_FAT_INT) {
-			zenglApi_Exit(VM_ARG,"the third argument of bltWriteFile must be integer");
+			zenglApi_Exit(VM_ARG,"the third argument [length] of %s must be integer", func_name);
 		}
 		length = (int)arg.val.integer;
-		if(length < 0) {
-			zenglApi_Exit(VM_ARG,"runtime error: the third argument [length] of bltWriteFile is invalid");
-		}
-		if(ptr_size > 0 && length > ptr_size) {
+		if(length < 0 || length > ptr_size) {
 			length = ptr_size;
 		}
-	}
-	else if(string != ZL_EXP_NULL) {
-		length = strlen(string);
-	}
-	else {
-		zenglApi_Exit(VM_ARG,"the length needed by bltWriteFile can't be detected");
+		if(argcount > 3) {
+			zenglApi_GetFunArg(VM_ARG,4,&arg);
+			if(arg.type != ZL_EXP_FAT_INT) {
+				zenglApi_Exit(VM_ARG,"the fourth argument [mode] of %s must be integer", func_name);
+			}
+			write_mode = (int)arg.val.integer;
+			if(write_mode != WRITE_FILE_MODE_WRITE && write_mode != WRITE_FILE_MODE_APPEND) {
+				zenglApi_Exit(VM_ARG,"the fourth argument [mode] of %s must be %d(for write mode) or %d(for append mode)",
+								func_name, WRITE_FILE_MODE_WRITE, WRITE_FILE_MODE_APPEND);
+			}
+		}
 	}
 	char full_path[FULL_PATH_SIZE];
 	builtin_make_fullpath(full_path, filename, my_data);
 	FILE * fp = NULL;
-	if(st_write_file_mode == WRITE_FILE_MODE_APPEND)
+	if(write_mode == WRITE_FILE_MODE_APPEND)
 		fp = fopen(full_path, "ab");
 	else
 		fp = fopen(full_path, "wb");
@@ -819,23 +816,8 @@ ZL_EXP_VOID module_builtin_write_file(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, (ZL_EXP_LONG)retval, 0);
 	}
 	else { // 如果打开文件失败，则将错误记录到日志中
-		zenglApi_Exit(VM_ARG,"bltWriteFile <%s> failed [%d] %s", full_path, errno, strerror(errno));
+		zenglApi_Exit(VM_ARG,"%s <%s> failed [%d] %s", func_name, full_path, errno, strerror(errno));
 	}
-}
-
-ZL_EXP_VOID module_builtin_set_write_file_mode(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
-{
-	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
-	const char * func_name = "bltSetWriteFileMode";
-	if(argcount < 1)
-		zenglApi_Exit(VM_ARG,"usage: %s(mode)", func_name);
-	zenglApi_GetFunArg(VM_ARG,1,&arg);
-	st_write_file_mode = (int)arg.val.integer;
-	if(st_write_file_mode != WRITE_FILE_MODE_WRITE && st_write_file_mode != WRITE_FILE_MODE_APPEND) {
-		zenglApi_Exit(VM_ARG,"the first argument mode of %s must be %d(for write mode) or %d(for append mode)",
-				func_name, WRITE_FILE_MODE_WRITE, WRITE_FILE_MODE_APPEND);
-	}
-	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
 /*bltExit模块函数，直接退出zengl脚本*/
@@ -2626,7 +2608,6 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUnset",zenglApiBMF_unset);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltIterArray",module_builtin_iterate_array);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltWriteFile",module_builtin_write_file);
-	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSetWriteFileMode",module_builtin_set_write_file_mode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltExit",module_builtin_exit);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltMustacheFileRender",module_builtin_mustache_file_render);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltJsonDecode",module_builtin_json_decode);

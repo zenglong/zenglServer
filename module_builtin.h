@@ -26,8 +26,6 @@ struct _builtin_mustache_context {
 	ZENGL_EXPORT_MOD_FUN_ARG ctx;
 };
 
-void builtin_module_terminus();
-
 /**
  * 根据full_path文件路径来获取文件的内容
  */

@@ -17,7 +17,7 @@
 #include <stdio.h>
 
 #define ZLSERVER_MAJOR_VERSION 0  // zenglServer 主版本号
-#define ZLSERVER_MINOR_VERSION 22 // zenglServer 子版本号
+#define ZLSERVER_MINOR_VERSION 23 // zenglServer 子版本号
 #define ZLSERVER_REVISION 0       // zenglServer 修正版本号
 
 // 可以在make编译程序时，自定义URL_PATH_SIZE的值，如果没有进行过自定义，则使用默认值：120

@@ -76,7 +76,7 @@ zenglServer: $(SRCS) zengl/linux/libzengl.a crustache/libcrustache.a
 		@echo $(REDIS_OUTPUT_INFO)
 		@echo $(OPENSSL_OUTPUT_INFO)
 
-zengl/linux/libzengl.a: zengl/linux/zengl_exportfuns.h
+zengl/linux/libzengl.a: zengl/linux/zengl_exportfuns.h zengl/linux/zengl_global.h zengl/linux/zengl_global_header.h zengl/linux/zengl_locals.h zengl/linux/zenglrun_hash_array.h zengl/linux/zengl_main.c zengl/linux/zengl_parser.c zengl/linux/zengl_symbol.c zengl/linux/zengl_locals.c zengl/linux/zengl_assemble.c zengl/linux/zengl_ld.c zengl/linux/zenglrun_main.c zengl/linux/zenglrun_func.c zengl/linux/zenglrun_hash_array.c zengl/linux/zenglApi.c zengl/linux/zenglApi_BltModFuns.c zengl/linux/zenglDebug.c
 	cd zengl/linux && $(MAKE) libzengl.a
 
 crustache/libcrustache.a: module_builtin.h common_header.h crustache/crustache.h crustache/buffer.h crustache/houdini.h crustache/html_unescape.h crustache/stack.h crustache/crustache.c crustache/buffer.c crustache/houdini_html.c crustache/stack.c

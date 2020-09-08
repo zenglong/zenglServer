@@ -6,6 +6,7 @@
  */
 
 #include "main.h"
+#include "debug.h"
 #include "fatal_error_callback.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,8 +66,13 @@ int fatal_error_callback_exec(ZL_EXP_VOID * VM, char * script_file, char * fatal
 	if(call_function_name == NULL) {
 		return 0;
 	}
+	DEBUG_INFO debug_info;
+	debug_init(&debug_info);
+	debug_command_stack_backtrace(VM, &debug_info);
 	zenglApi_ReUse(VM,0);
 	zenglApi_Push(VM,ZL_EXP_FAT_STR,fatal_error,0,0);
+	zenglApi_Push(VM,ZL_EXP_FAT_STR,debug_info.format_send_msg.str,0,0);
+	debug_exit(VM, &debug_info);
 	if(zenglApi_Call(VM, script_file, call_function_name, call_class_name) == -1) {
 		return -1;
 	}

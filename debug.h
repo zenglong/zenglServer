@@ -16,6 +16,8 @@ typedef struct _DEBUG_INFO{
 	BUILTIN_INFO_STRING format_send_msg; // 动态字符串，包含需要发送给远程调试器的数据
 } DEBUG_INFO;
 
+void debug_command_stack_backtrace(ZL_EXP_VOID * VM_ARG, DEBUG_INFO * debug_info);
+
 /**
  * 初始化DEBUG_INFO即调试相关的结构体，该结构体中存储了调试相关的套接字，以及需要发送给远程调试器的动态字符串
  */

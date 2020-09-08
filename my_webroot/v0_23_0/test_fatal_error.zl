@@ -5,11 +5,17 @@ def TRUE 1;
 def FALSE 0;
 def DEFAULT_LEN -1;
 
-fun fatal_error(error)
-	print ' hahaha fatal error [' + bltDate('%Y-%m-%d %H:%M:%S') + ']: ' + error;
-	bltWriteFile('fatal_error.log', bltDate('%Y-%m-%d %H:%M:%S') + ' - ' + error + '\n', DEFAULT_LEN, APPEND_MODE);
+fun fatal_error(error, stack)
+	print ' hahaha fatal error [' + bltDate('%Y-%m-%d %H:%M:%S') + ']: ' + error + ' backtrace: \n' + stack + '\n';
+	bltWriteFile('fatal_error.log', bltDate('%Y-%m-%d %H:%M:%S') + ' - ' + error + ' backtrace: \n' + stack + '\n', DEFAULT_LEN, APPEND_MODE);
 endfun
 
 bltFatalErrorCallback('fatal_error', '', FALSE);
 
-a = bltTestHa();
+class Test
+	fun test()
+		a = bltTestHa();
+	endfun
+endclass
+
+Test.test();

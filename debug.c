@@ -470,7 +470,7 @@ static void debug_command_list_breakpoints(ZL_EXP_VOID * VM_ARG, DEBUG_INFO * de
  * zl debug >>>
  * 上面通过T命令，可以看到，当前执行到了mysql.zl脚本的第17行，并且是通过login.zl的第24行调用Mysql类的init方法进入到mysql.zl脚本的
  */
-static void debug_command_stack_backtrace(ZL_EXP_VOID * VM_ARG, DEBUG_INFO * debug_info)
+void debug_command_stack_backtrace(ZL_EXP_VOID * VM_ARG, DEBUG_INFO * debug_info)
 {
 	int arg = -1;
 	int loc = -1;

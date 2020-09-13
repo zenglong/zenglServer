@@ -60,6 +60,7 @@
 #include <pthread.h>
 #include <stdarg.h>
 #include <dirent.h>
+#include <execinfo.h>
 
 void fork_child_process(int idx);
 void fork_cleaner_process();
@@ -73,6 +74,8 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 
 // 以命令行的方式执行脚本
 static int main_run_cmd(char * run_cmd);
+
+static void dump_process_segv_fault();
 
 // 由于配置文件是使用zengl脚本语法编写的，当在配置文件中使用print指令时，就会调用下面的回调函数，去执行具体的打印操作
 ZL_EXP_INT main_config_run_print(ZL_EXP_CHAR * infoStrPtr, ZL_EXP_INT infoStrCount,ZL_EXP_VOID * VM_ARG);
@@ -979,6 +982,10 @@ int main(int argc, char * argv[])
 	// 如果是命令行模式，则通过main_run_cmd函数在命令行中直接运行脚本
 	if(run_cmd != NULL)
 	{
+		if (signal(SIGSEGV, dump_process_segv_fault) == SIG_ERR) {
+			write_to_server_log_pipe(WRITE_TO_LOG, "main process: can't catch SIGSEGV\n");
+			exit(-1);
+		}
 		int cmd_ret = main_run_cmd(run_cmd);
 		write_to_server_log_pipe(WRITE_TO_LOG, "**--------- cmd end return:%d ---------***\n\n", cmd_ret);
 		return cmd_ret;
@@ -1091,6 +1098,31 @@ int main(int argc, char * argv[])
 	return 0;
 }
 
+static void dump_process_segv_fault()
+{
+	void *buffer[100] = {0};
+	size_t size;
+	char **strings = NULL;
+	size_t i = 0;
+
+	size = backtrace(buffer, 100);
+	write_to_server_log_pipe(WRITE_TO_PIPE_, "segv fault backtrace() returned %d addresses \n", size);
+	strings = backtrace_symbols(buffer, size);
+	if (strings == NULL) {
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "error: backtrace_symbols return NULL");
+		exit(EXIT_FAILURE);
+	}
+
+	for (i = 0; i < size; i++)
+	{
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "%s\n", strings[i]);
+	}
+
+	free(strings);
+	strings = NULL;
+	exit(0);
+}
+
 /**
  * 通过fork系统调用创建执行具体工作的子进程
  */
@@ -1113,6 +1145,11 @@ void fork_child_process(int idx)
 		// 将子进程从父进程继承过来的信号处理函数取消掉
 		if (!trap_signals(ZL_EXP_FALSE)) {
 			fprintf(stderr, "Child %d: trap_signals() failed!\n", idx);
+			exit(1);
+		}
+
+		if (signal(SIGSEGV, dump_process_segv_fault) == SIG_ERR) {
+			fprintf(stderr, "Child %d: can't catch SIGSEGV", idx);
 			exit(1);
 		}
 

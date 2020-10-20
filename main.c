@@ -993,7 +993,7 @@ int main(int argc, char * argv[])
 	else
 	{
 		char master_process_name[255] = {0};
-		char cwd[255] = {0};
+		char cwd[220] = {0};
 		if(getcwd(cwd, sizeof(cwd)) == NULL) {
 			WRITE_LOG_WITH_PRINTF("failed to get cwd  [%d] %s \n", errno, strerror(errno));
 			exit(-1);

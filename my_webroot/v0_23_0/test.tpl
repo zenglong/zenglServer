@@ -1,0 +1,3 @@
+{{=<% %>=}}
+<%> header.tpl%>
+<%> footer.tpl%>

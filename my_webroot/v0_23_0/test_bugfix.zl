@@ -1,0 +1,11 @@
+use builtin;
+
+data['name'] = 'zenglong';
+data['job'] = 'programmer';
+data['test'] = 'i will be unset';
+bltUnset(&data['test']);
+data['hobby'] = 'play game';
+
+print bltJsonEncode(data);
+
+print bltMustacheFileRender('test.tpl');

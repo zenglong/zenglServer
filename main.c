@@ -993,13 +993,16 @@ int main(int argc, char * argv[])
 	else
 	{
 		char master_process_name[255] = {0};
-		char cwd[220] = {0};
-		if(getcwd(cwd, sizeof(cwd)) == NULL) {
+		size_t cmd_max_size = 4096;
+		char * cwd = (char *)malloc(cmd_max_size);
+		memset(cwd, 0, cmd_max_size);
+		if(getcwd(cwd, cmd_max_size) == NULL) {
 			WRITE_LOG_WITH_PRINTF("failed to get cwd  [%d] %s \n", errno, strerror(errno));
 			exit(-1);
 		}
 		snprintf(master_process_name, 0xff, "zenglServer: master[%ld] cwd:%s -c %s -l %s",
 				port, cwd, config_file, logfile);
+		free(cwd);
 		char * errorstr = NULL;
 		if(zlsrv_init_setproctitle(&errorstr) < 0) {
 			WRITE_LOG_WITH_PRINTF("%s \n", errorstr);

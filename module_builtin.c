@@ -2577,6 +2577,8 @@ ZL_EXP_VOID module_builtin_fatal_error_callback(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT
 	if(strlen(function_name) == 0) {
 		zenglApi_Exit(VM_ARG,"the first argument [function_name] of %s can't be empty", func_name);
 	}
+	// 在设置运行时错误回调函数名之前，先将之前可能设置过的回调函数相关的函数名，类名等重置为默认值，可以防止受到之前设置的影响
+	fata_error_free_all_ptrs();
 	fatal_error_set_function_name(function_name);
 	char * class_name = NULL;
 	if(argcount > 1) {

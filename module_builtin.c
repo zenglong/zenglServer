@@ -2489,6 +2489,64 @@ ZL_EXP_VOID module_builtin_url_decode(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_FreeMem(VM_ARG, decode_str);
 }
 
+/**
+ * bltTrim模块函数，去除字符串左右两侧的指定字符
+ * 第一个参数str必须是字符串类型，表示需要进行操作的源字符串
+ * 第二个参数chars是可选参数，也必须是字符串类型，表示需要去除哪些字符，默认值为' \t\n\r\v'，表示需要去除字符串左右两侧的空格符，\t(tab制表符)，\n(换行符)等
+ *  - chars字符串中的每个字符都会被去除掉
+ * 第三个参数mode也是可选参数，必须是整数类型，表示去除模式，有三种模式：
+ *  - 当mode参数的值为1时，表示只去除字符串左侧的字符
+ *  - 当mode参数的值为2时，表示只去除字符串右侧的字符
+ *  - 当mode参数的值为3时，表示左右两侧的字符都要去除掉，mode的默认值就是3，也就是左右两侧的字符都会被去除掉
+ *
+ * 返回值：此模块函数会将处理后(也就是去除了左右两侧的指定字符)的字符串作为结果返回
+ *
+ * 示例：
+ * 	use builtin;
+	def TRIM_LEFT 1;
+	def TRIM_RIGHT 2;
+	def TRIM_BOTH 3;
+
+	test = '
+		hello world !!!!!
+	  ';
+
+	print 'test: ' + test;
+	print '----------------------------------------';
+	print '[bltTrim(test)]: ' + '[' + bltTrim(test) + ']';
+	print '----------------------------------------';
+	print "[bltTrim(test, ' \\n\\t', TRIM_LEFT)]: " + '[' + bltTrim(test, ' \n\t', TRIM_LEFT) + ']';
+	print '----------------------------------------';
+	print "[bltTrim(test, ' \\n\\t', TRIM_RIGHT)]: " + '[' + bltTrim(test, ' \n\t', TRIM_RIGHT) + ']';
+	print '----------------------------------------';
+	print '[bltTrim("  hahahaha~~~~  ", \' \', TRIM_BOTH)]: ' + '[' + bltTrim("  hahahaha~~~~  ", ' ', TRIM_BOTH) + ']';
+	print '----------------------------------------';
+
+	以上代码对三种模式都进行了测试，执行结果类似如下所示：
+
+	test:
+		hello world !!!!!
+
+	----------------------------------------
+	[bltTrim(test)]: [hello world !!!!!]
+	----------------------------------------
+	[bltTrim(test, ' \n\t', TRIM_LEFT)]: [hello world !!!!!
+	  ]
+	----------------------------------------
+	[bltTrim(test, ' \n\t', TRIM_RIGHT)]: [
+		hello world !!!!!]
+	----------------------------------------
+	[bltTrim("  hahahaha~~~~  ", ' ', TRIM_BOTH)]: [hahahaha~~~~]
+	----------------------------------------
+
+	上面的bltTrim(test)表示将test字符串变量左右两侧的空格符，换行符等都去除掉，
+	bltTrim(test, ' \n\t', TRIM_LEFT)表示只将test左侧的空格符，换行符，回车符去除掉
+	bltTrim(test, ' \n\t', TRIM_RIGHT)表示只将test右侧的空格符，换行符，回车符去除掉
+	bltTrim("  hahahaha~~~~  ", ' ', TRIM_BOTH)表示将"  hahahaha~~~~  "字符串左右两侧的' '(空格符)给去除掉
+
+	模块函数版本历史：
+	 - v0.23.0版本新增此模块函数
+ */
 ZL_EXP_VOID module_builtin_trim(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -2563,6 +2621,56 @@ ZL_EXP_VOID module_builtin_trim(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	*end = orig_end_char;
 }
 
+/**
+ * bltFatalErrorCallback模块函数，设置当发生严重的运行时错误时，需要执行的脚本中的回调函数名，如果是类中定义的方法，还可以设置相关的类名
+ * 第一个参数function_name表示需要设置的脚本中的回调函数名(必须是字符串类型，且不能为空字符串)
+ * 第二个参数class_name是可选参数，表示需要设置的类名(也必须是字符串类型，如果第一个参数function_name是某个类中定义的方法的话，就可以通过此参数来设置类名)
+ * 		- 默认值是空字符串，表示不设置类名，当需要跳过该参数设置第三个default_cmd_action参数时，也可以手动传递空字符串来表示不设置类名
+ * 第三个参数default_cmd_action也是可选的，表示在命令行模式下，当执行完运行时错误回调函数后，是否还需要执行默认的输出错误信息到命令行的动作，
+ * 		- 默认值为1，表示需要执行默认动作，如果脚本回调函数里已经将错误信息输出到了命令行的话，就可以将该参数设置为0，表示不需要再执行默认动作了
+ *
+ * 示例：
+	use builtin;
+	def WRITE_MODE 1;
+	def APPEND_MODE 2;
+	def TRUE 1;
+	def FALSE 0;
+	def DEFAULT_LEN -1;
+
+	fun fatal_error(error, stack)
+		print '\n hahaha fatal error [' + bltDate('%Y-%m-%d %H:%M:%S') + ']: \n' + error + ' backtrace: \n' + stack + '\n';
+		bltWriteFile('fatal_error.log', bltDate('%Y-%m-%d %H:%M:%S') + ' - ' + error + ' backtrace: \n' + stack + '\n', DEFAULT_LEN, APPEND_MODE);
+	endfun
+
+	bltFatalErrorCallback('fatal_error', '', FALSE);
+
+	class Test
+		fun test()
+			a = bltTestHa();
+		endfun
+	endclass
+
+	Test.test();
+
+	以上代码会将fatal_error脚本函数设置为运行时错误回调函数，当脚本准备执行bltTestHa函数时，由于bltTestHa函数没有被定义过，也不属于有效的模块函数，
+	因此，在执行bltTestHa函数时就会发生运行时错误，此时就会调用上面的fatal_error脚本函数来处理该运行时错误，zenglServer会将错误信息和函数栈追踪信息
+	以参数的形式传递给fatal_error脚本函数，也就是上面的error及stack参数，其中error表示具体的错误信息，stack表示发生错误时的脚本函数栈追踪信息，
+	上面在fatal_error脚本回调函数中，在将错误信息和函数栈追踪信息通过print打印出来后，还会将这些信息写入到fatal_error.log日志文件中
+
+	上面这段脚本的执行结果类似如下所示：
+
+	hahaha fatal error [2020-10-24 21:55:44]:
+
+	err: run func err , function 'bltTestHa' is invalid pc=89 (解释器运行时错误：函数'bltTestHa'无效)
+
+	source code info: [ bltTestHa ] 17:7 <'my_webroot/v0_23_0/test_fatal_error.zl'>
+	backtrace:
+	my_webroot/v0_23_0/test_fatal_error.zl:17 Test:test
+	my_webroot/v0_23_0/test_fatal_error.zl:21
+
+	模块函数版本历史：
+	 - v0.23.0版本新增此模块函数
+ */
 ZL_EXP_VOID module_builtin_fatal_error_callback(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

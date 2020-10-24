@@ -316,6 +316,7 @@ find_mustache(
 	if (mst_start == NULL)
 		return 0; /* no mustaches found */
 
+	// 将下面这段代码，以及紧跟着的if条件判断给注释掉，因为这段代码会导致类似 <%> header.tpl%> 这样的模版标签解析出错
 	/* mst_end = railgun(
 		buffer + i, size - i,
 		template->mustache_close.chars,

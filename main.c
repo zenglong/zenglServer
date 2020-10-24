@@ -75,6 +75,10 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 // 以命令行的方式执行脚本
 static int main_run_cmd(char * run_cmd);
 
+/**
+ * 当zenglServer的命令行模式下的主进程或web模式下的工作子进程因为严重的段错误导致进程挂掉时，
+ * 会通过下面这个C函数将段错误相关的函数栈追踪信息记录到日志中，从而可以分析出段错误发生的原因
+ */
 static void dump_process_segv_fault();
 
 // 由于配置文件是使用zengl脚本语法编写的，当在配置文件中使用print指令时，就会调用下面的回调函数，去执行具体的打印操作
@@ -982,6 +986,7 @@ int main(int argc, char * argv[])
 	// 如果是命令行模式，则通过main_run_cmd函数在命令行中直接运行脚本
 	if(run_cmd != NULL)
 	{
+		// 设置当命令行主进程发生段错误时(系统会产生SIGSEGV信号)，会执行的SIGSEGV信号处理函数
 		if (signal(SIGSEGV, dump_process_segv_fault) == SIG_ERR) {
 			write_to_server_log_pipe(WRITE_TO_LOG, "main process: can't catch SIGSEGV\n");
 			exit(-1);
@@ -996,6 +1001,7 @@ int main(int argc, char * argv[])
 		size_t cmd_max_size = 4096;
 		char * cwd = (char *)malloc(cmd_max_size);
 		memset(cwd, 0, cmd_max_size);
+		// 获取当前的工作目录，并将工作目录设置到主进程的名称中
 		if(getcwd(cwd, cmd_max_size) == NULL) {
 			WRITE_LOG_WITH_PRINTF("failed to get cwd  [%d] %s \n", errno, strerror(errno));
 			exit(-1);
@@ -1101,6 +1107,14 @@ int main(int argc, char * argv[])
 	return 0;
 }
 
+/**
+ * 当zenglServer的命令行模式下的主进程或web模式下的工作子进程因为严重的段错误导致进程挂掉时，
+ * 会通过下面这个C函数将段错误相关的函数栈追踪信息记录到日志中，从而可以分析出段错误发生的原因，
+ * 由于记录在日志中的函数栈追踪信息里的地址是十六进制格式的地址，所以，还需要通过addr2line命令将这些地址转为具体的函数名(包括这些函数所在的C文件路径及行号信息)
+ * 例如：addr2line 0x46a161 -e zenglServer -f 假设该命令中的0x46a161是日志中记录的函数地址的十六进制格式，那么得到的结果类似如下所示：
+ * zenglrun_RunInsts (函数名)
+ * /root/zenglServerTest/zengl/linux/zenglrun_main.c:1245 (函数所在的C文件路径及行号信息)
+ */
 static void dump_process_segv_fault()
 {
 	void *buffer[100] = {0};
@@ -1151,6 +1165,7 @@ void fork_child_process(int idx)
 			exit(1);
 		}
 
+		// 设置当子进程发生段错误时(系统会产生SIGSEGV信号)，会执行的SIGSEGV信号处理函数
 		if (signal(SIGSEGV, dump_process_segv_fault) == SIG_ERR) {
 			fprintf(stderr, "Child %d: can't catch SIGSEGV", idx);
 			exit(1);

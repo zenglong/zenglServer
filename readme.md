@@ -71,10 +71,13 @@ zengl@zengl-ubuntu:~/zenglServer$
 如果是ubuntu系统，可以通过sudo apt-get install imagemagick libmagickcore-dev libmagickwand-dev来安装ImageMagick相关的库和开发头文件。
 
 如果是centos系统，则可以通过yum install ImageMagick ImageMagick-devel来安装相关的底层库。可以通过convert --version命令来查看系统安装的是哪个版本的ImageMagick
+
 如果是centos 8.x系统，上面的yum安装ImageMagick的方式可能会失败，此时，可以通过以下命令来安装：
+```
 dnf install -y epel-release
 dnf config-manager --set-enabled PowerTools
 dnf install -y ImageMagick ImageMagick-devel
+```
 
 要同时使用mysql和magick模块，可以使用make USE_MYSQL=yes USE_MAGICK=6命令：
 

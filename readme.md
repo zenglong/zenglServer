@@ -71,6 +71,10 @@ zengl@zengl-ubuntu:~/zenglServer$
 如果是ubuntu系统，可以通过sudo apt-get install imagemagick libmagickcore-dev libmagickwand-dev来安装ImageMagick相关的库和开发头文件。
 
 如果是centos系统，则可以通过yum install ImageMagick ImageMagick-devel来安装相关的底层库。可以通过convert --version命令来查看系统安装的是哪个版本的ImageMagick
+如果是centos 8.x系统，上面的yum安装ImageMagick的方式可能会失败，此时，可以通过以下命令来安装：
+dnf install -y epel-release
+dnf config-manager --set-enabled PowerTools
+dnf install -y ImageMagick ImageMagick-devel
 
 要同时使用mysql和magick模块，可以使用make USE_MYSQL=yes USE_MAGICK=6命令：
 
@@ -154,7 +158,7 @@ curl module is enabled!!!
 
 如果是ubuntu系统，可以通过 sudo apt-get install libhiredis-dev 来安装hiredis相关的库和开发头文件等。
 
-如果是centos系统，则可以通过 yum install hiredis-devel 来安装相关的底层库。
+如果是centos系统，则可以通过 yum install hiredis-devel 来安装相关的底层库。在centos 8.x中使用yum命令安装hiredis-devel时，可能需要安装epel仓库，可以使用 yum -y install epel-release 命令来安装epel仓库。
 
 还可以使用源码编译方式来安装hiredis库：
 
@@ -815,7 +819,7 @@ I'll sleep for 2 seconds
 [root@localhost zenglServerTest]# 
 ```
 
-- zenglServer 在CentOS 5.8, 6.x, 7.x, Ubuntu 18.04中进行了测试。
+- zenglServer 在CentOS 5.8, 6.x, 7.x，8.2，以及 Ubuntu 18.04，Ubuntu 20.04中进行了测试。
 
 - zenglServer的C源代码中，加入了必要的注释信息，读者可以通过阅读源码的相关注释来理解代码。
 

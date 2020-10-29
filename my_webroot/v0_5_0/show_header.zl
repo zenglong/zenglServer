@@ -9,15 +9,17 @@ print '<!Doctype html>
 
 print '请求头信息：<br/><br/>';
 headers = rqtGetHeaders();
+cookie = '';
 for(i=0; bltIterArray(headers,&i,&k,&v); )
-	if(k == 'Cookie')
+	if(k == 'Cookie' || k == 'cookie')
 		print '<span style="color:green">' + k +": " + v + '</span><br/>';
+		cookie = v;
 	else
 		print k +": " + v + '<br/>';
 	endif
 endfor
 
-if(headers['Cookie'] != '')
+if(cookie != '')
 	print '<br/><br/>获取到的Cookie数组：<br/><br/>';
 	cookies = rqtGetCookie();
 	for(i=0; bltIterArray(cookies,&i,&k,&v); )

@@ -813,6 +813,9 @@ ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 		if(my_parser_data->request_body.str != PTR_NULL && my_parser_data->request_body.count > 0) {
 			get_headers(VM_ARG, my_data);
 			ZENGL_EXPORT_MOD_FUN_ARG retval = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "Content-Type");
+			if(retval.type != ZL_EXP_FAT_STR) {
+				retval = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "content-type");
+			}
 			if(retval.type == ZL_EXP_FAT_STR) {
 				content_type = retval.val.str;
 				if(strstr(content_type, "application/x-www-form-urlencoded")) {
@@ -994,6 +997,9 @@ ZL_EXP_VOID module_request_GetCookie(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_AddMemBlockRefCount(VM_ARG,&my_data->cookie_memblock,1); // 手动增加该内存块的引用计数值，使其不会在脚本函数返回时，被释放掉。
 		get_headers(VM_ARG, my_data);
 		ZENGL_EXPORT_MOD_FUN_ARG cookie_header_value = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "Cookie");
+		if(cookie_header_value.type != ZL_EXP_FAT_STR) {
+			cookie_header_value = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "cookie");
+		}
 		if(cookie_header_value.type == ZL_EXP_FAT_STR) {
 			ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 			char *s,*k,*v, prev_last_k_char, prev_last_v_char;

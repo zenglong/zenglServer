@@ -660,6 +660,17 @@ static int parse_cookie_header_value(char * s, int s_len,
 	return i;
 }
 
+static char * to_lower_case(ZL_EXP_VOID * VM_ARG, char * str)
+{
+	int str_len = strlen(str);
+	char * result = (char *)zenglApi_AllocMem(VM_ARG, (str_len + 1));
+	for(int i = 0 ; i < str_len; i++) {
+		result[i] = tolower(str[i]);
+	}
+	result[str_len] = '\0';
+	return result;
+}
+
 /**
  * rqtGetHeaders模块函数，将请求头中的field和value字符串组成名值对，存储到哈希数组中，
  * 并将该数组作为结果返回，例如：
@@ -847,7 +858,7 @@ ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 			get_headers(VM_ARG, my_data);
 			ZENGL_EXPORT_MOD_FUN_ARG retval = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "Content-Type");
 			if(retval.type == ZL_EXP_FAT_STR) {
-				content_type = retval.val.str;
+				content_type = to_lower_case(VM_ARG, retval.val.str);
 				if(strstr(content_type, "application/x-www-form-urlencoded")) {
 					ZL_EXP_CHAR * q = my_parser_data->request_body.str;
 					ZL_EXP_INT q_len = my_parser_data->request_body.count;
@@ -882,6 +893,7 @@ ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 						}
 					}
 				}
+				zenglApi_FreeMem(VM_ARG, content_type);
 			}
 		}
 		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->body_memblock);
@@ -1054,6 +1066,7 @@ ZL_EXP_VOID module_request_GetCookie(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 				else if(k_len == 0 && v_len > 0) {
 					prev_last_v_char = v[v_len];
 					v[v_len] = STR_NULL;
+					arg.type = ZL_EXP_FAT_STR;
 					arg.val.str = v;
 					zenglApi_SetMemBlockByHashKey(VM_ARG, &my_data->cookie_memblock, "", &arg);
 					v[v_len] = prev_last_v_char;

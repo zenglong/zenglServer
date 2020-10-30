@@ -5,6 +5,10 @@
  *      Author: zengl
  */
 
+#ifndef _GNU_SOURCE
+	#define _GNU_SOURCE
+#endif
+
 #include "main.h"
 #include "module_request.h"
 #include "multipart_parser.h"
@@ -392,10 +396,10 @@ static int parse_multipart_header_value(char * s, int s_len,
 static int read_multipart_header_name(multipart_parser* p, const char *at, size_t length)
 {
 	my_multipart_data * data = (my_multipart_data *)p->data;
-	if(strncmp(at, "Content-Disposition", length) == 0) {
+	if(strncasecmp(at, "Content-Disposition", length) == 0) {
 		data->status = MY_MULTIPART_HEADER_STATUS_DISPOSITION;
 	}
-	else if(strncmp(at, "Content-Type", length) == 0) {
+	else if(strncasecmp(at, "Content-Type", length) == 0) {
 		data->status = MY_MULTIPART_HEADER_STATUS_CONTENT_TYPE;
 	}
 	return 0;
@@ -415,7 +419,7 @@ static int read_multipart_header_value(multipart_parser* p, const char *at, size
 		{
 			s = (char *)at; s_len = length;
 			count = parse_multipart_header_value(s, s_len, &k, &k_len, &v, &v_len);
-			if(!(k != NULL && strncmp(k, "form-data", k_len) == 0)) {
+			if(!(k != NULL && strncasecmp(k, "form-data", k_len) == 0)) {
 				return 0;
 			}
 			s += count;
@@ -423,13 +427,13 @@ static int read_multipart_header_value(multipart_parser* p, const char *at, size
 			while(s_len > 0) {
 				count = parse_multipart_header_value(s, s_len, &k, &k_len, &v, &v_len);
 				if(k != NULL && k_len > 0) {
-					if(strncmp(k, "name", k_len) == 0) {
+					if(strncasecmp(k, "name", k_len) == 0) {
 						if(v != NULL && v_len > 0) {
 							data->part.name = v;
 							data->part.name_length = v_len;
 						}
 					}
-					else if(strncmp(k, "filename", k_len) == 0) {
+					else if(strncasecmp(k, "filename", k_len) == 0) {
 						if(v != NULL && v_len > 0) {
 							data->part.filename = v;
 							data->part.filename_length = v_len;
@@ -660,17 +664,6 @@ static int parse_cookie_header_value(char * s, int s_len,
 	return i;
 }
 
-static char * to_lower_case(ZL_EXP_VOID * VM_ARG, char * str)
-{
-	int str_len = strlen(str);
-	char * result = (char *)zenglApi_AllocMem(VM_ARG, (str_len + 1));
-	for(int i = 0 ; i < str_len; i++) {
-		result[i] = tolower(str[i]);
-	}
-	result[str_len] = '\0';
-	return result;
-}
-
 /**
  * rqtGetHeaders模块函数，将请求头中的field和value字符串组成名值对，存储到哈希数组中，
  * 并将该数组作为结果返回，例如：
@@ -858,15 +851,15 @@ ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 			get_headers(VM_ARG, my_data);
 			ZENGL_EXPORT_MOD_FUN_ARG retval = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "Content-Type");
 			if(retval.type == ZL_EXP_FAT_STR) {
-				content_type = to_lower_case(VM_ARG, retval.val.str);
-				if(strstr(content_type, "application/x-www-form-urlencoded")) {
+				content_type = retval.val.str;
+				if(strcasestr(content_type, "application/x-www-form-urlencoded")) {
 					ZL_EXP_CHAR * q = my_parser_data->request_body.str;
 					ZL_EXP_INT q_len = my_parser_data->request_body.count;
 					parse_urlencoded_str_to_memblock(VM_ARG, q, q_len, &my_data->body_memblock);
 				}
-				else if(strstr(content_type, "multipart/form-data")) {
+				else if(strcasestr(content_type, "multipart/form-data")) {
 					const ZL_EXP_CHAR * boundary_key = "boundary=";
-					ZL_EXP_CHAR * boundary = strstr(content_type, boundary_key);
+					ZL_EXP_CHAR * boundary = strcasestr(content_type, boundary_key);
 					if(boundary) {
 						ZL_EXP_INT content_type_length = strlen(content_type);
 						boundary += strlen(boundary_key);
@@ -893,7 +886,6 @@ ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 						}
 					}
 				}
-				zenglApi_FreeMem(VM_ARG, content_type);
 			}
 		}
 		zenglApi_SetRetValAsMemBlock(VM_ARG,&my_data->body_memblock);

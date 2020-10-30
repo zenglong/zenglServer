@@ -29,6 +29,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #define MODULE_BUILTIN_DUMP_INT 0
 #define MODULE_BUILTIN_DUMP_UINT 1
@@ -558,6 +559,17 @@ static void builtin_html_escape_str(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * 
 static void module_builtin_free_ptr_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 {
 	zenglApi_FreeMem(VM_ARG, ptr);
+}
+
+static char * to_lower_upper(ZL_EXP_VOID * VM_ARG, char * str, ZL_EXP_BOOL is_tolower)
+{
+	int str_len = strlen(str);
+	char * result = (char *)zenglApi_AllocMem(VM_ARG, (str_len + 1));
+	for(int i = 0 ; i < str_len; i++) {
+		result[i] = is_tolower ? tolower(str[i]) : toupper(str[i]);
+	}
+	result[str_len] = '\0';
+	return result;
 }
 
 /**
@@ -2723,6 +2735,38 @@ ZL_EXP_VOID module_builtin_fatal_error_callback(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+ZL_EXP_VOID module_builtin_to_lower(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltToLower";
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(str)", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [str] of %s must be string", func_name);
+	}
+	char * str = (char *)arg.val.str;
+	char * result = to_lower_upper(VM_ARG, str, ZL_EXP_TRUE);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, result, 0, 0);
+	zenglApi_FreeMem(VM_ARG, result);
+}
+
+ZL_EXP_VOID module_builtin_to_upper(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltToUpper";
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(str)", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [str] of %s must be string", func_name);
+	}
+	char * str = (char *)arg.val.str;
+	char * result = to_lower_upper(VM_ARG, str, ZL_EXP_FALSE);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_STR, result, 0, 0);
+	zenglApi_FreeMem(VM_ARG, result);
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -2767,4 +2811,6 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltUrlDecode",module_builtin_url_decode);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltTrim",module_builtin_trim);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltFatalErrorCallback",module_builtin_fatal_error_callback);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltToLower",module_builtin_to_lower);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltToUpper",module_builtin_to_upper);
 }

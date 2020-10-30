@@ -12,6 +12,8 @@
 #include <ctype.h>
 #include <stdlib.h>
 
+#define CONVERT_HEADER_FIELD_LEN 11
+
 // 枚举值用于判断当前读取到的multipart头信息是Content-Disposition头信息
 // 还是Content-Type头信息
 enum _my_multipart_header_status {
@@ -235,6 +237,36 @@ static void parse_urlencoded_str_to_memblock(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR *
 		zenglApi_FreeMem(VM_ARG, decode_v);
 }
 
+static ZL_EXP_CHAR *  get_final_header_field(ZL_EXP_CHAR * field)
+{
+	ZL_EXP_CHAR * from[CONVERT_HEADER_FIELD_LEN] = {
+		"host", "user-agent", "accept-language", "accept-encoding", "content-type", "content-length",
+		"origin", "connection", "referer", "accept", "cookie"
+	};
+	ZL_EXP_CHAR * to[CONVERT_HEADER_FIELD_LEN] = {
+		"Host", "User-Agent", "Accept-Language", "Accept-Encoding", "Content-Type", "Content-Length",
+		"Origin", "Connection", "Referer", "Accept", "Cookie"
+	};
+	ZL_EXP_CHAR * result = field;
+	int field_len = strlen(field);
+	for(int i = 0; i < CONVERT_HEADER_FIELD_LEN; i++) {
+		if(strlen(from[i]) == field_len) {
+			ZL_EXP_BOOL find_field = ZL_EXP_TRUE;
+			for(int j = 0 ; j <  field_len; j++) {
+				if(from[i][j] != tolower(field[j])) {
+					find_field = ZL_EXP_FALSE;
+					break;
+				}
+			}
+			if(find_field) {
+				result = to[i];
+				break;
+			}
+		}
+	}
+	return result;
+}
+
 /**
  * 将请求头中的field和value字符串组成名值对，存储到哈希数组中
  * 这里将存储过程写入到单独的get_headers的静态函数里，这样，rqtGetHeaders模块函数以及
@@ -263,7 +295,8 @@ static void get_headers(ZL_EXP_VOID * VM_ARG, MAIN_DATA * my_data)
 				}
 				arg.type = ZL_EXP_FAT_STR;
 				arg.val.str = value;
-				zenglApi_SetMemBlockByHashKey(VM_ARG, &my_data->headers_memblock, field, &arg);
+				ZL_EXP_CHAR * final_field = get_final_header_field(field);
+				zenglApi_SetMemBlockByHashKey(VM_ARG, &my_data->headers_memblock, final_field, &arg);
 				tmp = value + strlen(value) + 1;
 			}while(1);
 		}
@@ -813,9 +846,6 @@ ZL_EXP_VOID module_request_GetBodyAsArray(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 		if(my_parser_data->request_body.str != PTR_NULL && my_parser_data->request_body.count > 0) {
 			get_headers(VM_ARG, my_data);
 			ZENGL_EXPORT_MOD_FUN_ARG retval = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "Content-Type");
-			if(retval.type != ZL_EXP_FAT_STR) {
-				retval = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "content-type");
-			}
 			if(retval.type == ZL_EXP_FAT_STR) {
 				content_type = retval.val.str;
 				if(strstr(content_type, "application/x-www-form-urlencoded")) {
@@ -997,9 +1027,6 @@ ZL_EXP_VOID module_request_GetCookie(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		zenglApi_AddMemBlockRefCount(VM_ARG,&my_data->cookie_memblock,1); // 手动增加该内存块的引用计数值，使其不会在脚本函数返回时，被释放掉。
 		get_headers(VM_ARG, my_data);
 		ZENGL_EXPORT_MOD_FUN_ARG cookie_header_value = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "Cookie");
-		if(cookie_header_value.type != ZL_EXP_FAT_STR) {
-			cookie_header_value = zenglApi_GetMemBlockByHashKey(VM_ARG,&my_data->headers_memblock, "cookie");
-		}
 		if(cookie_header_value.type == ZL_EXP_FAT_STR) {
 			ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 			char *s,*k,*v, prev_last_k_char, prev_last_v_char;

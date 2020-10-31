@@ -1971,6 +1971,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 							full_path, fatal_error_get_error_string());
 				}
 				client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 500 Internal Server Error\r\n", 36);
+				client_socket_list_append_send_data(socket_list, lst_idx, "Content-Type: text/html\r\n", 25);
 				dynamic_string_append(&my_data.response_body, "500 Internal Server Error", 25, 200);
 				status_code = 500;
 			}

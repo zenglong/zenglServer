@@ -241,6 +241,15 @@ static void parse_urlencoded_str_to_memblock(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR *
 		zenglApi_FreeMem(VM_ARG, decode_v);
 }
 
+/**
+ * 将请求头中的key转为指定的格式，例如：content-type，content-Type，CONTENT-TYPE等请求头字段key都会被转为Content-Type，
+ * cookie，COOKIE，cookiE等也都会被转为Cookie，这样转为统一的格式后，就始终可以通过Content-Type的key来获取内容类型，以及
+ * 使用Cookie的key来获取cookie的值等，像cloudflare之类的cdn可能会将客户端传递过来的请求头key转为小写，所以需要将一些常规的key
+ * 通过下面的函数转为指定的格式，方便在模块函数中以及在脚本中使用统一的key来访问请求头中的数据。
+ *
+ * 这里只对比较常见的key，例如content-type，content-length等进行了转换，
+ * 其他的请求头key需要自行在脚本中进行处理(例如可以通过bltToLower模块函数生成全是小写的请求头key等)。
+ */
 static ZL_EXP_CHAR *  get_final_header_field(ZL_EXP_CHAR * field)
 {
 	ZL_EXP_CHAR * from[CONVERT_HEADER_FIELD_LEN] = {
@@ -255,14 +264,7 @@ static ZL_EXP_CHAR *  get_final_header_field(ZL_EXP_CHAR * field)
 	int field_len = strlen(field);
 	for(int i = 0; i < CONVERT_HEADER_FIELD_LEN; i++) {
 		if(strlen(from[i]) == field_len) {
-			ZL_EXP_BOOL find_field = ZL_EXP_TRUE;
-			for(int j = 0 ; j <  field_len; j++) {
-				if(from[i][j] != tolower(field[j])) {
-					find_field = ZL_EXP_FALSE;
-					break;
-				}
-			}
-			if(find_field) {
+			if(strncasecmp(from[i], field, field_len) == 0) {
 				result = to[i];
 				break;
 			}

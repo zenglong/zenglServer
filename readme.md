@@ -822,7 +822,7 @@ I'll sleep for 2 seconds
 [root@localhost zenglServerTest]# 
 ```
 
-- zenglServer 在CentOS 5.8, 6.x, 7.x，8.2，以及 Ubuntu 18.04，Ubuntu 20.04中进行了测试。
+- zenglServer 在CentOS 5.8, 6.x, 7.x, 8.2，以及 Ubuntu 18.04，Ubuntu 20.04中进行了测试。
 
 - zenglServer的C源代码中，加入了必要的注释信息，读者可以通过阅读源码的相关注释来理解代码。
 

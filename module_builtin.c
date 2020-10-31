@@ -561,6 +561,10 @@ static void module_builtin_free_ptr_callback(ZL_EXP_VOID * VM_ARG, void * ptr)
 	zenglApi_FreeMem(VM_ARG, ptr);
 }
 
+/**
+ * bltToLower和bltToUpper模块函数，最终都会通过下面这个函数来执行具体的转换大小写的操作，
+ * 该函数则会通过tolower的C库函数来将所有的字符都转为小写字符，或者通过toupper的C库函数将所有的字符都转为大写字符
+ */
 static char * to_lower_upper(ZL_EXP_VOID * VM_ARG, char * str, ZL_EXP_BOOL is_tolower)
 {
 	int str_len = strlen(str);
@@ -2735,6 +2739,49 @@ ZL_EXP_VOID module_builtin_fatal_error_callback(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+/**
+ * bltToLower模块函数，将字符串转为小写，并将转换的结果返回给调用者
+ * 第一个参数str必须是字符串类型，表示需要进行转换的源字符串
+ *
+ * 示例：
+	use builtin,request;
+
+	headers = rqtGetHeaders();
+	for(i=0; bltIterArray(headers,&i,&k,&v); )
+		print k +": " + v + '<br/>';
+		lowers[bltToLower(k)] = bltToLower(v);
+	endfor
+
+	print '=============================================<br/>lowers: <br/>';
+
+	for(i=0; bltIterArray(lowers,&i,&k,&v); )
+		print k +": " + v + '<br/>';
+	endfor
+
+	执行的结果类似如下：
+
+	Host: 192.168.1.113:8083
+	User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:81.0) Gecko/20100101 Firefox/81.0
+	Accept: text/html,application/xhtml+xml,application/xml;q=0.9
+	Accept-Language: zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2
+	Accept-Encoding: gzip, deflate
+	Connection: keep-alive
+	Upgrade-Insecure-Requests: 1
+	=============================================
+	lowers:
+	host: 192.168.1.113:8083
+	user-agent: mozilla/5.0 (windows nt 10.0; win64; x64; rv:81.0) gecko/20100101 firefox/81.0
+	accept: text/html,application/xhtml+xml,application/xml;q=0.9
+	accept-language: zh-cn,zh;q=0.8,zh-tw;q=0.7,zh-hk;q=0.5,en-us;q=0.3,en;q=0.2
+	accept-encoding: gzip, deflate
+	connection: keep-alive
+	upgrade-insecure-requests: 1
+
+	可以看到经过bltToLower转换后，所有的字符都转为了小写字符
+
+	模块函数版本历史：
+	 - v0.23.0版本新增此模块函数
+ */
 ZL_EXP_VOID module_builtin_to_lower(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
@@ -2751,6 +2798,51 @@ ZL_EXP_VOID module_builtin_to_lower(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_FreeMem(VM_ARG, result);
 }
 
+/**
+ * bltToUpper模块函数，将字符串转为大写，并将转换的结果返回给调用者
+ * 第一个参数str必须是字符串类型，表示需要进行转换的源字符串
+ *
+ * 示例：
+	use builtin,request;
+
+	headers = rqtGetHeaders();
+	for(i=0; bltIterArray(headers,&i,&k,&v); )
+		print k +": " + v + '<br/>';
+		uppers[bltToUpper(k)] = bltToUpper(v);
+	endfor
+
+	print '=============================================<br/>uppers: <br/>';
+
+	for(i=0; bltIterArray(uppers,&i,&k,&v); )
+		print k +": " + v + '<br/>';
+	endfor
+
+	执行的结果类似如下：
+
+	Host: 192.168.1.113:8083
+	User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:81.0) Gecko/20100101 Firefox/81.0
+	Accept: text/html,application/xhtml+xml,application/xml;q=0.9
+	Accept-Language: zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2
+	Accept-Encoding: gzip, deflate
+	Connection: keep-alive
+	Upgrade-Insecure-Requests: 1
+	Cache-Control: max-age=0
+	=============================================
+	uppers:
+	HOST: 192.168.1.113:8083
+	USER-AGENT: MOZILLA/5.0 (WINDOWS NT 10.0; WIN64; X64; RV:81.0) GECKO/20100101 FIREFOX/81.0
+	ACCEPT: TEXT/HTML,APPLICATION/XHTML+XML,APPLICATION/XML;Q=0.9
+	ACCEPT-LANGUAGE: ZH-CN,ZH;Q=0.8,ZH-TW;Q=0.7,ZH-HK;Q=0.5,EN-US;Q=0.3,EN;Q=0.2
+	ACCEPT-ENCODING: GZIP, DEFLATE
+	CONNECTION: KEEP-ALIVE
+	UPGRADE-INSECURE-REQUESTS: 1
+	CACHE-CONTROL: MAX-AGE=0
+
+	可以看到经过bltToUpper转换后，所有的字符都转为了大写字符
+
+	模块函数版本历史：
+	 - v0.23.0版本新增此模块函数
+ */
 ZL_EXP_VOID module_builtin_to_upper(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

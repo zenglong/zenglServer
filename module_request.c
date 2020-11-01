@@ -735,12 +735,16 @@ ZL_EXP_VOID module_request_GetBody(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 				break;
 			}
 			arg.type = ZL_EXP_FAT_INT;
-			arg.val.integer = (ZL_EXP_LONG)my_parser_data->request_body.str;
-			zenglApi_SetFunArg(VM_ARG,2,&arg);
-			int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list), my_parser_data->request_body.str, body_count, NULL);
-			if(ret_set_ptr != 0) {
-				zenglApi_Exit(VM_ARG, "rqtGetBody add pointer to pointer_list failed, pointer_list_set_member error code:%d", ret_set_ptr);
+			if(body_count > 0) {
+				int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list), my_parser_data->request_body.str, body_count, NULL);
+				if(ret_set_ptr != 0) {
+					zenglApi_Exit(VM_ARG, "rqtGetBody add pointer to pointer_list failed, pointer_list_set_member error code:%d", ret_set_ptr);
+				}
+				arg.val.integer = (ZL_EXP_LONG)my_parser_data->request_body.str;
 			}
+			else
+				arg.val.integer = 0;
+			zenglApi_SetFunArg(VM_ARG,2,&arg);
 		}
 	}
 	else if(argcount != 0) {

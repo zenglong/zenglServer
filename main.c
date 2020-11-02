@@ -62,6 +62,9 @@
 #include <dirent.h>
 #include <execinfo.h>
 
+#define DEFAULT_OUTPUT_HTML_404 "<html><head><title>404 Not Found</title></head><body><center><h1>404 Not Found</h1></center></body></html>"
+#define DEFAULT_OUTPUT_HTML_403 "<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center></body></html>"
+
 void fork_child_process(int idx);
 void fork_cleaner_process();
 void register_signals();
@@ -1861,6 +1864,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 	char full_path[FULL_PATH_SIZE];
 	// status_code存储响应状态码，默认为200
 	int status_code = 200;
+	char * default_output_html = NULL;
 	ZL_EXP_BOOL is_custom_status_code = ZL_EXP_FALSE; // 是否是自定义的请求头
 	int content_length = 0;
 	struct stat filestatus;
@@ -2038,12 +2042,24 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			// 则打开web根目录中的404.html文件，并设置404状态码
 			doc_fd = open(full_path, O_RDONLY);
 			if(doc_fd == -1) {
-				full_length = root_length;
-				full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, "/404.html");
-				full_path[full_length] = '\0';
-				stat(full_path, &filestatus);
-				doc_fd = open(full_path, O_RDONLY);
-				status_code = 404;
+				if(config_verbose)
+					write_to_server_log_pipe(WRITE_TO_PIPE, "open file failed: [%d] %s\n", errno, strerror(errno));
+				else
+					write_to_server_log_pipe(WRITE_TO_PIPE_, "open file failed: [%d] %s | ", errno, strerror(errno));
+				if(errno == EACCES) {
+					status_code = 403;
+					default_output_html = DEFAULT_OUTPUT_HTML_403;
+				}
+				else {
+					full_length = root_length;
+					full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, "/404.html");
+					full_path[full_length] = '\0';
+					stat(full_path, &filestatus);
+					doc_fd = open(full_path, O_RDONLY);
+					status_code = 404;
+					if(doc_fd == -1)
+						default_output_html = DEFAULT_OUTPUT_HTML_404;
+				}
 			}
 		}
 	}
@@ -2054,7 +2070,12 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		// 非常规文件，直接返回403禁止访问
 		if(!S_ISREG(filestatus.st_mode)) {
 			status_code = 403;
+			default_output_html = DEFAULT_OUTPUT_HTML_403;
 			is_reg_file = ZL_EXP_FALSE;
+			if(config_verbose)
+				write_to_server_log_pipe(WRITE_TO_PIPE, "directory have no index.html, directory are not allowed directly access\n");
+			else
+				write_to_server_log_pipe(WRITE_TO_PIPE_, "directory have no index.html, directory are not allowed directly access | ");
 		}
 		else
 			main_process_if_modified_since(parser_data->request_header.str, parser_data->request_header.count, &filestatus, socket_list, lst_idx, &status_code);
@@ -2082,6 +2103,10 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				main_output_last_modified(&filestatus, socket_list, lst_idx);
 			}
 		}
+		else if(default_output_html != NULL) {
+			content_length = strlen(default_output_html);
+			main_output_content_type("default_output.html", socket_list, lst_idx);
+		}
 		else
 			content_length = 0;
 		sprintf(doc_fd_content_length, "%d", content_length);
@@ -2100,10 +2125,25 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		}
 	}
 	// 如果连404.html也不存在的话，则直接反馈404状态信息
-	else if(status_code == 404 && doc_fd == -1) {
-		client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 404 Not Found\r\n", 24);
-		client_socket_list_append_send_data(socket_list, lst_idx, "Content-Length: 0\r\n", 19);
-		client_socket_list_append_send_data(socket_list, lst_idx, "Connection: Closed\r\nServer: zenglServer\r\n\r\n", 43);
+	else if((status_code == 404 || status_code == 403) && doc_fd == -1) {
+		if(status_code == 404)
+			client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 404 Not Found\r\n", 24);
+		else
+			client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 403 Forbidden\r\n", 24);
+		if(default_output_html != NULL) {
+			char default_length[20] = {0};
+			main_output_content_type("default_output.html", socket_list, lst_idx);
+			content_length = strlen(default_output_html);
+			client_socket_list_append_send_data(socket_list, lst_idx, "Content-Length: ", 16);
+			sprintf(default_length, "%d", content_length);
+			client_socket_list_append_send_data(socket_list, lst_idx, default_length, strlen(default_length));
+		}
+		else
+			client_socket_list_append_send_data(socket_list, lst_idx, "Content-Length: 0", 17);
+		client_socket_list_append_send_data(socket_list, lst_idx, "\r\nConnection: Closed\r\nServer: zenglServer\r\n\r\n", 45);
+	}
+	if(default_output_html != NULL) {
+		client_socket_list_append_send_data(socket_list, lst_idx, default_output_html, strlen(default_output_html));
 	}
 	// 在日志中输出响应状态码和响应主体数据的长度
 	if(is_custom_status_code)

@@ -1,0 +1,14 @@
+use builtin,request;
+headers = rqtGetHeaders();
+print 'user agent: ' + headers['User-Agent'] + '<br/>';
+
+query_string = rqtGetQueryAsString();
+if(query_string)
+	print 'query string: ' + query_string + '<br/>';
+	querys = rqtGetQuery();
+	// 通过bltIterArray模块函数来迭代数组成员
+	for(i=0;bltIterArray(querys,&i,&k,&v);)
+		print k +": " + v + '<br/>';
+	endfor
+endif
+print 'test...';

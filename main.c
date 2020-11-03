@@ -62,7 +62,9 @@
 #include <dirent.h>
 #include <execinfo.h>
 
+// 当web根目录中没有定义404.html时，就会将下面这个宏定义的字符串，作为404错误的默认输出内容返回给客户端
 #define DEFAULT_OUTPUT_HTML_404 "<html><head><title>404 Not Found</title></head><body><center><h1>404 Not Found</h1></center></body></html>"
+// 当发生403错误时，会将下面这个宏定义的字符串作为结果返回给客户端
 #define DEFAULT_OUTPUT_HTML_403 "<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center></body></html>"
 
 void fork_child_process(int idx);
@@ -1844,6 +1846,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		return -1;
 	}
 	char url_path[URL_PATH_SIZE];
+	char decode_url_path[URL_PATH_SIZE];
 	int tmp_len;
 	// 将解析出来的url路径存储到url_path中
 	if((parser_data->url_parser.field_set & (1 << UF_PATH)) && (parser_data->url_parser.field_data[UF_PATH].len > 0)) {
@@ -1858,20 +1861,23 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 		url_path[0] = '/';
 		url_path[1] = STR_NULL;
 	}
-	write_to_server_log_pipe(WRITE_TO_PIPE, "url_path: %s\n", url_path);
+	// 对客户端传递过来的url路径信息进行url解码，这样在linux中就可以访问utf8编码的中文路径了
+	gl_request_url_decode(decode_url_path, url_path, strlen(url_path));
+	write_to_server_log_pipe(WRITE_TO_PIPE, "url_path: %s\n", decode_url_path);
 	int doc_fd;
 	// full_path中存储了需要访问的目标文件的完整路径信息
 	char full_path[FULL_PATH_SIZE];
 	// status_code存储响应状态码，默认为200
 	int status_code = 200;
+	// 当发生403或404错误时，会将default_output_html指向特定的字符串，服务器会将这段字符串作为403或404错误的默认输出内容返回给客户端
 	char * default_output_html = NULL;
 	ZL_EXP_BOOL is_custom_status_code = ZL_EXP_FALSE; // 是否是自定义的请求头
 	int content_length = 0;
-	struct stat filestatus;
+	struct stat filestatus = {0};
 	// 下面会根据webroot根目录，和url_path来构建full_path完整路径
 	int full_length = main_full_path_append(full_path, 0, FULL_PATH_SIZE, webroot);
 	int root_length = full_length;
-	full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, url_path);
+	full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, decode_url_path);
 	full_path[full_length] = '\0';
 	stat(full_path, &filestatus);
 	// 如果是访问目录，则将该目录中的index.html文件里的内容，作为结果反馈给客户端
@@ -2038,14 +2044,17 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			doc_fd = -2; // 将其设置为-2，就可以跳过后面的静态内容输出过程，因为上面已经输出过动态脚本的内容了
 		}
 		else {
-			// 如果不是zengl脚本，则直接打开full_path对应的文件，如果打不开，说明文件不存在，
-			// 则打开web根目录中的404.html文件，并设置404状态码
+			// 如果不是zengl脚本，则直接打开full_path对应的文件，如果打不开，说明文件不存在或者没有权限打开文件
+			// 如果文件不存在则打开web根目录中的404.html文件，并设置404状态码，如果是没有权限打开文件，
+			// 则设置403状态码，并设置错误的默认输出内容
 			doc_fd = open(full_path, O_RDONLY);
 			if(doc_fd == -1) {
+				// 如果open函数返回-1，则说明无法打开文件，就设置403或404状态码，并将打开文件失败的具体原因记录到日志中
 				if(config_verbose)
 					write_to_server_log_pipe(WRITE_TO_PIPE, "open file failed: [%d] %s\n", errno, strerror(errno));
 				else
 					write_to_server_log_pipe(WRITE_TO_PIPE_, "open file failed: [%d] %s | ", errno, strerror(errno));
+				// 如果是没有权限打开文件，则设置403状态码，并设置403错误的默认输出内容
 				if(errno == EACCES) {
 					status_code = 403;
 					default_output_html = DEFAULT_OUTPUT_HTML_403;
@@ -2057,6 +2066,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 					stat(full_path, &filestatus);
 					doc_fd = open(full_path, O_RDONLY);
 					status_code = 404;
+					// 如果web根目录中的404.html文件不存在或者无法打开，则设置404错误的默认输出内容
 					if(doc_fd == -1)
 						default_output_html = DEFAULT_OUTPUT_HTML_404;
 				}
@@ -2103,7 +2113,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 				main_output_last_modified(&filestatus, socket_list, lst_idx);
 			}
 		}
-		else if(default_output_html != NULL) {
+		else if(default_output_html != NULL) { // 设置默认输出内容的内容类型和内容长度
 			content_length = strlen(default_output_html);
 			main_output_content_type("default_output.html", socket_list, lst_idx);
 		}
@@ -2130,7 +2140,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 404 Not Found\r\n", 24);
 		else
 			client_socket_list_append_send_data(socket_list, lst_idx, "HTTP/1.1 403 Forbidden\r\n", 24);
-		if(default_output_html != NULL) {
+		if(default_output_html != NULL) { // 设置默认输出内容的内容类型和内容长度
 			char default_length[20] = {0};
 			main_output_content_type("default_output.html", socket_list, lst_idx);
 			content_length = strlen(default_output_html);
@@ -2142,6 +2152,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			client_socket_list_append_send_data(socket_list, lst_idx, "Content-Length: 0", 17);
 		client_socket_list_append_send_data(socket_list, lst_idx, "\r\nConnection: Closed\r\nServer: zenglServer\r\n\r\n", 45);
 	}
+	// 如果403或404错误设置了默认输出内容的话，则将默认输出内容返回给客户端
 	if(default_output_html != NULL) {
 		client_socket_list_append_send_data(socket_list, lst_idx, default_output_html, strlen(default_output_html));
 	}
@@ -2194,6 +2205,7 @@ static int main_run_cmd(char * run_cmd)
 	}
 
 	char url_path[URL_PATH_SIZE];
+	char decode_url_path[URL_PATH_SIZE];
 	int tmp_len;
 	// 将解析出来的url路径存储到url_path中
 	if((parser_data->url_parser.field_set & (1 << UF_PATH)) && (parser_data->url_parser.field_data[UF_PATH].len > 0)) {
@@ -2208,19 +2220,27 @@ static int main_run_cmd(char * run_cmd)
 		url_path[0] = '/';
 		url_path[1] = STR_NULL;
 	}
-	write_to_server_log_pipe(WRITE_TO_PIPE_, "url_path: %s\n", url_path);
+	// 对客户端传递过来的url路径信息进行url解码，这样在linux中就可以访问utf8编码的中文路径了
+	gl_request_url_decode(decode_url_path, url_path, strlen(url_path));
+	write_to_server_log_pipe(WRITE_TO_PIPE_, "url_path: %s\n", decode_url_path);
 
 	// full_path中存储了需要访问的目标文件的完整路径信息
 	char full_path[FULL_PATH_SIZE];
-	struct stat filestatus;
+	struct stat filestatus = {0};
 	// 下面会根据webroot根目录，和url_path来构建full_path完整路径
 	int full_length = main_full_path_append(full_path, 0, FULL_PATH_SIZE, webroot);
 	int root_length = full_length;
-	full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, url_path);
+	full_length += main_full_path_append(full_path, full_length, FULL_PATH_SIZE, decode_url_path);
 	full_path[full_length] = '\0';
-	stat(full_path, &filestatus);
+	int retval_stat = stat(full_path, &filestatus);
 
-	if(S_ISDIR(filestatus.st_mode)) {
+	// 如果文件不存在或者没有权限打开文件，则stat函数会返回-1，并将错误码记录到errno中
+	if(retval_stat == -1) {
+		printf("stat file failed: [%d] %s\n", errno, strerror(errno));
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "stat file failed: [%d] %s\n", errno, strerror(errno));
+		return -1;
+	}
+	else if(S_ISDIR(filestatus.st_mode)) {
 		const char * error_str = "it's a directory, can't be run!";
 		printf("%s\n", error_str);
 		write_to_server_log_pipe(WRITE_TO_PIPE_, "%s\n", error_str);

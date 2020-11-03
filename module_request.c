@@ -735,6 +735,7 @@ ZL_EXP_VOID module_request_GetBody(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 				break;
 			}
 			arg.type = ZL_EXP_FAT_INT;
+			// 只有当body_count大于0时，也就是存在请求主体数据时，才将请求主体数据相关的指针设置到第二个参数
 			if(body_count > 0) {
 				int ret_set_ptr = pointer_list_set_member(&(my_data->pointer_list), my_parser_data->request_body.str, body_count, NULL);
 				if(ret_set_ptr != 0) {
@@ -742,7 +743,7 @@ ZL_EXP_VOID module_request_GetBody(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 				}
 				arg.val.integer = (ZL_EXP_LONG)my_parser_data->request_body.str;
 			}
-			else
+			else // 如果body_count不大于0，则说明没有请求主体数据，则将空指针(也就是值为0的指针值)设置到第二个参数
 				arg.val.integer = 0;
 			zenglApi_SetFunArg(VM_ARG,2,&arg);
 		}

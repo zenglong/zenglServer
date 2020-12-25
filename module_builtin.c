@@ -1187,28 +1187,48 @@ ZL_EXP_VOID module_builtin_str(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 1)
-		zenglApi_Exit(VM_ARG,"usage: bltStr(data|&data[, isSetData=0])");
+		zenglApi_Exit(VM_ARG,"usage: bltStr(data|&data[, isSetData=0[, format]])");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	int isSetData = ZL_EXP_FALSE;
+	char * format = NULL;
 	if(argcount >= 2) {
 		ZENGL_EXPORT_MOD_FUN_ARG arg2 = {ZL_EXP_FAT_NONE,{0}};
 		zenglApi_GetFunArg(VM_ARG,2,&arg2);
 		if(arg2.type != ZL_EXP_FAT_INT)
 			zenglApi_Exit(VM_ARG,"the second argument isSetData of bltStr must be integer");
 		isSetData = arg2.val.integer;
+		if(argcount >= 3) {
+			zenglApi_GetFunArg(VM_ARG,3,&arg2);
+			if(arg2.type != ZL_EXP_FAT_STR)
+				zenglApi_Exit(VM_ARG,"the fourth argument format of bltStr must be string");
+			format = arg2.val.str;
+		}
 	}
 	char * retstr;
-	char tmpstr[40];
+	char tmpstr[80];
 	switch(arg.type) {
 	case ZL_EXP_FAT_STR:
 		retstr = arg.val.str;
 		break;
 	case ZL_EXP_FAT_INT:
-		snprintf(tmpstr, 40, "%ld", arg.val.integer);
-		retstr = tmpstr;
-		break;
 	case ZL_EXP_FAT_FLOAT:
-		snprintf(tmpstr, 40, "%.16g", arg.val.floatnum);
+		if(format == NULL) {
+			if(arg.type == ZL_EXP_FAT_INT)
+				format = "%ld";
+			else
+				format = "%.16g";
+		}
+		else if(strchr(format, '*') || strchr(format, 's')) {
+			zenglApi_Exit(VM_ARG,"bltStr format error: can't use * or s in format!");
+		}
+		int retcount = 0;
+		if(arg.type == ZL_EXP_FAT_INT)
+			retcount = snprintf(tmpstr, sizeof(tmpstr), format, arg.val.integer);
+		else
+			retcount = snprintf(tmpstr, sizeof(tmpstr), format, arg.val.floatnum);
+		if(retcount < 0) {
+			zenglApi_Exit(VM_ARG,"bltStr error: %s", strerror(errno));
+		}
 		retstr = tmpstr;
 		break;
 	case ZL_EXP_FAT_MEMBLOCK:

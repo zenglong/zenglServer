@@ -1,0 +1,14 @@
+use builtin;
+def TRUE 1;
+def FALSE 0;
+
+value = 1789.800000001;
+print bltStr(value, FALSE, '%.2f');
+print bltStr(value, FALSE, '%012.12f');
+print bltStr(value, FALSE, '%.12E');
+print bltStr(&value, TRUE, '%012.100f');
+print 'value: ' + value + '\n';
+
+for(i=65;i <= 71;i++)
+	print i + bltStr(i, FALSE, ' - 0x%X') + bltStr(i, FALSE, ' - %c');
+endfor

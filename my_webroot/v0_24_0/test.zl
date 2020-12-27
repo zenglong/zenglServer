@@ -12,3 +12,35 @@ print 'value: ' + value + '\n';
 for(i=65;i <= 71;i++)
 	print i + bltStr(i, FALSE, ' - 0x%X') + bltStr(i, FALSE, ' - %c');
 endfor
+
+print '';
+
+fun compare(v1, v2)
+	c = bltVersionCompare(v1, v2);
+	if(c > 0)
+		print v1 + ' > ' + v2;
+	elif(c < 0)
+		print v1 + ' < ' + v2;
+	else
+		print v1 + ' == ' + v2;
+	endif
+endfun
+
+fun compare2(v1, v2)
+	if(bltVersionCompare(v1, v2) >= 0)
+		print v1 + ' >= ' + v2;
+	else
+		print v1 + ' < ' + v2;
+	endif
+endfun
+
+compare('v0.1.0', 'v0.2.0');
+compare('v1.2.3', 'v1.2');
+compare('v2.2.3', 'v2.2.2');
+compare('2.3.0', 'v2.3');
+print '';
+
+compare2('3.2.1', '3.2');
+compare2('3.2.0', '3.2');
+compare2('3.2.0', '3.2.1');
+print '';

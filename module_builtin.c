@@ -40,6 +40,9 @@
 #define WRITE_FILE_MODE_WRITE 1
 #define WRITE_FILE_MODE_APPEND 2
 
+#define GET_VERSION_STATUS_START 0
+#define GET_VERSION_STATUS_IN_NUM 1
+
 static int builtin_crustache__context_get(
 		ZL_EXP_VOID * VM_ARG,
 		builtin_mustache_context * new_context,
@@ -612,6 +615,50 @@ static void st_set_arg_value(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_EXPORT_MOD_
 		arg.val.integer = arg_int_val;
 	}
 	zenglApi_SetFunArg(VM_ARG,argnum,&arg);
+}
+
+static int builtin_get_version_number(char ** version_str)
+{
+	int status = GET_VERSION_STATUS_START;
+	int version = 0;
+	char ch = '\0';
+	for(;((ch = (*(*version_str))) != '\0');(*version_str)++) {
+		switch(status) {
+		case GET_VERSION_STATUS_START:
+			if(ch >= '0' && ch <= '9') {
+				version = (version * 10) + (ch - '0');
+				status = GET_VERSION_STATUS_IN_NUM;
+			}
+			break;
+		case GET_VERSION_STATUS_IN_NUM:
+			if(ch >= '0' && ch <= '9') {
+				version = (version * 10) + (ch - '0');
+			}
+			else {
+				return version;
+			}
+			break;
+		}
+	}
+	return version;
+}
+
+static int builtin_version_compare(char * version1, char * version2)
+{
+	int num1 = 0;
+	int num2 = 0;
+	for(int i = 0;i < 8;i++) {
+		num1 = builtin_get_version_number(&version1);
+		num2 = builtin_get_version_number(&version2);
+		if(num1 > num2)
+			return 1;
+		else if(num1 < num2)
+			return -1;
+		if((*version1) == '\0' && (*version2) == '\0') {
+			return 0;
+		}
+	}
+	return 0;
 }
 
 /**
@@ -1200,7 +1247,7 @@ ZL_EXP_VOID module_builtin_str(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 		if(argcount >= 3) {
 			zenglApi_GetFunArg(VM_ARG,3,&arg2);
 			if(arg2.type != ZL_EXP_FAT_STR)
-				zenglApi_Exit(VM_ARG,"the fourth argument format of bltStr must be string");
+				zenglApi_Exit(VM_ARG,"the third argument format of bltStr must be string");
 			format = arg2.val.str;
 		}
 	}
@@ -2879,6 +2926,26 @@ ZL_EXP_VOID module_builtin_to_upper(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_FreeMem(VM_ARG, result);
 }
 
+ZL_EXP_VOID module_builtin_version_compare(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltVersionCompare";
+	if(argcount < 2)
+		zenglApi_Exit(VM_ARG,"usage: %s(version1, version2)", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [version1] of %s must be string", func_name);
+	}
+	char * version1 = (char *)arg.val.str;
+	zenglApi_GetFunArg(VM_ARG,2,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the second argument [version2] of %s must be string", func_name);
+	}
+	char * version2 = (char *)arg.val.str;
+	int retval = builtin_version_compare(version1, version2);
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */
@@ -2925,4 +2992,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltFatalErrorCallback",module_builtin_fatal_error_callback);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltToLower",module_builtin_to_lower);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltToUpper",module_builtin_to_upper);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltVersionCompare",module_builtin_version_compare);
 }

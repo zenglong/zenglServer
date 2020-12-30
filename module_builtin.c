@@ -1234,21 +1234,24 @@ ZL_EXP_VOID module_builtin_str(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
 	if(argcount < 1)
-		zenglApi_Exit(VM_ARG,"usage: bltStr(data|&data[, isSetData=0[, format]])");
+		zenglApi_Exit(VM_ARG,"usage: bltStr(data|&data[, isSetData=0]) or bltStr(data|&data[, format[, isSetData=0]])");
 	zenglApi_GetFunArg(VM_ARG,1,&arg);
 	int isSetData = ZL_EXP_FALSE;
 	char * format = NULL;
 	if(argcount >= 2) {
 		ZENGL_EXPORT_MOD_FUN_ARG arg2 = {ZL_EXP_FAT_NONE,{0}};
 		zenglApi_GetFunArg(VM_ARG,2,&arg2);
-		if(arg2.type != ZL_EXP_FAT_INT)
-			zenglApi_Exit(VM_ARG,"the second argument isSetData of bltStr must be integer");
-		isSetData = arg2.val.integer;
-		if(argcount >= 3) {
-			zenglApi_GetFunArg(VM_ARG,3,&arg2);
-			if(arg2.type != ZL_EXP_FAT_STR)
-				zenglApi_Exit(VM_ARG,"the third argument format of bltStr must be string");
+		if(arg2.type == ZL_EXP_FAT_INT)
+			isSetData = arg2.val.integer;
+		else if(arg2.type == ZL_EXP_FAT_STR)
 			format = arg2.val.str;
+		else
+			zenglApi_Exit(VM_ARG,"the second argument of bltStr must be integer type as isSetData or string type as format");
+		if(argcount >= 3 && format != NULL) {
+			zenglApi_GetFunArg(VM_ARG,3,&arg2);
+			if(arg2.type != ZL_EXP_FAT_INT)
+				zenglApi_Exit(VM_ARG,"the third argument [isSetData] of bltStr must be integer");
+			isSetData = arg2.val.integer;
 		}
 	}
 	char * retstr;

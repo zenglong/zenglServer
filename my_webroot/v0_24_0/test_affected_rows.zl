@@ -1,0 +1,63 @@
+use builtin, mysql;
+inc 'config.zl';
+
+fun finish_with_error(con)
+	err = mysqlError(con);
+	mysqlClose(con);
+	bltExit(err);
+endfun
+
+fun mysql_query(con, sql)
+	if(mysqlQuery(con, sql))
+		finish_with_error(con);
+	endif
+	result = mysqlStoreResult(con);
+	return_array = bltArray();
+	while(mysqlFetchResultRow(result, &result_array))
+		return_array[] = result_array;
+	endwhile
+	mysqlFreeResult(result);
+	return return_array;
+endfun
+
+con = mysqlInit();
+if(!con)
+	bltExit('mysqlInit failed');
+endif
+
+if(!mysqlRealConnect(con, config['db_host'], config['db_user'], config['db_passwd'], config['db_name'], config['db_port']))
+	finish_with_error(con);
+endif
+
+if(mysqlQuery(con, "CREATE TABLE IF NOT EXISTS `test_table` (
+	  id int NOT NULL AUTO_INCREMENT, 
+	  name varchar(255) NOT NULL DEFAULT '', 
+	  score int NOT NULL DEFAULT 0, 
+	  PRIMARY KEY (id)
+	) ENGINE=MyISAM DEFAULT CHARSET utf8 COLLATE utf8_general_ci COMMENT='my test table'"))
+	finish_with_error(con);
+endif
+
+for(i=0; i < 3;i++)
+	if(mysqlQuery(con, "INSERT INTO `test_table` (`name`,`score`) VALUES('" + bltRandomStr("ABCDEFGHIJKLMNOPQRSTUVWXYZ", 4) + "', '" + bltRand(0, 100) + "')"))
+		finish_with_error(con);
+	endif
+	print 'insert table `test_table`, affected rows: ' + mysqlAffectedRows(con);
+endfor
+
+if(mysqlQuery(con, "UPDATE `test_table` SET `score` = '50' WHERE score < 50"))
+	finish_with_error(con);
+endif
+print "update table `test_table`, affected rows: " + mysqlAffectedRows(con);
+
+if(mysqlQuery(con, "DELETE FROM `test_table` WHERE score > 80"))
+	finish_with_error(con);
+endif
+print "delete from table `test_table`, affected rows: " + mysqlAffectedRows(con);
+
+data_array = mysql_query(con, "select * from `test_table` order by id desc limit 20");
+print 'select rows num: ' + mysqlAffectedRows(con);
+for(i=0;bltIterArray(data_array,&i,&data);)
+	print data['id'] + ': ' + data['name'] + ' (score: ' + data['score'] + ')';
+endfor
+

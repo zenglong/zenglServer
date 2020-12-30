@@ -499,6 +499,25 @@ ZL_EXP_VOID module_mysql_fetch_result_row(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+ZL_EXP_VOID module_mysql_affected_rows(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "mysqlAffectedRows";
+	if(argcount != 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(connection)", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_INT) {
+		zenglApi_Exit(VM_ARG,"the first argument [connection] of %s must be integer", func_name);
+	}
+	MYSQL *con = (MYSQL *)arg.val.integer;
+	MAIN_DATA * my_data = zenglApi_GetExtraData(VM_ARG, "my_data");
+	if(!is_valid_mysql_connection(&(my_data->resource_list), con)) {
+		zenglApi_Exit(VM_ARG,"%s runtime error: invalid connection", func_name);
+	}
+	int rows = (int)mysql_affected_rows(con);
+	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, rows, 0);
+}
+
 /**
  * mysql模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄(对应的C函数)
  */
@@ -517,4 +536,5 @@ ZL_EXP_VOID module_mysql_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"mysqlStoreResult",module_mysql_store_result);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"mysqlFreeResult",module_mysql_free_result);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"mysqlFetchResultRow",module_mysql_fetch_result_row);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"mysqlAffectedRows",module_mysql_affected_rows);
 }

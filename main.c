@@ -2236,8 +2236,8 @@ static int main_run_cmd(char * run_cmd)
 
 	// 如果文件不存在或者没有权限打开文件，则stat函数会返回-1，并将错误码记录到errno中
 	if(retval_stat == -1) {
-		printf("stat file failed: [%d] %s\n", errno, strerror(errno));
-		write_to_server_log_pipe(WRITE_TO_PIPE_, "stat file failed: [%d] %s\n", errno, strerror(errno));
+		printf("stat file '%s' failed: [%d] %s\n", full_path, errno, strerror(errno));
+		write_to_server_log_pipe(WRITE_TO_PIPE_, "stat file '%s' failed: [%d] %s\n", full_path, errno, strerror(errno));
 		return -1;
 	}
 	else if(S_ISDIR(filestatus.st_mode)) {

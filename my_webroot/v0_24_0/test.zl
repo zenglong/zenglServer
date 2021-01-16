@@ -27,7 +27,7 @@ fun compare(v1, v2)
 endfun
 
 fun compare2(v1, v2)
-	if(bltVersionCompare(v1, v2) >= 0)
+	if(bltVersionCompare(v1, v2) >= 0) // bltVersionCompare模块函数返回值大于或等于0，则说明v1版本号大于或等于v2版本号
 		print v1 + ' >= ' + v2;
 	else
 		print v1 + ' < ' + v2;

@@ -499,6 +499,99 @@ ZL_EXP_VOID module_mysql_fetch_result_row(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcou
 		zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, 0, 0);
 }
 
+/**
+ * mysqlAffectedRows模块函数，返回前一次mysql操作所影响的记录行数
+ * 第一个参数connection必须是整数类型，表示mysql连接相关的指针
+ * 模块函数的返回值表示受影响的记录数
+ *
+ * 示例：
+	use builtin, mysql;
+
+	config['db_host'] = 'localhost'; // mysql数据库ip
+	config['db_port'] = 3306;        // mysql数据库端口
+	config['db_user'] = 'root';      // mysql用户名
+	config['db_passwd'] = '123456';  // mysql密码
+	config['db_name'] = 'testdb';    // mysql数据库名
+
+	fun finish_with_error(con)
+		err = mysqlError(con);
+		mysqlClose(con);
+		bltExit(err);
+	endfun
+
+	fun mysql_query(con, sql)
+		if(mysqlQuery(con, sql))
+			finish_with_error(con);
+		endif
+		result = mysqlStoreResult(con);
+		return_array = bltArray();
+		while(mysqlFetchResultRow(result, &result_array))
+			return_array[] = result_array;
+		endwhile
+		mysqlFreeResult(result);
+		return return_array;
+	endfun
+
+	con = mysqlInit();
+	if(!con)
+		bltExit('mysqlInit failed');
+	endif
+
+	if(!mysqlRealConnect(con, config['db_host'], config['db_user'], config['db_passwd'], config['db_name'], config['db_port']))
+		finish_with_error(con);
+	endif
+
+	if(mysqlQuery(con, "CREATE TABLE IF NOT EXISTS `test_table` (
+		  id int NOT NULL AUTO_INCREMENT,
+		  name varchar(255) NOT NULL DEFAULT '',
+		  score int NOT NULL DEFAULT 0,
+		  PRIMARY KEY (id)
+		) ENGINE=MyISAM DEFAULT CHARSET utf8 COLLATE utf8_general_ci COMMENT='my test table'"))
+		finish_with_error(con);
+	endif
+
+	for(i=0; i < 3;i++)
+		if(mysqlQuery(con, "INSERT INTO `test_table` (`name`,`score`) VALUES('" + bltRandomStr("ABCDEFGHIJKLMNOPQRSTUVWXYZ", 4) + "', '" + bltRand(0, 100) + "')"))
+			finish_with_error(con);
+		endif
+		// 通过mysqlAffectedRows模块函数，打印 INSERT 插入语句所添加的记录数
+		print 'insert table `test_table`, affected rows: ' + mysqlAffectedRows(con);
+	endfor
+
+	if(mysqlQuery(con, "UPDATE `test_table` SET `score` = '50' WHERE score < 50"))
+		finish_with_error(con);
+	endif
+	// 通过mysqlAffectedRows模块函数，打印 UPDATE 更新语句所更新的记录数
+	print "update table `test_table`, affected rows: " + mysqlAffectedRows(con);
+
+	if(mysqlQuery(con, "DELETE FROM `test_table` WHERE score > 80"))
+		finish_with_error(con);
+	endif
+	// 通过mysqlAffectedRows模块函数，打印 DELETE 删除语句所删除的记录数
+	print "delete from table `test_table`, affected rows: " + mysqlAffectedRows(con);
+
+	data_array = mysql_query(con, "select * from `test_table` order by id desc limit 20");
+	// 通过mysqlAffectedRows模块函数，打印 select 查询语句所查找出来的记录数
+	print 'select rows num: ' + mysqlAffectedRows(con);
+	for(i=0;bltIterArray(data_array,&i,&data);)
+		print data['id'] + ': ' + data['name'] + ' (score: ' + data['score'] + ')';
+	endfor
+
+	执行结果类似如下所示：
+
+	insert table `test_table`, affected rows: 1
+	insert table `test_table`, affected rows: 1
+	insert table `test_table`, affected rows: 1
+	update table `test_table`, affected rows: 1
+	delete from table `test_table`, affected rows: 0
+	select rows num: 3
+	3: JBCF (score: 60)
+	2: REQR (score: 69)
+	1: RRTO (score: 50)
+
+	模块函数版本历史：
+	 - v0.24.0版本新增此模块函数
+ */
 ZL_EXP_VOID module_mysql_affected_rows(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

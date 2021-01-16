@@ -42,20 +42,24 @@ for(i=0; i < 3;i++)
 	if(mysqlQuery(con, "INSERT INTO `test_table` (`name`,`score`) VALUES('" + bltRandomStr("ABCDEFGHIJKLMNOPQRSTUVWXYZ", 4) + "', '" + bltRand(0, 100) + "')"))
 		finish_with_error(con);
 	endif
+	// 通过mysqlAffectedRows模块函数，打印 INSERT 插入语句所添加的记录数
 	print 'insert table `test_table`, affected rows: ' + mysqlAffectedRows(con);
 endfor
 
 if(mysqlQuery(con, "UPDATE `test_table` SET `score` = '50' WHERE score < 50"))
 	finish_with_error(con);
 endif
+// 通过mysqlAffectedRows模块函数，打印 UPDATE 更新语句所更新的记录数
 print "update table `test_table`, affected rows: " + mysqlAffectedRows(con);
 
 if(mysqlQuery(con, "DELETE FROM `test_table` WHERE score > 80"))
 	finish_with_error(con);
 endif
+// 通过mysqlAffectedRows模块函数，打印 DELETE 删除语句所删除的记录数
 print "delete from table `test_table`, affected rows: " + mysqlAffectedRows(con);
 
 data_array = mysql_query(con, "select * from `test_table` order by id desc limit 20");
+// 通过mysqlAffectedRows模块函数，打印 select 查询语句所查找出来的记录数
 print 'select rows num: ' + mysqlAffectedRows(con);
 for(i=0;bltIterArray(data_array,&i,&data);)
 	print data['id'] + ': ' + data['name'] + ' (score: ' + data['score'] + ')';

@@ -1,5 +1,5 @@
-config['db_host'] = 'localhost';
-config['db_port'] = 3306;
-config['db_user'] = 'root';
-config['db_passwd'] = '123456';
-config['db_name'] = 'testdb';
+config['db_host'] = 'localhost'; // mysql数据库ip
+config['db_port'] = 3306;        // mysql数据库端口
+config['db_user'] = 'root';      // mysql用户名
+config['db_passwd'] = '123456';  // mysql密码
+config['db_name'] = 'testdb';    // mysql数据库名

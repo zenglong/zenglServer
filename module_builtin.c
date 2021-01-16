@@ -1209,8 +1209,14 @@ ZL_EXP_VOID module_builtin_md5(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 
 /**
  * bltStr模块函数，返回第一个参数的字符串形式
+ * 第一个参数data|&data，表示需要转成字符串的源数据(可以是整数，浮点数之类的数据)
+ * 第二个参数是可选参数
+ * 	当第二个参数是整数类型时，表示isSetData即是否将转换的结果赋值给第一个参数(此时还需要将第一个参数的引用传递进来)
+ * 	当第二个参数是字符串类型时，表示format即对整数或浮点数进行格式化，当第二个参数是format时，可以提供第三个可选参数来表示isSetData(是否将字符串结果赋值给第一个参数)
+ *
  * 如果第一个参数的值为NONE类型，要获取他对应的字符串形式即空字符串，需要将第一个参数的引用传递过来
  * 例如：
+ * use builtin;
  * print 'bltStr(test): "' + bltStr(test) + '"<br/>';
  * print 'bltStr(&amp;test): "' + bltStr(&test) + '"<br/>';
  * 执行的结果如下：
@@ -1218,8 +1224,9 @@ ZL_EXP_VOID module_builtin_md5(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * bltStr(&test): ""
  * 上面test在没有被赋值的情况下，是NONE类型，NONE类型变量在参与运算或者以参数形式传递给函数时，是以整数0的形式进行运算和传递的
  * 因此，要将NONE转为空字符串返回，需要将test的引用传递进去
- * 如果将第二个参数设置为非0值，bltStr会同时将转化的结果赋值给第一个参数(需要将第一个参数的引用传递进来)
+ * 如果将第二个参数设置为非0的整数值，bltStr会同时将转化的结果赋值给第一个参数(需要将第一个参数的引用传递进来)
  * 例如：
+ * use builtin;
  * def TRUE 1;
  * def FALSE 0;
  * print 'test: "' + test + '"<br/>';
@@ -1229,6 +1236,43 @@ ZL_EXP_VOID module_builtin_md5(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
  * test: "0"
  * test: ""
  * 在经过bltStr(&test, TRUE);转化后，test就被赋值为了空字符串
+ *
+ * 当第二个参数是字符串类型时，表示format即对整数或浮点数进行格式化
+ * 例如：
+	use builtin;
+	def TRUE 1;
+	def FALSE 0;
+
+	value = 1789.800000001;
+	print bltStr(value, '%.2f');
+	print bltStr(value, '%012.12f');
+	print bltStr(value, '%.12E');
+	print bltStr(&value, '%012.100f', TRUE);
+	print 'value: ' + value + '\n';
+
+	for(i=65;i <= 71;i++)
+		print i + bltStr(i, ' - 0x%X') + bltStr(i, ' - %c');
+	endfor
+
+	上面会将浮点数进行格式化，例如：'%.2f'表示保留两位小数，此时可以把第三个参数设置为非0的整数值，来表示将转换结果赋值给第一个参数，执行结果类似如下所示：
+
+	1789.80
+	1789.800000001000
+	1.789800000001E+03
+	1789.80000000099994394986424595117568969726562500000000000000000000000000000000
+	value: 1789.80000000099994394986424595117568969726562500000000000000000000000000000000
+
+	65 - 0x41 - A
+	66 - 0x42 - B
+	67 - 0x43 - C
+	68 - 0x44 - D
+	69 - 0x45 - E
+	70 - 0x46 - F
+	71 - 0x47 - G
+
+	模块函数版本历史：
+	 - v0.8.0版本新增此模块函数
+	 - v0.24.0版本增加format可选参数，用于对整数或浮点数进行格式化(格式化的语法请参考snprintf的C库函数，因为该模块函数的底层是通过snprintf来进行格式化的)
  */
 ZL_EXP_VOID module_builtin_str(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 {
@@ -2929,6 +2973,60 @@ ZL_EXP_VOID module_builtin_to_upper(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 	zenglApi_FreeMem(VM_ARG, result);
 }
 
+/**
+ * bltVersionCompare模块函数，用于对版本号进行比较
+ * 第一个参数version1必须是字符串类型，表示需要进行比较的第一个版本号
+ * 第二个参数version2也必须是字符串类型，表示需要进行比较的第二个版本号
+ * 	当返回值大于0时，表示version1大于version2
+ * 	当返回值等于0时，表示version1等于version2
+ * 	当返回值小于0时，表示version1小于version2
+ *
+ * 示例：
+	use builtin;
+	fun compare(v1, v2)
+		c = bltVersionCompare(v1, v2);
+		if(c > 0)
+			print v1 + ' > ' + v2;
+		elif(c < 0)
+			print v1 + ' < ' + v2;
+		else
+			print v1 + ' == ' + v2;
+		endif
+	endfun
+
+	fun compare2(v1, v2)
+		if(bltVersionCompare(v1, v2) >= 0) // bltVersionCompare模块函数返回值大于或等于0，则说明v1版本号大于或等于v2版本号
+			print v1 + ' >= ' + v2;
+		else
+			print v1 + ' < ' + v2;
+		endif
+	endfun
+
+	compare('v0.1.0', 'v0.2.0');
+	compare('v1.2.3', 'v1.2');
+	compare('v2.2.3', 'v2.2.2');
+	compare('2.3.0', 'v2.3');
+	print '';
+
+	compare2('3.2.1', '3.2');
+	compare2('3.2.0', '3.2');
+	compare2('3.2.0', '3.2.1');
+	print '';
+
+	执行结果如下：
+
+	v0.1.0 < v0.2.0
+	v1.2.3 > v1.2
+	v2.2.3 > v2.2.2
+	2.3.0 == v2.3
+
+	3.2.1 >= 3.2
+	3.2.0 >= 3.2
+	3.2.0 < 3.2.1
+
+	模块函数版本历史：
+	 - v0.24.0版本新增此模块函数
+ */
 ZL_EXP_VOID module_builtin_version_compare(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

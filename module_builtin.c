@@ -617,6 +617,13 @@ static void st_set_arg_value(ZL_EXP_VOID * VM_ARG, int argnum, ZENGL_EXPORT_MOD_
 	zenglApi_SetFunArg(VM_ARG,argnum,&arg);
 }
 
+/**
+ * 将version_str字符串中找到的第一个数字，以整数的形式返回
+ * 例如：假设version_str指向的字符串是'v12.0.5'，那么下面的C函数，就会将第一个数字12转为整数返回(也就是将主版本号返回)，同时会将version_str指向12后面的字符串'.0.5'
+ * 那么，下次再将version_str指向的字符串'.0.5'传给该C函数时，就会将第一个数字0转为整数返回(也就是子版本号)，同时将version_str指向0后面的字符串'.5'
+ * 最后再将version_str指向的字符串'.5'传给该函数时，就会将第一个数字5转为整数返回(从而得到修正版本号)
+ * 这样通过反复将version_str传给该C函数，从而可以将'v12.0.5'字符串中的主版本号，子版本号，以及修正版本号的整数值都获取到了
+ */
 static int builtin_get_version_number(char ** version_str)
 {
 	int status = GET_VERSION_STATUS_START;
@@ -643,6 +650,20 @@ static int builtin_get_version_number(char ** version_str)
 	return version;
 }
 
+/**
+ * 通过builtin_get_version_number函数获取version1和version2的主版本号，子版本号，修正版本号等，
+ * 并依次对这些版本号进行比较，也就是version1和version2的主版本号和主版本号进行比较，子版本号和子版本号进行比较等，
+ * 例如：假设version1是'v2.2.3'，version2是'v2.2.2'，那么先比较第一个主版本号，由于都是2，就再比较第二个子版本号，由于也都是2，
+ * 就再比较最后一个修正版本号，由于3大于2，因此，version1大于version2
+ *
+ * 如果某一个分版本号没有明确提供的话，就表示该版本号是0，
+ * 例如：假设version1是'v1.2.3'，version2是'v1.2'，由于'v1.2'的最后一个修正版本号未明确提供，那么该修正版本号就是0，因此，'v1.2'就相当于'v1.2.0'
+ * 因此'v1.2.3'大于'v1.2'
+ *
+ * 最多可以比较8个分版本号
+ * 例如：假设version1是'v12.11.10.9.8.7.6.5'，version2是'v12.11.10.9.8.7.6.6'进行比较，version1和version2都有8个分版本号
+ * 由于version1的最后一个分版本号5小于version2的最后一个分版本号6，因此，本例中version1就小于version2
+ */
 static int builtin_version_compare(char * version1, char * version2)
 {
 	int num1 = 0;

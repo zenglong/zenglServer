@@ -129,6 +129,7 @@ typedef struct _SERVER_CONTENT_TYPE{
 #define DEFAULT_CONFIG_FILE "config.zl" // 当启动zenglServer时，如果没有使用-c命令行参数来指定配置文件名时，就会使用该宏对应的值来作为默认的配置文件名
 #define SERVER_LOG_PIPE_STR_SIZE 1024 // 写入日志的动态字符串的初始化及动态扩容的大小
 #define SHM_MIN_SIZE (300 * 1024) // 如果配置文件中没有设置shm_min_size时，就使用该宏的值作为需要放进共享内存的缓存的最小大小(以字节为单位)
+#define DEFAULT_BACKLOG 10
 
 // 启动过程中，在没有重定向输出之前，如果发生错误或警告，除了写入日志，还会显示在命令行终端，方便启动时不用通过查看日志就可以发现错误等
 #define WRITE_LOG_WITH_PRINTF(format, ...) write_to_server_log_pipe(WRITE_TO_LOG, format, __VA_ARGS__); \
@@ -190,6 +191,8 @@ long config_request_body_max_size;
 long config_request_header_max_size;
 // 存储配置文件中的request_url_max_size的配置值，该配置用于设置url资源路径(包括请求参数在内)所允许的最大字符数
 long config_request_url_max_size;
+
+long config_backlog;
 
 // 存储配置文件中的pidfile的配置值，该配置用于设置记录主进程的进程ID的文件名(该文件名可以是相对于当前工作目录的路径)
 static char config_pidfile[FULL_PATH_SIZE];
@@ -925,6 +928,10 @@ int main(int argc, char * argv[])
 	if(zenglApi_GetValueAsInt(VM,"request_url_max_size", &config_request_url_max_size) < 0)
 		config_request_url_max_size = REQUEST_URL_STR_MAX_SIZE;
 
+	if((zenglApi_GetValueAsInt(VM,"backlog", &config_backlog) < 0) || (config_backlog <= 0)) {
+		config_backlog = DEFAULT_BACKLOG;
+	}
+
 	char * pidfile;
 	config_pidfile[0] = '\0';
 	// 获取配置文件中设置的pidfile的值，用于设置记录主进程的进程ID的文件名(该文件名可以是相对于当前工作目录的路径)
@@ -952,6 +959,7 @@ int main(int argc, char * argv[])
 	write_to_server_log_pipe(WRITE_TO_LOG, "remote_debug_enable: %s remote_debugger_ip: %s remote_debugger_port: %ld"
 			" zengl_cache_enable: %s shm_enable: %s shm_min_size: %ld\n"
 			"verbose: %s request_body_max_size: %ld, request_header_max_size: %ld request_url_max_size: %ld\n"
+			"backlog: %ld\n"
 			"URL_PATH_SIZE: %d FULL_PATH_SIZE: %d\n",
 			config_remote_debug_enable ? "True" : "False",
 			config_remote_debugger_ip,
@@ -963,6 +971,7 @@ int main(int argc, char * argv[])
 			config_request_body_max_size,
 			config_request_header_max_size,
 			config_request_url_max_size,
+			config_backlog,
 			URL_PATH_SIZE, FULL_PATH_SIZE);
 
 	// 如果设置了pidfile文件，则将主进程的进程ID记录到pidfile所指定的文件中(只有在非命令行模式下，才需要执行这步操作)
@@ -1050,7 +1059,7 @@ int main(int argc, char * argv[])
 	write_to_server_log_pipe(WRITE_TO_LOG, "bind done\n");
 
 	// 当绑定IP和端口成功后，就可以正式开启服务端套接字的监听模式了
-	listen(server_socket_fd, 10);
+	listen(server_socket_fd, config_backlog);
 
 	// 删除掉之前创建过的信号量
 	sem_unlink("accept_sem");

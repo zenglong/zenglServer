@@ -48,7 +48,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 			# EOF, client closed, just return
 			print('listen connection...')
 			return None
-		recv_msg = recv_msg.decode('utf-8') # 将获取到的数据进行utf8解码，转为unicode字符串
+		recv_msg = recv_msg.decode('utf-8', 'ignore') # 将获取到的数据进行utf8解码，转为unicode字符串
 		return recv_msg
 
 	# 通过l命令从zenglServer获取到脚本的源码后，python会根据换行符将源码分割成content_list字符串列表，列表的每一项都对应一行源代码

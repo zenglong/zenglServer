@@ -346,13 +346,13 @@ static void main_compute_md5(char * buf, char * str, ZL_EXP_BOOL isLowerCase, ZL
 static void main_get_zengl_cache_path(char * cache_path, int cache_path_size, char * full_path)
 {
 	char fullpath_md5[33];
-	char cache_prefix[20] = {0};
+	char cache_prefix[30] = {0};
 	const char * cache_path_prefix = "zengl/caches/"; // 缓存文件都放在zengl/caches目录中
 	int append_length;
 	main_compute_md5(fullpath_md5, full_path, ZL_EXP_TRUE, ZL_EXP_TRUE); // 将full_path进行md5编码
 	// 在缓存路径前面加上zengl版本号和指针长度，不同的zengl版本生成的缓存有可能会不一样，另外，32位和64位环境下生成的内存缓存数据也是不一样的
 	// 32位系统中生成的缓存数据放到64位中运行，或者反过来，都会报内存相关的错误
-	sprintf(cache_prefix, "%d_%d_%d_%ld_", ZL_EXP_MAJOR_VERSION, ZL_EXP_MINOR_VERSION, ZL_EXP_REVISION, sizeof(char *));
+	sprintf(cache_prefix, "%d_%d_%d_%ld_%s_", ZL_EXP_MAJOR_VERSION, ZL_EXP_MINOR_VERSION, ZL_EXP_REVISION, sizeof(char *), ZLSERVER_DEF_VERSION);
 	append_length = main_full_path_append(cache_path, 0, cache_path_size, (char *)cache_path_prefix);
 	append_length += main_full_path_append(cache_path, append_length, cache_path_size, cache_prefix);
 	append_length += main_full_path_append(cache_path, append_length, cache_path_size, fullpath_md5);
@@ -1618,6 +1618,17 @@ ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
 #endif
 }
 
+ZL_EXP_VOID main_def_lookup_handle(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * defValName)
+{
+	int retval = 0;
+	retval = module_builtin_def_lookup_handle(VM_ARG, defValName);
+#ifdef USE_OPENSSL
+	if(!retval) {
+		retval = module_openssl_def_lookup_handle(VM_ARG, defValName);
+	}
+#endif
+}
+
 /**
  * 将sfd对应的套接字设置为非阻塞模式，以配合epoll的事件驱动的工作方式
  */
@@ -1956,6 +1967,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_userdef_run_print);
 			// 设置zengl脚本的模块初始化函数
 			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_MODULE_INIT,main_userdef_module_init);
+			zenglApi_SetDefLookupHandle(VM, main_def_lookup_handle);
 			// 设置my_data额外数据
 			zenglApi_SetExtraData(VM, "my_data", &my_data);
 			pthread_mutex_lock(&(my_thread_lock.lock));
@@ -2284,6 +2296,7 @@ static int main_run_cmd(char * run_cmd)
 			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_userdef_run_print);
 			// 设置zengl脚本的模块初始化函数
 			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_MODULE_INIT,main_userdef_module_init);
+			zenglApi_SetDefLookupHandle(VM, main_def_lookup_handle);
 			// 设置my_data额外数据
 			zenglApi_SetExtraData(VM, "my_data", &my_data);
 

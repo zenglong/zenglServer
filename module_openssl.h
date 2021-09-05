@@ -10,6 +10,8 @@
 
 #include "common_header.h"
 
+int module_openssl_def_lookup_handle(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * defValName);
+
 /**
  * openssl模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄(对应的C函数)
  */

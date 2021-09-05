@@ -1,14 +1,14 @@
-def RSA_PUBLIC 1;
-def RSA_PRIVATE 0;
+def RSA_PUBLIC 	___OPENSSL_RSA_PUBLIC___;
+def RSA_PRIVATE ___OPENSSL_RSA_PRIVATE___;
 
-def USE_EVP 1;
+def USE_EVP	___OPENSSL_RSA_USE_EVP___;
 
-def RSA_SIGN_SHA256 5;
+def RSA_SIGN_SHA256 ___OPENSSL_NID_sha256___;
 
-def TRUE 1;
-def FALSE 0;
+def TRUE 	___BUILTIN_TRUE___;
+def FALSE 	___BUILTIN_FALSE___;
 
-def NULL 0;
+def NULL 	___BUILTIN_NULL___;
 
 // 当出错时，打印错误信息，并退出脚本
 fun exit(msg)

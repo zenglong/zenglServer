@@ -3068,6 +3068,35 @@ ZL_EXP_VOID module_builtin_version_compare(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argc
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
 }
 
+int module_builtin_def_lookup_handle(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * defValName)
+{
+	char tmpstr[20];
+	int retval = 1;
+	if(strcmp(defValName, "___BUILTIN_TRUE___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "1");
+	}
+	else if(strcmp(defValName, "___BUILTIN_FALSE___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "0");
+	}
+	else if(strcmp(defValName, "___BUILTIN_NULL___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "0");
+	}
+	else if(strcmp(defValName, "___BUILTIN_WRITE_FILE_MODE_WRITE___") == 0)
+	{
+		snprintf(tmpstr, 20, "%d", WRITE_FILE_MODE_WRITE);
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, tmpstr);
+	}
+	else if(strcmp(defValName, "___BUILTIN_WRITE_FILE_MODE_APPEND___") == 0)
+	{
+		snprintf(tmpstr, 20, "%d", WRITE_FILE_MODE_APPEND);
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, tmpstr);
+	}
+	return !retval;
+}
+
 /**
  * builtin模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄
  */

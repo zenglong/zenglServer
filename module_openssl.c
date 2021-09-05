@@ -1094,6 +1094,76 @@ ZL_EXP_VOID module_openssl_free_key(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, i, 0);
 }
 
+int module_openssl_def_lookup_handle(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * defValName)
+{
+	int retval = 1;
+	if(strcmp(defValName, "___OPENSSL_NID_sha___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "0");
+	}
+	else if(strcmp(defValName, "___OPENSSL_NID_sha1___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "1");
+	}
+	else if(strcmp(defValName, "___OPENSSL_NID_ripemd160___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "2");
+	}
+	else if(strcmp(defValName, "___OPENSSL_NID_md5___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "3");
+	}
+	else if(strcmp(defValName, "___OPENSSL_NID_md5_sha1___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "4");
+	}
+	else if(strcmp(defValName, "___OPENSSL_NID_sha256___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "5");
+	}
+	else if(strcmp(defValName, "___OPENSSL_NID_sha256WithRSAEncryption___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "6");
+	}
+	else if(strcmp(defValName, "___OPENSSL_NID_sha512___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "7");
+	}
+	else if(strcmp(defValName, "___OPENSSL_NID_sha512WithRSAEncryption___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "8");
+	}
+	else if(strcmp(defValName, "___OPENSSL_RSA_PKCS1_PADDING___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "0");
+	}
+	else if(strcmp(defValName, "___OPENSSL_RSA_PKCS1_OAEP_PADDING___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "1");
+	}
+	else if(strcmp(defValName, "___OPENSSL_RSA_SSLV23_PADDING___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "2");
+	}
+	else if(strcmp(defValName, "___OPENSSL_RSA_NO_PADDING___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "3");
+	}
+	else if(strcmp(defValName, "___OPENSSL_RSA_PUBLIC___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "1");
+	}
+	else if(strcmp(defValName, "___OPENSSL_RSA_PRIVATE___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "0");
+	}
+	else if(strcmp(defValName, "___OPENSSL_RSA_USE_EVP___") == 0)
+	{
+		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "1");
+	}
+	return !retval;
+}
+
 /**
  * openssl模块的初始化函数，里面设置了与该模块相关的各个模块函数及其相关的处理句柄(对应的C函数)
  */

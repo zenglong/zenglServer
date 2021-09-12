@@ -38,5 +38,7 @@ request_url_max_size = 1024; // 设置url资源路径(包括请求参数在内)�
 
 backlog = 10; // 设置TCP连接队列中可以等待的连接数(backlog的值只是建议值，不同的系统会根据这个值设置不同的等待连接数，例如linux 2.4.7中当backlog为1时，实际可以等待的连接数会是4等)，当队列中等待连接的数量满了时，新请求的连接就会报连接被拒绝的错误
 
+timezone = 'Asia/Shanghai'; // 设置时区
+
 pidfile = "zenglServer.pid"; // 设置记录主进程的进程ID的文件名(该文件名可以是相对于当前工作目录的路径)
 

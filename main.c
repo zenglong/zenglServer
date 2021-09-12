@@ -194,6 +194,8 @@ long config_request_url_max_size;
 
 long config_backlog;
 
+static char config_timezone[FULL_PATH_SIZE];
+
 // 存储配置文件中的pidfile的配置值，该配置用于设置记录主进程的进程ID的文件名(该文件名可以是相对于当前工作目录的路径)
 static char config_pidfile[FULL_PATH_SIZE];
 
@@ -945,6 +947,18 @@ int main(int argc, char * argv[])
 		}
 	}
 
+	char * timezone = NULL;
+	config_timezone[0] = '\0';
+	if((timezone = zenglApi_GetValueAsString(VM, "timezone")) != NULL) {
+		if((strlen(timezone) + 1) <= sizeof(config_timezone)) {
+			strncpy(config_timezone, timezone, strlen(timezone));
+			config_timezone[strlen(timezone)] = '\0';
+		}
+		else {
+			WRITE_LOG_WITH_PRINTF("warning: timezone in %s is too long, so ignore it\n", config_file);
+		}
+	}
+
 	// 显示出配置文件中定义的配置信息，如果配置文件没有定义这些值，则显示出默认值
 	write_to_server_log_pipe(WRITE_TO_LOG, "run %s complete, config: \n", config_file);
 	write_to_server_log_pipe(WRITE_TO_LOG, "port: %ld process_num: %ld\n", port, server_process_num);
@@ -992,6 +1006,16 @@ int main(int argc, char * argv[])
 		else {
 			write_to_server_log_pipe(WRITE_TO_LOG, "no pidfile.\n");
 		}
+	}
+
+	if(strlen(config_timezone) > 0) {
+		write_to_server_log_pipe(WRITE_TO_LOG, "timezone: %s\n", config_timezone);
+		if(setenv("TZ", config_timezone, 1) == -1) {
+			WRITE_LOG_WITH_PRINTF("failed to setenv TZ [%d] %s \n", errno, strerror(errno));
+			zenglApi_Close(VM);
+			exit(-1);
+		}
+		tzset();
 	}
 
 	// 关闭虚拟机，并释放掉虚拟机所分配过的系统资源

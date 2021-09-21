@@ -4,6 +4,10 @@
  *  Created on: 2017-7-16
  *      Author: zengl
  */
+#ifndef _GNU_SOURCE
+	#define _GNU_SOURCE
+#endif
+
 
 #include "main.h"
 #include "module_builtin.h"
@@ -3068,6 +3072,24 @@ ZL_EXP_VOID module_builtin_version_compare(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argc
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
 }
 
+ZL_EXP_VOID module_builtin_set_time_zone(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
+{
+	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};
+	const char * func_name = "bltSetTimeZone";
+	if(argcount < 1)
+		zenglApi_Exit(VM_ARG,"usage: %s(timezone)", func_name);
+	zenglApi_GetFunArg(VM_ARG,1,&arg);
+	if(arg.type != ZL_EXP_FAT_STR) {
+		zenglApi_Exit(VM_ARG,"the first argument [timezone] of %s must be string", func_name);
+	}
+	char * timezone = (char *)arg.val.str;
+	if(setenv("TZ", timezone, 1) == -1) {
+		zenglApi_Exit("%s: failed to setenv TZ [%d] %s \n", (char *)func_name, errno, strerror(errno));
+	}
+	tzset();
+	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 1, 0);
+}
+
 int module_builtin_def_lookup_handle(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * defValName)
 {
 	char tmpstr[20];
@@ -3144,4 +3166,5 @@ ZL_EXP_VOID module_builtin_init(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT moduleID)
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltToLower",module_builtin_to_lower);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltToUpper",module_builtin_to_upper);
 	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltVersionCompare",module_builtin_version_compare);
+	zenglApi_SetModFunHandle(VM_ARG,moduleID,"bltSetTimeZone",module_builtin_set_time_zone);
 }

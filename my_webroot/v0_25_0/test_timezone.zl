@@ -14,3 +14,7 @@ bltSetTimeZone("Asia/Shanghai");
 
 print bltDate('%Y-%m-%d %H:%M:%S');
 
+bltSetTimeZone("");
+
+print bltDate('%Y-%m-%d %H:%M:%S');
+

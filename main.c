@@ -2064,6 +2064,11 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			// 如果开启了curl模块，则通过export_curl_global_cleanup将相关的全局资源释放掉
 			export_curl_global_cleanup();
 #endif
+			// 脚本中可能修改了当前进程的时区，所以脚本执行结束后恢复时区为默认配置的时区
+			if(strlen(config_timezone) > 0) {
+				setenv("TZ", config_timezone, 1);
+				tzset();
+			}
 			// 关闭zengl虚拟机及zl_debug_log日志文件
 			zenglApi_Close(VM);
 			if(my_data.zl_debug_log != NULL) {

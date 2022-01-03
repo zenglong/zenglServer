@@ -129,7 +129,7 @@ typedef struct _SERVER_CONTENT_TYPE{
 #define DEFAULT_CONFIG_FILE "config.zl" // 当启动zenglServer时，如果没有使用-c命令行参数来指定配置文件名时，就会使用该宏对应的值来作为默认的配置文件名
 #define SERVER_LOG_PIPE_STR_SIZE 1024 // 写入日志的动态字符串的初始化及动态扩容的大小
 #define SHM_MIN_SIZE (300 * 1024) // 如果配置文件中没有设置shm_min_size时，就使用该宏的值作为需要放进共享内存的缓存的最小大小(以字节为单位)
-#define DEFAULT_BACKLOG 10
+#define DEFAULT_BACKLOG 10 // 设置TCP连接队列中可以等待的连接数的默认值
 
 // 启动过程中，在没有重定向输出之前，如果发生错误或警告，除了写入日志，还会显示在命令行终端，方便启动时不用通过查看日志就可以发现错误等
 #define WRITE_LOG_WITH_PRINTF(format, ...) write_to_server_log_pipe(WRITE_TO_LOG, format, __VA_ARGS__); \
@@ -192,6 +192,8 @@ long config_request_header_max_size;
 // 存储配置文件中的request_url_max_size的配置值，该配置用于设置url资源路径(包括请求参数在内)所允许的最大字符数
 long config_request_url_max_size;
 
+// 存储配置文件中的backlog的配置值，设置TCP连接队列中可以等待的连接数(backlog的值只是建议值，不同的系统会根据这个值设置不同的等待连接数，
+// 例如linux 2.4.7中当backlog为1时，实际可以等待的连接数会是4等)，当队列中等待连接的数量满了时，新请求的连接就会报连接被拒绝的错误
 long config_backlog;
 
 static char config_timezone[FULL_PATH_SIZE];
@@ -930,6 +932,7 @@ int main(int argc, char * argv[])
 	if(zenglApi_GetValueAsInt(VM,"request_url_max_size", &config_request_url_max_size) < 0)
 		config_request_url_max_size = REQUEST_URL_STR_MAX_SIZE;
 
+	// 获取配置文件中设置的backlog的值，用于设置TCP连接队列中可以等待的连接数
 	if((zenglApi_GetValueAsInt(VM,"backlog", &config_backlog) < 0) || (config_backlog <= 0)) {
 		config_backlog = DEFAULT_BACKLOG;
 	}
@@ -1082,7 +1085,7 @@ int main(int argc, char * argv[])
 	}
 	write_to_server_log_pipe(WRITE_TO_LOG, "bind done\n");
 
-	// 当绑定IP和端口成功后，就可以正式开启服务端套接字的监听模式了
+	// 当绑定IP和端口成功后，就可以正式开启服务端套接字的监听模式了，同时根据配置文件中的backlog值来设置连接队列中可以等待的连接数
 	listen(server_socket_fd, config_backlog);
 
 	// 删除掉之前创建过的信号量
@@ -1642,6 +1645,11 @@ ZL_EXP_VOID main_userdef_module_init(ZL_EXP_VOID * VM_ARG)
 #endif
 }
 
+/**
+ * 设置def宏值查询函数，当脚本中的宏值是一个ID标示符时(类似变量名一样的标示符)，就会调用下面的函数查询出实际的宏值(实际的宏值应该是整数，浮点数或字符串)
+ * 例如：def TRUE ___BUILTIN_TRUE___; 这个语句，就会调用下面这个函数，并将___BUILTIN_TRUE___作为查询名称传递给该函数，
+ * 该函数再通过module_builtin_def_lookup_handle这个內建模块中的函数，查出实际的宏值为1，因此，该语句相当于def TRUE 1;
+ */
 ZL_EXP_VOID main_def_lookup_handle(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * defValName)
 {
 	int retval = 0;
@@ -1991,6 +1999,7 @@ static int routine_process_client_socket(CLIENT_SOCKET_LIST * socket_list, int l
 			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_userdef_run_print);
 			// 设置zengl脚本的模块初始化函数
 			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_MODULE_INIT,main_userdef_module_init);
+			// 设置def宏值查询函数
 			zenglApi_SetDefLookupHandle(VM, main_def_lookup_handle);
 			// 设置my_data额外数据
 			zenglApi_SetExtraData(VM, "my_data", &my_data);
@@ -2325,6 +2334,7 @@ static int main_run_cmd(char * run_cmd)
 			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_RUN_PRINT,main_userdef_run_print);
 			// 设置zengl脚本的模块初始化函数
 			zenglApi_SetHandle(VM,ZL_EXP_VFLAG_HANDLE_MODULE_INIT,main_userdef_module_init);
+			// 设置def宏值查询函数
 			zenglApi_SetDefLookupHandle(VM, main_def_lookup_handle);
 			// 设置my_data额外数据
 			zenglApi_SetExtraData(VM, "my_data", &my_data);

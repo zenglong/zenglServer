@@ -1094,6 +1094,11 @@ ZL_EXP_VOID module_openssl_free_key(ZL_EXP_VOID * VM_ARG,ZL_EXP_INT argcount)
 	zenglApi_SetRetVal(VM_ARG,ZL_EXP_FAT_INT, ZL_EXP_NULL, i, 0);
 }
 
+/**
+ * openssl模块的def宏值查询函数，该查询函数会根据查询名称返回对应的宏值
+ * 例如：def RSA_SIGN_SHA ___OPENSSL_NID_sha___; 这个语句，就会调用下面这个函数，并将___OPENSSL_NID_sha___作为查询名称传递给该函数，
+ * 函数在经过查询后，就会设置整数0作为RSA_SIGN_SHA的宏值，因此这个语句等效于 def RSA_SIGN_SHA 0;
+ */
 int module_openssl_def_lookup_handle(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * defValName)
 {
 	int retval = 1;

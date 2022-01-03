@@ -3090,28 +3090,33 @@ ZL_EXP_VOID module_builtin_set_time_zone(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcou
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, 1, 0);
 }
 
+/**
+ * 內建模块的def宏值查询函数，该查询函数会根据查询名称返回对应的宏值
+ * 例如：def TRUE ___BUILTIN_TRUE___; 这个语句，就会调用下面这个函数，并将___BUILTIN_TRUE___作为查询名称传递给该函数，
+ * 函数在经过查询后，就会设置整数1作为TRUE的宏值，因此这个语句等效于 def TRUE 1;
+ */
 int module_builtin_def_lookup_handle(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * defValName)
 {
 	char tmpstr[20];
 	int retval = 1;
-	if(strcmp(defValName, "___BUILTIN_TRUE___") == 0)
+	if(strcmp(defValName, "___BUILTIN_TRUE___") == 0) // 用于脚本中定义TRUE的宏值
 	{
 		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "1");
 	}
-	else if(strcmp(defValName, "___BUILTIN_FALSE___") == 0)
+	else if(strcmp(defValName, "___BUILTIN_FALSE___") == 0) // 用于脚本中定义FALSE的宏值
 	{
 		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "0");
 	}
-	else if(strcmp(defValName, "___BUILTIN_NULL___") == 0)
+	else if(strcmp(defValName, "___BUILTIN_NULL___") == 0) // 用于脚本中定义NULL的宏值
 	{
 		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, "0");
 	}
-	else if(strcmp(defValName, "___BUILTIN_WRITE_FILE_MODE_WRITE___") == 0)
+	else if(strcmp(defValName, "___BUILTIN_WRITE_FILE_MODE_WRITE___") == 0) // 用于在脚本中定义bltWriteFile模块函数写入模式的宏值
 	{
 		snprintf(tmpstr, 20, "%d", WRITE_FILE_MODE_WRITE);
 		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, tmpstr);
 	}
-	else if(strcmp(defValName, "___BUILTIN_WRITE_FILE_MODE_APPEND___") == 0)
+	else if(strcmp(defValName, "___BUILTIN_WRITE_FILE_MODE_APPEND___") == 0) // 用于在脚本中定义bltWriteFile模块函数追加模式的宏值
 	{
 		snprintf(tmpstr, 20, "%d", WRITE_FILE_MODE_APPEND);
 		retval = zenglApi_SetDefLookupResult(VM_ARG, ZL_EXP_FAT_INT, tmpstr);

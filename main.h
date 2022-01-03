@@ -20,7 +20,7 @@
 #define ZLSERVER_MINOR_VERSION 24 // zenglServer 子版本号
 #define ZLSERVER_REVISION 0       // zenglServer 修正版本号
 
-#define ZLSERVER_DEF_VERSION "dv01"
+#define ZLSERVER_DEF_VERSION "dv01" // 设置dev宏值查询相关的缓存版本号，用于更新脚本缓存
 
 // 可以在make编译程序时，自定义URL_PATH_SIZE的值，如果没有进行过自定义，则使用默认值：120
 #ifndef URL_PATH_SIZE

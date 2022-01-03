@@ -44,6 +44,11 @@ void builtin_make_info_string(ZL_EXP_VOID * VM_ARG, BUILTIN_INFO_STRING * infoSt
 void st_detect_arg_is_address_type(ZL_EXP_VOID * VM_ARG,
 		int arg_index, ZENGL_EXPORT_MOD_FUN_ARG * arg_ptr, const char * arg_desc, const char * module_func_name);
 
+/**
+ * 內建模块的def宏值查询函数，该查询函数会根据查询名称返回对应的宏值
+ * 例如：def TRUE ___BUILTIN_TRUE___; 这个语句，就会调用下面这个函数，并将___BUILTIN_TRUE___作为查询名称传递给该函数，
+ * 函数在经过查询后，就会设置整数1作为TRUE的宏值，因此这个语句等效于 def TRUE 1;
+ */
 int module_builtin_def_lookup_handle(ZL_EXP_VOID * VM_ARG, ZL_EXP_CHAR * defValName);
 
 /**

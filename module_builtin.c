@@ -3072,6 +3072,43 @@ ZL_EXP_VOID module_builtin_version_compare(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argc
 	zenglApi_SetRetVal(VM_ARG, ZL_EXP_FAT_INT, ZL_EXP_NULL, retval, 0);
 }
 
+/**
+ * bltSetTimeZone模块函数，设置当前脚本所在进程的时区
+ * 第一个参数timezone必须是字符串类型，表示需要设置的时区，例如：America/New_York表示设置为纽约时区，Europe/London表示设置为伦敦时区等
+ * 具体的时区格式，可以参考GNU官网的介绍：https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html
+ * 返回值为1表示设置成功
+ *
+ * 示例：
+	use builtin;
+
+	print bltDate('%Y-%m-%d %H:%M:%S'); // 使用配置文件中timezone变量定义的时区来显示当前时间
+
+	bltSetTimeZone("America/New_York"); // 切换到纽约时区
+
+	print bltDate('%Y-%m-%d %H:%M:%S'); // 以纽约时区来显示当前时间
+
+	bltSetTimeZone("Europe/London");    // 切换到伦敦时区
+
+	print bltDate('%Y-%m-%d %H:%M:%S'); // 以伦敦时区来显示当前时间
+
+	bltSetTimeZone("Asia/Shanghai");    // 切换到亚洲上海时区
+
+	print bltDate('%Y-%m-%d %H:%M:%S'); // 以上海时区来显示当前时间
+
+	bltSetTimeZone("");					// 切换到系统默认时区
+
+	print bltDate('%Y-%m-%d %H:%M:%S'); // 使用默认时区来显示当前时间
+
+	执行结果类似如下所示：
+	2022-01-25 19:41:04
+	2022-01-25 06:41:04
+	2022-01-25 11:41:04
+	2022-01-25 19:41:04
+	2022-01-25 11:41:04
+
+	模块函数版本历史：
+	 - v0.25.0版本新增此模块函数
+ */
 ZL_EXP_VOID module_builtin_set_time_zone(ZL_EXP_VOID * VM_ARG, ZL_EXP_INT argcount)
 {
 	ZENGL_EXPORT_MOD_FUN_ARG arg = {ZL_EXP_FAT_NONE,{0}};

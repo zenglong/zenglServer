@@ -75,7 +75,7 @@ zengl@zengl-ubuntu:~/zenglServer$
 如果是centos 8.x系统，上面的yum安装ImageMagick的方式可能会失败，此时，可以通过以下命令来安装：
 ```
 dnf install -y epel-release
-dnf config-manager --set-enabled PowerTools
+dnf config-manager --set-enabled PowerTools (如果命令执行失败，提示No matching repo to modify: PowerTools.的错误时，可以尝试使用小写形式执行：sudo dnf config-manager --set-enabled powertools 也就是将PowerTools改成powertools小写的形式来执行)
 dnf install -y ImageMagick ImageMagick-devel
 ```
 

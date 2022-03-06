@@ -18,7 +18,7 @@
 
 #define ZLSERVER_MAJOR_VERSION 0  // zenglServer 主版本号
 #define ZLSERVER_MINOR_VERSION 25 // zenglServer 子版本号
-#define ZLSERVER_REVISION 0       // zenglServer 修正版本号
+#define ZLSERVER_REVISION 1       // zenglServer 修正版本号
 
 #define ZLSERVER_DEF_VERSION "dv01" // 设置dev宏值查询相关的缓存版本号，用于更新脚本缓存
 
